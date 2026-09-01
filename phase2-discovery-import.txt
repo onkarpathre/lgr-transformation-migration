@@ -1,0 +1,1323 @@
+Continue development of the existing product:
+
+LGR Transformation and Migration
+
+Repository:
+C:\Projects\lgr-transformation-migration
+
+This is PHASE 2.
+
+IMPORTANT:
+Phase 1 is complete and validated.
+
+Current validation baseline:
+- .NET 10 API builds successfully
+- Next.js 16 / React 19 frontend builds successfully
+- 13 unit tests pass
+- 8 integration tests pass
+- Total: 21 tests passed, 0 failed
+- SQL Server remains the production/local application provider
+- SQLite is used only by integration tests
+
+Do not redesign or replace working Phase 1 functionality.
+
+Before making changes:
+1. Inspect the repository.
+2. Read README.md.
+3. Read docs/architecture.
+4. Read docs/functional.
+5. Read docs/source if files exist.
+6. Run git status.
+7. Run the current build and tests.
+8. Preserve the existing architecture and coding patterns.
+
+==================================================
+PHASE 2 OBJECTIVE
+==================================================
+
+Implement Discovery Import and Inventory Reconciliation.
+
+The objective is to allow migration teams to upload Azure Migrate discovery reports and reconcile the discovered infrastructure with the authoritative Server Inventory.
+
+The Phase 2 workflow must demonstrate:
+
+Upload Discovery File
+→ Identify Source Type
+→ Validate File
+→ Parse Records
+→ Stage Records
+→ Preview Results
+→ Match Existing Assets
+→ Classify Changes
+→ Confirm Import
+→ Create / Update Inventory
+→ Record Import History
+→ Display Import Summary
+
+The import process must NEVER silently overwrite inventory information.
+
+==================================================
+1. INITIAL SUPPORTED SOURCE TYPES
+==================================================
+
+Support the following discovery sources.
+
+PRIMARY SOURCE FOR FULL WORKING RECONCILIATION:
+
+Azure Migrate Server Report
+
+SECOND SOURCE:
+
+Azure Migrate All Inventory Report
+
+Phase 2 must fully reconcile Server Report records into the Server Inventory.
+
+For All Inventory Report:
+- implement upload
+- parsing
+- validation
+- staging
+- preview
+- source tracking
+
+Where a row clearly represents a server, allow it to participate in server reconciliation.
+
+Do not attempt to fully implement database, web app, file share or software canonical models from All Inventory in Phase 2.
+
+Those will be introduced in later phases.
+
+==================================================
+2. SERVER REPORT SOURCE COLUMNS
+==================================================
+
+Support the following Azure Migrate Server Report fields where present:
+
+Id
+Parent Id
+Server
+Environment
+Migration Intent
+Operating System
+IPv4/IPv6
+Dependencies
+Softwares(#)
+DB instances(#)
+Webapps(#)
+Fileshares(#)
+Security risks
+Support status
+Application name(s)
+Issues(#)
+Tags
+Host
+Memory (MB)
+Disks(#)
+vCores(#)
+Allocated storage (GB)
+Network adapters(#)
+MAC address
+Boot type
+OS Family
+OS architecture
+First discovered at
+Last updated at
+Processor
+Resource type
+Power status
+Hypervisor type
+Discovery method
+Connected appliance
+App ARM ID name(s)
+
+Column matching must tolerate:
+- spaces
+- different casing
+- # characters
+- leading/trailing whitespace
+
+Do not depend on exact column ordering.
+
+==================================================
+3. ALL INVENTORY REPORT SOURCE COLUMNS
+==================================================
+
+Support staging of the following fields where present:
+
+Id
+parentId
+Workload
+Server
+Category
+Type
+Application name(s)
+Environment
+Migration Intent
+IPv4/IPv6
+Operating System
+Softwares(#)
+Dependencies
+Security risks
+Support status
+Discovery method
+Hypervisor type
+Host
+Tags
+DB instances(#)
+Databases(#)
+Webapps(#)
+Fileshares(#)
+vCores(#)
+Memory (MB)
+Disks(#)
+Allocated storage (GB)
+OS Family
+Support ends in (Days)
+Power status
+Connected appliance
+First discovered at
+Last updated at
+Processor
+Database edition
+Framework version
+Protocol
+DB engine status
+HADR configuration
+App ARM ID name(s)
+
+Phase 2 does not need to create canonical Database/WebApp/FileShare records from this report.
+
+Store and expose the source information so those capabilities can be built later.
+
+==================================================
+4. NEW DOMAIN ENTITIES
+==================================================
+
+Create an appropriate import domain model.
+
+IMPORT BATCH
+
+ImportBatch:
+- Id : Guid
+- CustomerId
+- ProjectId
+- SourceType
+- OriginalFileName
+- StoredFileName nullable
+- FileHash
+- FileSizeBytes
+- Status
+- UploadedBy
+- UploadedAt
+- PreviewedAt nullable
+- CommittedAt nullable
+- TotalRows
+- ValidRows
+- CreateCount
+- UpdateCount
+- UnchangedCount
+- WarningCount
+- RejectCount
+- Notes nullable
+
+Suggested statuses:
+
+Uploaded
+Parsing
+Validated
+PreviewReady
+Importing
+Completed
+CompletedWithWarnings
+Failed
+Cancelled
+
+--------------------------------------------------
+IMPORT ROW / STAGING RECORD
+--------------------------------------------------
+
+Create an ImportRow or DiscoveryImportRow entity.
+
+It should include:
+
+- Id
+- CustomerId
+- ProjectId
+- ImportBatchId
+- RowNumber
+- SourceRecordId nullable
+- SourceType
+- RawDataJson
+- NormalizedHostname nullable
+- Classification
+- ValidationStatus
+- ValidationMessagesJson nullable
+- MatchedEntityId nullable
+- ProposedChangesJson nullable
+- CreatedAt
+
+Classification values:
+
+Create
+Update
+Unchanged
+Warning
+Reject
+
+Do not store every source column as an individual database column in the staging table.
+
+Store the original parsed row as JSON and create typed parsing models/services.
+
+--------------------------------------------------
+SERVER DISCOVERY SNAPSHOT
+--------------------------------------------------
+
+Create ServerDiscoverySnapshot or equivalent.
+
+Purpose:
+Preserve discovered technical information separately from the canonical Server record.
+
+Suggested fields:
+
+- Id
+- CustomerId
+- ProjectId
+- ServerId
+- ImportBatchId
+- ExternalSourceId
+- Hostname
+- Environment
+- MigrationIntent
+- IpAddresses
+- OperatingSystem
+- Dependencies
+- SoftwareCount nullable
+- DatabaseInstanceCount nullable
+- WebAppCount nullable
+- FileShareCount nullable
+- SecurityRisks
+- SupportStatus
+- ApplicationNames
+- IssueCount nullable
+- Tags
+- Host
+- MemoryMb nullable
+- DiskCount nullable
+- VCores nullable
+- AllocatedStorageGb nullable
+- NetworkAdapterCount nullable
+- MacAddress
+- BootType
+- OsFamily
+- OsArchitecture
+- Processor
+- ResourceType
+- PowerStatus
+- HypervisorType
+- DiscoveryMethod
+- ConnectedAppliance
+- FirstDiscoveredAt nullable
+- LastUpdatedAt nullable
+- ImportedAt
+
+A server should be able to have multiple discovery snapshots over time.
+
+This allows the system to maintain discovery history.
+
+==================================================
+5. SERVER ENTITY ENHANCEMENT
+==================================================
+
+Extend the existing canonical Server entity only where required.
+
+Add useful current-discovery fields if not already present:
+
+- ExternalSourceId nullable
+- OsFamily nullable
+- OsArchitecture nullable
+- Processor nullable
+- HypervisorType nullable
+- Host nullable
+- SupportStatus nullable
+- DiscoveryMethod nullable
+- FirstDiscoveredAt nullable
+- LastDiscoveredAt nullable
+- LastImportBatchId nullable
+- LastImportedAt nullable
+
+Do not duplicate information unnecessarily.
+
+Maintain the existing unique business rule:
+
+CustomerId + Hostname = unique
+
+Hostname is NOT a database primary key.
+
+==================================================
+6. IMPORT FILE FORMAT
+==================================================
+
+CSV support is mandatory.
+
+Support:
+- comma-separated CSV
+- UTF-8
+- quoted values
+- values containing commas
+- empty fields
+- CRLF and LF line endings
+
+If a stable .NET 10-compatible open-source XLSX library is already available or can be restored normally, also support XLSX.
+
+Preferred XLSX implementation may use a widely adopted permissively licensed library.
+
+Do not introduce a paid dependency.
+
+If XLSX support creates a genuine external-package blocker:
+- complete CSV functionality fully
+- create a clean file-reader abstraction
+- document XLSX as a small follow-up
+
+Do not compromise Phase 2 quality merely to force XLSX support.
+
+==================================================
+7. FILE STORAGE ABSTRACTION
+==================================================
+
+Create an abstraction such as:
+
+IImportFileStorage
+
+For local development implement:
+
+LocalImportFileStorage
+
+Store files beneath a runtime/local storage area that is excluded from Git.
+
+Do NOT store uploaded file binary content in Azure SQL.
+
+Architect the abstraction so Azure Blob Storage can replace LocalImportFileStorage later.
+
+Document the future Azure Blob implementation.
+
+Do not add Azure Blob infrastructure integration in this phase unless it is trivial and does not destabilise the POC.
+
+==================================================
+8. FILE SECURITY
+==================================================
+
+Validate uploaded files.
+
+At minimum:
+
+- supported extension
+- allowed source type
+- maximum configurable file size
+- non-empty file
+- expected header presence
+- file hash generation
+
+Reject obviously invalid files.
+
+Never execute anything contained in an uploaded file.
+
+Use generated server-side filenames when storing uploads.
+
+Do not trust the user-supplied path or filename.
+
+==================================================
+9. SOURCE TYPE IDENTIFICATION
+==================================================
+
+Allow the user to explicitly select:
+
+Azure Migrate Server Report
+Azure Migrate All Inventory Report
+
+Also implement header-based source validation.
+
+If selected source type and detected columns conflict:
+return a clear validation error.
+
+Do not guess and silently import the wrong report.
+
+==================================================
+10. COLUMN MAPPING
+==================================================
+
+Implement a reusable column-mapping layer.
+
+Do not hardcode parsing logic directly inside API endpoints.
+
+Create source-specific mapping definitions.
+
+For example:
+
+AzureMigrateServerReportMapper
+AzureMigrateAllInventoryMapper
+
+Normalize column names for comparison.
+
+Examples that should resolve correctly:
+
+Server
+server
+ SERVER
+Server 
+
+Memory (MB)
+memory (mb)
+
+IPv4/IPv6
+IPv4 / IPv6
+
+==================================================
+11. NORMALISATION
+==================================================
+
+Before reconciliation normalize:
+
+Hostname:
+- trim whitespace
+- consistent casing for comparison
+- preserve original/display casing where appropriate
+- remove accidental surrounding whitespace
+
+IP:
+- trim whitespace
+- support multiple addresses in a source value
+- do not treat malformed IP values as valid canonical IPs
+
+Environment:
+Map known values where possible:
+
+Production → Prod
+PROD → Prod
+Prod → Prod
+
+Development → Dev
+DEV → Dev
+
+User Acceptance Testing → UAT
+UAT → UAT
+
+Do not invent mappings for unknown values.
+
+Unknown values should create a warning and preserve the source value.
+
+==================================================
+12. VALIDATION
+==================================================
+
+At minimum validate:
+
+- Hostname exists
+- Hostname is not blank
+- vCore is numeric where supplied
+- Memory is numeric where supplied
+- Storage is numeric where supplied
+- Dates parse where supplied
+- IP values have valid syntax where supplied
+- Source Id uniqueness inside the import where appropriate
+
+Validation severity:
+
+Error
+Warning
+Information
+
+Errors may cause Reject classification.
+
+Warnings must not automatically reject a row.
+
+==================================================
+13. RECONCILIATION RULES
+==================================================
+
+Use:
+
+CustomerId + NormalizedHostname
+
+as the primary server matching rule.
+
+Never match only by hostname without CustomerId.
+
+Classification:
+
+CREATE
+No matching server exists.
+
+UPDATE
+Matching server exists and one or more supported canonical discovery fields would change.
+
+UNCHANGED
+Matching server exists and relevant fields contain no meaningful changes.
+
+WARNING
+Row can potentially import but contains data requiring user attention.
+
+REJECT
+Mandatory information is missing or data prevents safe reconciliation.
+
+Do not perform database changes during Preview.
+
+==================================================
+14. FIELD CHANGE ANALYSIS
+==================================================
+
+For Update rows generate proposed field differences.
+
+Example:
+
+OperatingSystem
+Old: Windows Server 2016
+New: Windows Server 2022
+
+MemoryMb
+Old: 8192
+New: 16384
+
+PowerStatus
+Old: Powered Off
+New: Powered On
+
+Expose proposed changes through the API and UI.
+
+Do not simply display:
+
+Update
+
+Show the actual fields that would change.
+
+==================================================
+15. PROTECTED BUSINESS FIELDS
+==================================================
+
+Discovery imports must NOT overwrite manually managed business/migration fields.
+
+Do not overwrite fields such as:
+
+MigrationStrategy
+MigrationScope
+MigrationStatus
+MigrationWave
+MigrationDecision
+AzureTarget
+Business comments
+Readiness
+Runbooks
+
+Discovery data only controls designated technical discovery fields.
+
+Document which Server fields are:
+
+Discovery Managed
+
+versus
+
+Business Managed
+
+This is a critical product rule.
+
+==================================================
+16. PREVIEW / COMMIT MODEL
+==================================================
+
+Implement a two-stage import process.
+
+STAGE 1:
+Upload and Preview
+
+- save batch
+- parse
+- validate
+- stage
+- reconcile
+- classify
+- calculate proposed changes
+- return summary
+
+No canonical inventory updates occur.
+
+STAGE 2:
+Commit Import
+
+Only after explicit user confirmation:
+
+- Create Create-classification servers
+- Apply approved Update-classification technical changes
+- Save ServerDiscoverySnapshot records
+- update server LastImportedAt
+- update server LastImportBatchId
+- create audit events
+- mark import completed
+
+Unchanged rows should still be represented in import history.
+
+Reject rows must never update canonical inventory.
+
+==================================================
+17. IDEMPOTENCY
+==================================================
+
+Uploading the same file twice must be detectable using file hash.
+
+Do not automatically block it, because users may intentionally rerun a discovery file.
+
+Show a warning such as:
+
+This file appears to have been imported previously on <date>.
+
+If the same file is imported again and nothing has changed:
+records should classify as Unchanged.
+
+==================================================
+18. CONCURRENCY / SAFETY
+==================================================
+
+Do not allow a batch already committed to be committed a second time.
+
+Do not allow a Failed or Cancelled batch to modify inventory.
+
+Use a database transaction for the Commit operation.
+
+If commit fails:
+rollback the canonical inventory changes.
+
+Set the ImportBatch status appropriately.
+
+==================================================
+19. API ENDPOINTS
+==================================================
+
+Add endpoints under an appropriate route such as:
+
+/api/discovery/imports
+
+Required functionality:
+
+GET
+/api/discovery/imports
+
+List import history.
+
+GET
+/api/discovery/imports/{id}
+
+Return batch details and summary.
+
+POST
+/api/discovery/imports/upload
+
+Upload report and create batch.
+
+POST
+/api/discovery/imports/{id}/preview
+
+Parse, validate and reconcile.
+
+GET
+/api/discovery/imports/{id}/rows
+
+Return paginated staged rows.
+
+Support filtering by:
+
+Create
+Update
+Unchanged
+Warning
+Reject
+
+GET
+/api/discovery/imports/{id}/rows/{rowId}
+
+Return:
+- original source data
+- validation results
+- matched server
+- proposed changes
+
+POST
+/api/discovery/imports/{id}/commit
+
+Commit approved import.
+
+POST
+/api/discovery/imports/{id}/cancel
+
+Cancel an uncommitted batch.
+
+Use existing:
+- tenant context
+- project context
+- Problem Details
+- DTO architecture
+- async patterns
+
+==================================================
+20. DASHBOARD ENHANCEMENT
+==================================================
+
+Enhance the dashboard with discovery information.
+
+Add:
+
+Last Discovery Import
+Last Import Status
+Servers Discovered
+Servers Created From Latest Import
+Servers Updated From Latest Import
+Import Warnings
+Import Rejects
+
+Do not overcrowd the main dashboard.
+
+Use a concise Discovery card/panel.
+
+==================================================
+21. FRONTEND NAVIGATION
+==================================================
+
+Under:
+
+Discovery
+
+add:
+
+Imports
+
+Suggested navigation:
+
+Dashboard
+
+Customers
+Projects
+
+Discovery
+  Imports
+
+Inventory
+  Applications
+  Servers
+
+Assessment
+  Migration Decisions
+
+Azure Design
+  Target Builds
+  IP Management
+
+Migration
+  Waves
+  Readiness
+  Runbooks
+
+Configuration
+
+==================================================
+22. DISCOVERY IMPORT LIST PAGE
+==================================================
+
+Create:
+
+/discovery/imports
+
+Display:
+
+Import Date
+File Name
+Source Type
+Status
+Total
+Create
+Update
+Unchanged
+Warnings
+Rejected
+Uploaded By
+
+Provide:
+
+New Import
+
+button.
+
+==================================================
+23. UPLOAD PAGE
+==================================================
+
+Create:
+
+/discovery/imports/new
+
+User selects:
+
+Customer / current context
+Project / current context
+Source Type
+File
+
+Show supported formats and expected source.
+
+Upload should not immediately update the inventory.
+
+After upload navigate to preview.
+
+==================================================
+24. PREVIEW PAGE
+==================================================
+
+Create:
+
+/discovery/imports/{id}
+
+Display summary cards:
+
+Total
+Create
+Update
+Unchanged
+Warnings
+Reject
+
+Display a table:
+
+Row
+Hostname
+Environment
+Operating System
+Current IP
+Classification
+Validation
+Matched Server
+
+Allow filter by classification.
+
+Rows classified Update should provide a way to view field differences.
+
+Show:
+
+Commit Import
+
+only when the batch is valid and uncommitted.
+
+Require a confirmation dialog before commit.
+
+==================================================
+25. IMPORT HISTORY
+==================================================
+
+Maintain a persistent history.
+
+Users must be able to see:
+
+- when an import occurred
+- who uploaded it
+- which file
+- which project
+- what source type
+- result
+- number created
+- number updated
+- warnings
+- rejects
+
+Committed import history should not be editable.
+
+==================================================
+26. SERVER INVENTORY ENHANCEMENT
+==================================================
+
+On the Server page display:
+
+Discovery Source
+Last Discovered
+Last Imported
+Support Status
+
+Add a Discovery History action.
+
+Server detail should show its ServerDiscoverySnapshots.
+
+Example:
+
+23-Aug-2026
+Azure Migrate
+8 vCPU
+32 GB RAM
+Windows Server 2019
+
+17-Aug-2026
+Azure Migrate
+4 vCPU
+16 GB RAM
+Windows Server 2019
+
+This proves historical discovery capability.
+
+==================================================
+27. DATA FRESHNESS
+==================================================
+
+Add a simple discovery freshness indicator.
+
+Examples:
+
+Current
+Stale
+Unknown
+
+Make the age threshold configurable.
+
+Default POC threshold:
+30 days
+
+Do not embed the value throughout the code.
+
+Use configuration.
+
+==================================================
+28. AUDITING
+==================================================
+
+Import commits must create audit events for:
+
+ServerCreatedFromDiscovery
+ServerUpdatedFromDiscovery
+DiscoveryImportCommitted
+
+For server updates capture field-level:
+
+OldValue
+NewValue
+
+Do not create excessive audit events for Unchanged rows.
+
+==================================================
+29. DATABASE MIGRATION
+==================================================
+
+Create a new EF Core migration for Phase 2.
+
+Name appropriately, for example:
+
+AddDiscoveryImport
+
+Do not edit InitialCreate manually.
+
+Use normal EF migration practices.
+
+Ensure:
+- FK indexes
+- CustomerId indexes
+- ProjectId indexes
+- ImportBatchId indexes
+- useful status indexes
+
+Preserve SQL Server / Azure SQL compatibility.
+
+==================================================
+30. MULTI-TENANCY
+==================================================
+
+All import entities must be tenant-aware.
+
+A customer must never:
+
+- see another customer's imports
+- preview another customer's imports
+- commit another customer's import
+- retrieve another customer's staged rows
+
+Extend integration tests accordingly.
+
+==================================================
+31. TESTING
+==================================================
+
+Maintain the Phase 1 baseline:
+
+21 existing tests must continue to pass.
+
+Add unit/integration tests for at least:
+
+1. Valid Azure Migrate Server Report parsing.
+2. Missing hostname rejection.
+3. Invalid numeric value handling.
+4. Environment normalisation.
+5. Customer + hostname reconciliation.
+6. Create classification.
+7. Update classification.
+8. Unchanged classification.
+9. Warning classification.
+10. Reject classification.
+11. Preview does not change canonical Server inventory.
+12. Commit creates new server.
+13. Commit updates allowed discovery fields.
+14. Commit does not overwrite MigrationStrategy.
+15. Commit does not overwrite MigrationScope.
+16. Commit stores discovery snapshot.
+17. Duplicate file hash warning.
+18. Import cannot be committed twice.
+19. Failed commit rolls back inventory changes.
+20. Import history is customer isolated.
+21. Import rows are customer isolated.
+22. All Inventory source can stage a server row.
+23. Field differences are correctly generated.
+
+Use realistic test CSV data.
+
+Do not depend on files outside the repository for automated tests.
+
+Add sample test fixtures under:
+
+tests/TestData
+
+or an equivalent sensible location.
+
+==================================================
+32. FRONTEND TEST / VALIDATION
+==================================================
+
+Run:
+
+npm.cmd run lint
+
+and:
+
+npm.cmd run build
+
+Fix all errors and warnings that indicate real defects.
+
+Do not suppress legitimate TypeScript errors.
+
+==================================================
+33. API VALIDATION
+==================================================
+
+Run:
+
+dotnet restore .\LgrTransformationMigration.sln
+
+dotnet build .\LgrTransformationMigration.sln --configuration Release
+
+dotnet test .\LgrTransformationMigration.sln --configuration Release --no-build
+
+Existing + new tests must pass.
+
+==================================================
+34. SAMPLE DEMONSTRATION FILE
+==================================================
+
+Create a fictional demonstration CSV under:
+
+samples/discovery/
+
+Example filename:
+
+azure-migrate-server-report-demo.csv
+
+Include at least:
+
+- one existing unchanged server
+- one existing server with updated memory
+- one existing server with updated OS
+- two completely new servers
+- one row with a warning
+- one rejected row
+
+Use fictional Local Government data only.
+
+The sample should make Preview visibly demonstrate:
+
+Create
+Update
+Unchanged
+Warning
+Reject
+
+==================================================
+35. DOCUMENTATION
+==================================================
+
+Update README.md.
+
+Add:
+
+docs/architecture/Discovery_Import_Architecture.md
+
+docs/functional/Discovery_Import_Functional_Scope.md
+
+docs/architecture/ADR-004-discovery-staging-and-reconciliation.md
+
+docs/architecture/ADR-005-discovery-managed-fields.md
+
+Document:
+
+- import workflow
+- staging architecture
+- preview/commit approach
+- source matching
+- canonical versus discovered data
+- protected business fields
+- snapshots/history
+- duplicate detection
+- data freshness
+- local file storage
+- future Azure Blob Storage
+- supported source types
+- current limitations
+
+README must include exact PowerShell instructions for importing the supplied demonstration file.
+
+==================================================
+36. BICEP
+==================================================
+
+Do not deploy Azure infrastructure.
+
+Only update Bicep/documentation if needed to reflect that production import files will eventually reside in Azure Blob Storage.
+
+Do not introduce unnecessary Phase 2 infrastructure.
+
+==================================================
+37. WINDOWS ENVIRONMENT
+==================================================
+
+This repository is developed on Windows PowerShell.
+
+If npm.ps1 is blocked:
+use npm.cmd.
+
+Examples:
+
+npm.cmd install
+npm.cmd run lint
+npm.cmd run build
+
+Do not treat npm.ps1 execution policy as a blocker.
+
+Use the repository-local TEMP/NuGet/npm cache configuration where already configured.
+
+==================================================
+38. DO NOT IMPLEMENT IN PHASE 2
+==================================================
+
+Do not implement yet:
+
+- SQL Instance canonical import
+- SQL Database canonical import
+- SSIS
+- SSRS
+- Linked Servers
+- Web App canonical import
+- File Share canonical import
+- Software inventory canonical import
+- automatic dependency discovery
+- Entra ID production configuration
+- Azure Blob production integration
+- automated migration execution
+- Azure VM deployment
+- ServiceNow
+- CMDB
+- AI recommendations
+- billing
+- Power BI
+- microservices
+- Kubernetes
+
+Do not expand scope.
+
+==================================================
+39. SUCCESS CRITERIA
+==================================================
+
+Phase 2 is complete when a user can:
+
+1. Start the existing POC locally.
+2. Open Discovery > Imports.
+3. Upload the sample Azure Migrate Server Report CSV.
+4. Select Azure Migrate Server Report.
+5. Preview without changing Server inventory.
+6. See Create / Update / Unchanged / Warning / Reject counts.
+7. Inspect field differences for Update records.
+8. Commit the import.
+9. See new servers appear in Inventory.
+10. See allowed technical values updated.
+11. Confirm migration/business fields were not overwritten.
+12. View discovery history against a server.
+13. View the import in Import History.
+14. Confirm audit records were created.
+15. Upload the same file again and receive a duplicate warning.
+16. See the second import classify unchanged records correctly.
+17. Complete all builds and automated tests successfully.
+
+==================================================
+40. EXECUTION ORDER
+==================================================
+
+Work autonomously.
+
+Follow this sequence:
+
+1. Inspect repository and documentation.
+2. Run Phase 1 build/tests.
+3. Design Phase 2 additions consistent with current architecture.
+4. Implement domain/entities.
+5. Create EF migration.
+6. Implement parsing and mapping.
+7. Implement staging.
+8. Implement reconciliation.
+9. Implement preview.
+10. Implement commit transaction.
+11. Implement audit/snapshots.
+12. Implement API.
+13. Implement backend tests.
+14. Implement frontend pages.
+15. Integrate frontend with API.
+16. Create sample CSV.
+17. Update documentation.
+18. Run backend build.
+19. Run all tests.
+20. Run frontend lint.
+21. Run frontend production build.
+22. Fix failures.
+23. Review against every Phase 2 success criterion.
+
+Do not stop merely because code files have been generated.
+
+At completion output:
+
+CREATED
+- Phase 2 components
+
+DATABASE
+- migration name and schema changes
+
+IMPORT WORKFLOW
+- how preview and commit work
+
+SECURITY / TENANCY
+- protections implemented
+
+TESTING
+- previous test count
+- new test count
+- total passed/failed
+
+FRONTEND
+- pages created
+
+SAMPLE DATA
+- sample file location
+
+HOW TO RUN
+- exact PowerShell commands
+
+KNOWN LIMITATIONS
+- intentional Phase 2 exclusions
+
+NEXT PHASE
+- recommended Phase 3 scope
+
+Do not begin Phase 3 automatically.

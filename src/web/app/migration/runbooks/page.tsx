@@ -1,0 +1,17 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useApi } from "@/components/ApiContext";
+import { Badge, LoadState, PageHeader, formatDate, useData } from "@/components/ui";
+import { Runbook, Wave } from "@/types/api";
+
+export default function RunbooksPage() {
+  const { api } = useApi(); const runbooks = useData<Runbook[]>("/api/runbooks"); const waves = useData<Wave[]>("/api/migration-waves"); const [selected, setSelected] = useState(""); const [waveId, setWaveId] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  useEffect(() => { if (!selected && runbooks.data?.length) setSelected(runbooks.data[0].id); }, [selected, runbooks.data]);
+  const active = runbooks.data?.find(x => x.id === selected);
+  const generate = async () => { setBusy(true); setError(""); try { const created = await api<Runbook>("/api/runbooks/generate", { method: "POST", body: JSON.stringify({ migrationWaveId: waveId }) }); await runbooks.reload(); setSelected(created.id); setWaveId(""); } catch (e) { setError(e instanceof Error ? e.message : "Unable to generate runbook"); } finally { setBusy(false); } };
+  const updateTask = async (taskId: string, status: string, owner: string, comment: string) => { setError(""); try { await api(`/api/runbooks/${selected}/tasks/${taskId}`, { method: "PUT", body: JSON.stringify({ status, owner, comment }) }); await runbooks.reload(); } catch (e) { setError(e instanceof Error ? e.message : "Unable to update task"); } };
+  return <><PageHeader eyebrow="Migration" title="Runbooks" description="Sequenced cutover activities generated from the standard POC template." />
+    <LoadState loading={runbooks.loading || waves.loading} error={runbooks.error || waves.error}><div className="runbook-layout"><aside className="runbook-list"><div className="generate-box"><p className="eyebrow">Generate</p><select value={waveId} onChange={e => setWaveId(e.target.value)}><option value="">Select a wave</option>{waves.data?.filter(w => !runbooks.data?.some(r => r.migrationWaveId === w.id)).map(w => <option value={w.id} key={w.id}>{w.name}</option>)}</select><button className="button primary" disabled={!waveId || busy} onClick={generate}>{busy ? "Generating…" : "Generate runbook"}</button></div>{runbooks.data?.map(r => <button key={r.id} className={selected === r.id ? "selected" : ""} onClick={() => setSelected(r.id)}><span><strong>{r.name}</strong><small>{r.migrationWaveName}</small></span><Badge value={r.status} /></button>)}</aside><section className="panel runbook-detail">{error && <p className="form-error">{error}</p>}{active ? <><div className="panel-title"><div><p className="eyebrow">{active.migrationWaveName}</p><h2>{active.name}</h2><small>Updated {formatDate(active.updatedAt)}</small></div><Badge value={active.status} /></div><div className="runbook-tasks">{active.tasks.map(task => <article key={task.id}><span className="sequence">{String(task.sequence).padStart(2, "0")}</span><div className="grow"><strong>{task.task}</strong><small>{task.owner}</small></div><select value={task.status} onChange={e => updateTask(task.id, e.target.value, task.owner, task.comment)}>{["Not Started","Ready","In Progress","Completed","Skipped","Blocked"].map(x => <option key={x}>{x}</option>)}</select><Badge value={task.status} /></article>)}</div></> : <div className="empty">Select or generate a runbook.</div>}</section></div></LoadState>
+  </>;
+}

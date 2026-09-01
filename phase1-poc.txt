@@ -1,0 +1,1125 @@
+Create the initial framework and working proof of concept for a greenfield product named 'LGR Transformation and Migration'.
+
+PRODUCT CONTEXT
+
+LGR Transformation and Migration is a multi-tenant SaaS platform intended to support Local Government Reorganisation transformation and cloud migration programmes.
+
+The platform will replace migration information currently maintained across multiple Excel workbooks, Azure Migrate exports, assessment reports, application discovery documents, Azure target-build sheets, IP allocation spreadsheets, migration-wave trackers, runbooks and rollback plans.
+
+The product should become the single source of truth for:
+
+- customer and project administration
+- discovery and inventory
+- application and infrastructure assessment
+- migration decisions
+- Azure target design
+- IP address management
+- migration wave planning
+- migration readiness
+- migration runbooks
+- rollback planning
+- migration execution tracking
+- testing and sign-off
+- post-migration reporting
+
+This is Phase 1 / POC. Do not attempt to build every future product feature.
+
+The POC must prove the following primary journey:
+
+Customer
+→ Project
+→ Application / Server Inventory
+→ Migration Decision
+→ Azure Target
+→ IP Allocation
+→ Migration Wave
+→ Readiness
+→ Runbook
+
+--------------------------------------------------
+1. REPOSITORY AND PROJECT
+--------------------------------------------------
+
+The repository root is:
+
+C:\Projects\lgr-transformation-migration
+
+Product display name:
+LGR Transformation and Migration
+
+Use the following solution name:
+
+LgrTransformationMigration.sln
+
+Use sensible namespaces based on:
+
+LgrTransformationMigration
+
+Before making changes:
+
+1. Inspect the repository.
+2. Inspect docs/source if it exists.
+3. Treat documents under docs/source as authoritative product/design requirements where they are relevant.
+4. Preserve useful existing files.
+5. Do not overwrite existing work unnecessarily.
+6. Check Git status before modifying the repository.
+
+Create or maintain this high-level repository structure:
+
+src/
+  api/
+  web/
+
+tests/
+  api.unit/
+  api.integration/
+
+infra/
+  bicep/
+
+docs/
+  architecture/
+  functional/
+  source/
+
+README.md
+.gitignore
+LgrTransformationMigration.sln
+
+--------------------------------------------------
+2. TECHNOLOGY STACK
+--------------------------------------------------
+
+Backend:
+- ASP.NET Core
+- .NET 10 LTS
+- C#
+- Entity Framework Core 10
+- REST API
+
+Frontend:
+- Next.js 16
+- React 19
+- TypeScript
+- App Router
+
+Local Database:
+- SQL Server Express
+- Entity Framework Core SQL Server provider
+
+Use this local development connection string:
+
+Server=localhost\SQLEXPRESS;Database=LgrTransformationMigration;Trusted_Connection=True;TrustServerCertificate=True;
+
+The database design must remain compatible with Azure SQL Database for future deployment.
+
+Do not require Docker for the POC.
+
+Production target:
+- Microsoft Azure
+
+Future Azure services are expected to include:
+- Azure App Service or approved managed application hosting
+- Azure SQL Database
+- Azure Blob Storage
+- Azure Key Vault
+- Azure Front Door / WAF
+- Microsoft Entra ID
+- Azure Monitor
+- Application Insights
+- Log Analytics
+
+Authentication:
+- Prepare the application architecture for Microsoft Entra ID.
+- Do not make external identity configuration a blocker for local development.
+- Implement a simple development user/tenant context that can later be replaced by Entra ID claims.
+
+Infrastructure:
+- Create an initial Bicep structure.
+- Do not attempt full production Azure deployment in Phase 1.
+
+Testing:
+- xUnit
+- unit tests
+- integration tests
+
+Development:
+- Azure DevOps compatible
+- CI/CD-ready repository structure
+- Infrastructure as Code ready
+
+--------------------------------------------------
+3. ARCHITECTURE PRINCIPLES
+--------------------------------------------------
+
+Follow these principles:
+
+- Keep the POC simple.
+- Use a modular monolith.
+- Do not create microservices.
+- Do not introduce Kubernetes.
+- Prefer standard framework capabilities.
+- Use dependency injection.
+- Use async database/API operations.
+- Keep domain/business logic outside API endpoint handlers.
+- Use DTOs rather than exposing EF entities directly.
+- Enable nullable reference types.
+- Use clear naming.
+- Avoid unnecessary abstractions.
+- Do not add paid third-party dependencies.
+- Keep the architecture suitable for later Azure deployment.
+- Do not leave the repository in a non-building state.
+
+--------------------------------------------------
+4. MULTI-TENANCY
+--------------------------------------------------
+
+Multi-tenancy is a core architectural requirement.
+
+Every customer-owned business entity must contain CustomerId.
+
+Implement a tenant-aware data-access approach from the start.
+
+For development:
+- create a simple TenantContext / CurrentCustomerContext.
+- allow a development customer to be selected/configured locally.
+- structure it so this can later be populated from Microsoft Entra ID claims.
+
+API requests must not accidentally return records from another customer.
+
+Document the multi-tenancy architecture.
+
+IMPORTANT:
+
+Do not use hostname as the database primary key.
+
+Use immutable Guid IDs for database primary keys.
+
+For Server enforce the business uniqueness rule:
+
+CustomerId + Hostname = unique
+
+--------------------------------------------------
+5. CORE DOMAIN MODEL
+--------------------------------------------------
+
+Create the following initial entities.
+
+CUSTOMER
+
+Customer:
+- Id : Guid
+- Name
+- Code
+- Status
+- CreatedAt
+- UpdatedAt
+
+PROJECT
+
+Project:
+- Id : Guid
+- CustomerId
+- Name
+- Description
+- Status
+- PlannedStartDate nullable
+- PlannedEndDate nullable
+- CreatedAt
+- UpdatedAt
+
+A customer can have multiple projects.
+
+APPLICATION
+
+Application:
+- Id : Guid
+- CustomerId
+- ProjectId
+- Name
+- Environment
+- Description
+- Criticality
+- ApplicationType
+- CurrentVersion
+- MigrationScope
+- MigrationStrategy
+- MigrationStatus
+- CreatedAt
+- UpdatedAt
+
+SERVER
+
+Server:
+- Id : Guid
+- CustomerId
+- ProjectId
+- Hostname
+- Environment
+- OperatingSystem
+- IpAddress
+- VCores nullable
+- MemoryMb nullable
+- AllocatedStorageGb nullable
+- PowerStatus
+- MigrationStatus
+- CreatedAt
+- UpdatedAt
+
+Create a database unique constraint:
+
+CustomerId + Hostname
+
+APPLICATION / SERVER RELATIONSHIP
+
+Applications and Servers must support a many-to-many relationship.
+
+Create the required join entity/table explicitly if this produces a cleaner domain model.
+
+MIGRATION DECISION
+
+MigrationDecision:
+- Id : Guid
+- CustomerId
+- ProjectId
+- ApplicationId
+- MigrationScope
+- MigrationStrategy
+- TargetPlatform
+- Reason
+- Risk
+- DecisionStatus
+- DecisionDate nullable
+- CreatedAt
+- UpdatedAt
+
+AZURE TARGET
+
+AzureTarget:
+- Id : Guid
+- CustomerId
+- ProjectId
+- ServerId
+- Subscription
+- ResourceGroup
+- VNet
+- Subnet
+- AzureIp
+- AzureHostname
+- VmSize
+- OperatingSystem
+- BackupPolicy
+- Domain
+- OrganisationalUnit
+- Notes
+- CreatedAt
+- UpdatedAt
+
+One server should have no more than one active target record for the POC.
+
+SUBNET
+
+Subnet:
+- Id : Guid
+- CustomerId
+- ProjectId
+- Name
+- VNetName
+- Cidr
+- Environment
+- CreatedAt
+- UpdatedAt
+
+IP ADDRESS
+
+IpAddress:
+- Id : Guid
+- CustomerId
+- ProjectId
+- SubnetId
+- Address
+- Status
+- ServerId nullable
+- ReservedAt nullable
+- AllocatedAt nullable
+- CreatedAt
+- UpdatedAt
+
+IP address statuses:
+
+Available
+Reserved
+Allocated
+Released
+AzureReserved
+Excluded
+
+Prevent an IP address from being actively allocated to more than one server.
+
+Implement domain/service logic for these transitions:
+
+Available → Reserved
+Reserved → Allocated
+Allocated → Released
+
+Do not allow invalid transitions without validation.
+
+MIGRATION WAVE
+
+MigrationWave:
+- Id : Guid
+- CustomerId
+- ProjectId
+- Name
+- PlannedDate nullable
+- Status
+- Description
+- CreatedAt
+- UpdatedAt
+
+WAVE ASSET
+
+WaveAsset:
+- Id : Guid
+- CustomerId
+- ProjectId
+- MigrationWaveId
+- ApplicationId nullable
+- ServerId nullable
+- Status
+
+Validate that at least ApplicationId or ServerId is supplied.
+
+READINESS CHECK
+
+ReadinessCheck:
+- Id : Guid
+- CustomerId
+- ProjectId
+- ApplicationId nullable
+- ServerId nullable
+- CheckType
+- Status
+- Comment
+- UpdatedAt
+
+Seed readiness check types:
+
+DiscoveryComplete
+ApplicationAssessmentComplete
+DependenciesValidated
+MigrationDecisionApproved
+AzureTargetDefined
+IpAllocated
+BackupConfirmed
+RunbookApproved
+RollbackApproved
+TechnicalTestingDefined
+BusinessTestingDefined
+
+Readiness status values:
+
+NotStarted
+Complete
+AtRisk
+Blocked
+NotApplicable
+
+Calculate overall asset readiness as:
+
+NotReady
+AtRisk
+ReadyWithConditions
+Ready
+Blocked
+
+Keep the initial calculation simple, deterministic and documented.
+
+RUNBOOK
+
+Runbook:
+- Id : Guid
+- CustomerId
+- ProjectId
+- MigrationWaveId
+- Name
+- Status
+- CreatedAt
+- UpdatedAt
+
+RUNBOOK TASK
+
+RunbookTask:
+- Id : Guid
+- RunbookId
+- Sequence
+- Category
+- Task
+- Owner
+- PlannedStart nullable
+- PlannedEnd nullable
+- ActualStart nullable
+- ActualEnd nullable
+- Status
+- Comment
+
+AUDIT EVENT
+
+AuditEvent:
+- Id : Guid
+- CustomerId
+- ProjectId nullable
+- EntityType
+- EntityId
+- Action
+- PropertyName nullable
+- OldValue nullable
+- NewValue nullable
+- ChangedBy
+- ChangedAt
+
+Create the foundation only for audit logging in Phase 1.
+Do not build an overly complex event-sourcing solution.
+
+--------------------------------------------------
+6. LOOKUP / CONFIGURATION MODEL
+--------------------------------------------------
+
+Business values must not be scattered as arbitrary hardcoded strings throughout the application.
+
+Create a simple configurable lookup architecture.
+
+Initial lookup groups:
+
+Environment
+MigrationStrategy
+MigrationScope
+MigrationStatus
+ApplicationCriticality
+WorkloadType
+WaveStatus
+RunbookStatus
+
+Seed at least:
+
+Environment:
+- Prod
+- UAT
+- Dev
+- Test
+
+MigrationStrategy:
+- Rehost
+- Build Ahead
+- Replatform
+- Refactor
+- SaaS
+- Retain
+- Retire
+- Investigate
+
+MigrationScope:
+- In Scope
+- Out of Scope
+- Under Review
+
+MigrationStatus:
+- Not Started
+- In Progress
+- Completed
+- Rolled Back
+- Blocked
+
+ApplicationCriticality:
+- Critical
+- High
+- Medium
+- Low
+
+Lookup architecture must support future customer-specific configuration.
+
+--------------------------------------------------
+7. API
+--------------------------------------------------
+
+Create REST endpoints for:
+
+/api/customers
+/api/projects
+/api/applications
+/api/servers
+/api/migration-decisions
+/api/azure-targets
+/api/subnets
+/api/ip-addresses
+/api/migration-waves
+/api/readiness
+/api/runbooks
+/api/configuration
+
+Implement appropriate CRUD capabilities.
+
+Use:
+
+- DTOs
+- request validation
+- standard API error responses
+- cancellation tokens where appropriate
+- async EF Core operations
+- pagination for list endpoints where appropriate
+- filtering where useful
+- OpenAPI / Swagger
+
+Do not expose EF Core entities directly through API responses.
+
+--------------------------------------------------
+8. DASHBOARD API
+--------------------------------------------------
+
+Create:
+
+GET /api/dashboard/summary
+
+Return summary information including:
+
+- totalApplications
+- totalServers
+- applicationsInScope
+- applicationsMigrated
+- serversMigrated
+- migrationWaves
+- readyAssets
+- blockedAssets
+- availableIpAddresses
+- reservedIpAddresses
+- allocatedIpAddresses
+
+All values must respect the current CustomerId and ProjectId context.
+
+--------------------------------------------------
+9. FRONTEND
+--------------------------------------------------
+
+Create a clean enterprise SaaS user interface.
+
+It should look suitable for a Local Government cloud migration programme.
+
+Do not spend excessive time on advanced visual design.
+
+Create an application shell containing:
+
+- top header
+- left navigation
+- customer/project context
+- main content area
+
+Main navigation:
+
+Dashboard
+
+Customers
+
+Projects
+
+Inventory
+  Applications
+  Servers
+
+Assessment
+  Migration Decisions
+
+Azure Design
+  Target Builds
+  IP Management
+
+Migration
+  Waves
+  Readiness
+  Runbooks
+
+Configuration
+
+--------------------------------------------------
+10. FRONTEND POC PAGES
+--------------------------------------------------
+
+Build working pages for:
+
+1. Dashboard
+2. Customers
+3. Projects
+4. Applications
+5. Servers
+6. Migration Decisions
+7. Target Builds
+8. IP Management
+9. Migration Waves
+10. Readiness
+11. Runbooks
+12. Configuration
+
+Once API functionality exists, the pages must use the real .NET API.
+
+Do not leave the final POC relying only on hardcoded frontend mock data.
+
+--------------------------------------------------
+11. DASHBOARD
+--------------------------------------------------
+
+Create summary cards for:
+
+Applications
+Servers
+Migration Waves
+Ready
+Blocked
+Migrated
+Available IPs
+
+Also display basic migration-status and wave information.
+
+The dashboard should immediately give a Project Manager or Migration Architect an understanding of the programme status.
+
+--------------------------------------------------
+12. APPLICATION VIEW
+--------------------------------------------------
+
+Display:
+
+Application Name
+Environment
+Criticality
+Application Type
+Current Version
+Migration Scope
+Migration Strategy
+Migration Status
+Associated Servers
+
+Provide basic create/edit functionality.
+
+--------------------------------------------------
+13. SERVER VIEW
+--------------------------------------------------
+
+Display:
+
+Hostname
+Environment
+Associated Applications
+Current IP
+Operating System
+vCPU
+Memory
+Storage
+Power Status
+Migration Status
+Azure Target
+
+Provide search/filter capability.
+
+--------------------------------------------------
+14. AZURE TARGET VIEW
+--------------------------------------------------
+
+Display:
+
+Server
+Azure Hostname
+Azure IP
+Subscription
+Resource Group
+VNet
+Subnet
+VM Size
+Operating System
+Backup Policy
+Domain
+OU
+Notes
+
+--------------------------------------------------
+15. IP MANAGEMENT
+--------------------------------------------------
+
+Create a practical IP management page.
+
+At subnet level display:
+
+Subnet Name
+VNet
+CIDR
+Total Addresses
+Available
+Reserved
+Allocated
+
+At IP-address level display:
+
+IP
+Status
+Server
+Reservation Date
+Allocation Date
+
+Allow:
+
+Available → Reserved
+Reserved → Allocated
+Allocated → Released
+
+Prevent duplicate active allocations.
+
+For POC seed data, it is acceptable to create manageable sample address records rather than expanding a very large CIDR into thousands of database rows.
+
+Document the chosen approach.
+
+--------------------------------------------------
+16. MIGRATION WAVE PLANNING
+--------------------------------------------------
+
+Display:
+
+Wave
+Planned Date
+Applications
+Servers
+Ready
+Blocked
+Migration Status
+
+Allow applications and servers to be associated with migration waves.
+
+Provide a wave details page showing associated assets and readiness.
+
+--------------------------------------------------
+17. READINESS
+--------------------------------------------------
+
+Create a readiness page showing checks for each application/server.
+
+Display:
+
+Asset
+Check
+Status
+Comment
+
+Calculate and show the overall status:
+
+NotReady
+AtRisk
+ReadyWithConditions
+Ready
+Blocked
+
+Provide a simple summary by migration wave.
+
+--------------------------------------------------
+18. RUNBOOK
+--------------------------------------------------
+
+Allow a runbook to be generated for a migration wave.
+
+Create a default runbook template containing:
+
+Pre-Migration Checks
+Backup Validation
+Network Validation
+Application Preparation
+Stop Application Services
+Migration Activity
+Start Azure Workload
+DNS / Connectivity Validation
+Technical Validation
+Business Validation
+Monitoring Validation
+Backup Validation
+Migration Completion
+
+Generated tasks should have sequence numbers and statuses.
+
+Allow task status to be updated.
+
+--------------------------------------------------
+19. DEVELOPMENT SEED DATA
+--------------------------------------------------
+
+Create realistic development seed data.
+
+Customer:
+
+Demo Council
+
+Project:
+
+LGR Azure Transformation Programme
+
+Create at least:
+
+- 5 applications
+- 10 servers
+- application/server relationships
+- migration decisions
+- 2 VNets represented through subnet data where appropriate
+- 2 subnets
+- sample IP address pools
+- 3 migration waves
+- readiness checks
+- Azure target examples
+- at least one generated runbook
+
+Use realistic but fictional Local Government workloads such as:
+
+Housing Management
+Revenues and Benefits
+Document Management
+Environmental Services
+Finance
+
+Do not use real customer-sensitive information.
+
+Make the seed data useful for demonstrating:
+
+- dashboard
+- inventory
+- IP allocation
+- migration strategy
+- wave planning
+- readiness
+- runbook
+
+--------------------------------------------------
+20. DATABASE
+--------------------------------------------------
+
+Use:
+
+Entity Framework Core 10
+Microsoft.EntityFrameworkCore.SqlServer
+
+Local development connection:
+
+Server=localhost\SQLEXPRESS;Database=LgrTransformationMigration;Trusted_Connection=True;TrustServerCertificate=True;
+
+Create the initial EF Core migration.
+
+Ensure:
+
+- relationships are correctly configured
+- useful indexes exist
+- CustomerId is indexed where appropriate
+- CustomerId + Hostname uniqueness is enforced
+- delete behaviour is deliberately configured
+- migrations are reproducible
+
+Do not store secrets in source control.
+
+Use configuration/environment variables for connection settings.
+
+--------------------------------------------------
+21. TESTING
+--------------------------------------------------
+
+Create:
+
+tests/api.unit
+tests/api.integration
+
+Implement tests for at least:
+
+1. Customer/tenant isolation.
+2. CustomerId + Hostname uniqueness.
+3. Application CRUD.
+4. Server CRUD.
+5. IP duplicate allocation prevention.
+6. IP status transition validation.
+7. Migration-wave CRUD.
+8. Wave asset association.
+9. Readiness calculation.
+10. Runbook generation.
+11. Dashboard summary customer isolation.
+
+Use an appropriate isolated test database strategy.
+
+Do not make tests depend on a developer manually cleaning data between runs.
+
+--------------------------------------------------
+22. DOCUMENTATION
+--------------------------------------------------
+
+Create or update:
+
+README.md
+
+docs/architecture/POC_Architecture.md
+
+docs/architecture/Data_Model.md
+
+docs/architecture/ADR-001-multitenancy.md
+
+docs/architecture/ADR-002-primary-keys.md
+
+docs/architecture/ADR-003-modular-monolith.md
+
+docs/functional/POC_Functional_Scope.md
+
+Document:
+
+- product purpose
+- architecture
+- repository structure
+- local development
+- multi-tenancy
+- entity relationships
+- API structure
+- frontend structure
+- POC scope
+- exclusions
+- future Azure deployment considerations
+
+README.md must include exact Windows PowerShell commands for:
+
+- prerequisites
+- restoring .NET packages
+- database connection configuration
+- creating/applying EF migrations
+- running the API
+- running the frontend
+- running API tests
+- building the API
+- building the frontend
+
+--------------------------------------------------
+23. GIT / SECURITY
+--------------------------------------------------
+
+Create/update .gitignore appropriately.
+
+Never commit:
+
+- database passwords
+- secrets
+- tokens
+- .env.local
+- user-specific development settings
+
+Do not modify files outside this repository.
+
+Do not perform destructive Git operations.
+
+Do not push anything remotely.
+
+--------------------------------------------------
+24. POC OUT OF SCOPE
+--------------------------------------------------
+
+Do NOT implement the following in Phase 1:
+
+- Azure Migrate file import
+- SQL assessment import
+- SSIS assessment
+- SSRS assessment
+- linked-server discovery
+- automated dependency discovery
+- direct Azure deployment
+- Azure VM migration execution
+- database migration execution
+- ServiceNow integration
+- CMDB integration
+- automated DNS changes
+- automated firewall changes
+- Power BI
+- billing
+- licensing engine
+- AI recommendations
+- multi-cloud
+- Kubernetes
+- microservices
+
+Leave clean extension points where appropriate but do not build speculative frameworks for these features.
+
+--------------------------------------------------
+25. PHASE 1 SUCCESS CRITERIA
+--------------------------------------------------
+
+Phase 1 is successful when I can locally:
+
+1. Start SQL Server Express.
+2. Apply the EF database migration.
+3. Start the .NET API.
+4. Start the Next.js web application.
+5. Open the dashboard.
+6. Select/use the Demo Council project.
+7. View applications.
+8. View servers.
+9. Record a migration decision.
+10. View an Azure target.
+11. Reserve and allocate an IP.
+12. Create/view migration waves.
+13. View readiness.
+14. Generate/view a wave runbook.
+15. Run the automated tests successfully.
+
+--------------------------------------------------
+26. EXECUTION INSTRUCTIONS
+--------------------------------------------------
+
+Work autonomously through the implementation.
+
+Follow this order:
+
+1. Inspect repository and current Git status.
+2. Inspect docs/source.
+3. Establish solution/project structure.
+4. Create backend domain/data architecture.
+5. Configure SQL Server / EF Core.
+6. Create migration and seed data.
+7. Create API endpoints.
+8. Build API.
+9. Create and run API tests.
+10. Create frontend.
+11. Integrate frontend with API.
+12. Build frontend.
+13. Run tests again.
+14. Fix build errors, TypeScript errors, lint errors and failing tests.
+15. Review the implementation against this prompt.
+16. Update documentation.
+
+Do not stop merely because files have been generated.
+
+Continue until:
+
+- dotnet build succeeds
+- automated API tests succeed
+- frontend production build succeeds
+
+If something cannot be completed because of a genuine local-machine dependency, complete everything else and document the exact blocker and resolution command.
+
+At completion print a concise report containing:
+
+CREATED
+- major components created
+
+ARCHITECTURE
+- important architectural decisions
+
+DATABASE
+- migrations and seed data created
+
+TESTING
+- tests executed and results
+
+HOW TO RUN
+- exact PowerShell commands for API
+- exact PowerShell commands for frontend
+- exact PowerShell commands for tests
+
+POC LIMITATIONS
+- what remains intentionally outside Phase 1
+
+NEXT PHASE
+- recommended Phase 2 work
+
+Do not begin Phase 2 automatically.
+```

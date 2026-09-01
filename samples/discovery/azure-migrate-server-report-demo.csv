@@ -1,0 +1,8 @@
+Id,Server,Environment,Migration Intent,Operating System,IPv4/IPv6,Support status,Memory (MB),Disks(#),vCores(#),Allocated storage (GB),OS Family,Last updated at,Power status,Discovery method
+,DC-HOU-APP01,Prod,Rehost,Windows Server 2022,10.20.10.21,,16384,3,4,250,,,On,
+,DC-HOU-SQL01,Prod,Rehost,Windows Server 2022,10.20.10.22,,65536,5,8,800,,,On,
+,DC-REV-APP01,Prod,Rehost,Windows Server 2022,10.20.10.31,,16384,3,4,300,,,On,
+demo-lib-01,DC-LIB-APP01,Development,Rehost,Windows Server 2022,10.20.30.21,Supported,16384,2,4,200,Windows,2026-08-23T09:31:00Z,On,Azure Migrate appliance
+demo-lib-02,DC-LIB-WEB01,UAT,Replatform,Ubuntu Server 24.04,10.20.30.22,Supported,8192,2,2,120,Linux,2026-08-23T09:32:00Z,On,Azure Migrate appliance
+demo-parks-01,DC-PARKS-APP01,Training Lab,Investigate,Windows Server 2022,10.20.40.21,Unknown,8192,2,2,150,Windows,2026-08-23T09:33:00Z,On,Azure Migrate appliance
+demo-reject-01,,Production,Rehost,Windows Server 2022,10.20.50.21,Supported,not-a-number,1,2,100,Windows,2026-08-23T09:34:00Z,On,Azure Migrate appliance

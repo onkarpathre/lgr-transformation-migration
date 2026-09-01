@@ -1,0 +1,43 @@
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+TestResults/
+coverage/
+.vs/
+.dotnet/
+.nuget/
+
+# Node / Next.js
+**/node_modules/
+**/.next/
+**/out/
+**/.turbo/
+npm-debug.log*
+.npm-cache/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+**/.env.local
+appsettings.Local.json
+appsettings.*.local.json
+runtime/
+**/runtime/
+*.publishsettings
+*.pfx
+*.cer
+
+# Tools / editors / OS
+.codex-temp/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Azure deployment output
+infra/bicep/*.json
+infra/bicep/.bicep/

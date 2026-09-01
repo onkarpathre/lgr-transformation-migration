@@ -1,0 +1,58 @@
+codex exec --sandbox workspace-write "Fix the failing Phase 1 integration tests.
+
+CURRENT PROBLEM
+
+All 8 integration tests fail from tests/api.integration/LgrWebApplicationFactory.cs with:
+
+System.InvalidOperationException:
+Services for database providers 'Microsoft.EntityFrameworkCore.SqlServer' and 'Microsoft.EntityFrameworkCore.Sqlite' have been registered in the same service provider.
+
+The production API correctly uses SQL Server / Azure SQL compatible EF Core configuration.
+
+The integration tests are intended to use an isolated SQLite database.
+
+REQUIREMENTS
+
+1. Inspect:
+   - src/api/Program.cs
+   - the application's DbContext registration
+   - tests/api.integration/LgrWebApplicationFactory.cs
+   - integration test project packages
+
+2. Preserve SQL Server as the production/local application database provider.
+
+3. Preserve SQLite as the integration-test database provider unless there is a strong technical reason not to.
+
+4. Fix WebApplicationFactory so the production DbContext registration and associated DbContextOptions are completely removed/replaced before registering SQLite.
+
+5. Ensure only one EF Core database provider is active for each integration-test service provider.
+
+6. Do not modify production application behaviour merely to make tests pass.
+
+7. Keep tenant isolation and seed behaviour intact.
+
+8. Ensure each integration-test database is isolated and deterministic.
+
+9. Dispose SQLite connections/resources correctly.
+
+10. Run:
+   dotnet build .\LgrTransformationMigration.sln --configuration Release
+   dotnet test .\LgrTransformationMigration.sln --configuration Release --no-build
+
+11. Fix any resulting test setup issues.
+
+SUCCESS CRITERIA
+
+- 13 existing unit tests continue to pass.
+- All 8 integration tests pass.
+- Expected total: 21 passed, 0 failed.
+- Production remains configured for SQL Server.
+- Integration tests use only SQLite.
+- No production data or schema is deleted.
+
+At completion, explain:
+- root cause
+- files changed
+- exact DI/database-provider fix
+- final build result
+- final test result."
