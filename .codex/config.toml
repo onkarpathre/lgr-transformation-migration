@@ -1,0 +1,16 @@
+# Allow Codex to read the complete project AGENTS.md.
+project_doc_max_bytes = 65536
+
+# Main agent can modify files inside the repository.
+sandbox_mode = "workspace-write"
+
+# Ask before actions that require additional permission.
+approval_policy = "on-request"
+
+[windows]
+sandbox = "elevated"
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 5
+interrupt_message = true
