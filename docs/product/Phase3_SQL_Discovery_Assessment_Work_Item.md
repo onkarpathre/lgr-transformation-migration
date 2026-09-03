@@ -23,7 +23,7 @@ traceability:
 - **Product Owner state:** `READY_FOR_ARCHITECTURE`
 - **Formal approval:** Pending a named Product Owner/PRB decision with date, scope and evidence link under D-01. This document does not manufacture that approval.
 - **Scope interpretation:** Roadmap Phase 3 is the repository delivery increment following the Phase 1 POC and Phase 2 Discovery Import implementation. It is an MVP-completion increment within Product Specification Phase 1, not Product Specification "Phase 3 - Scale and extend", and it does not authorise AI, direct integration, multi-cloud or automated provisioning.
-- **Roadmap evidence:** `docs/product/PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md` is absent from the current branch, but its draft was inspected from local branch `feature/agilisys-ui-theme` at commit `3dbc2fdca87cd0ea550e3d2928f068c6caad52fb`. It must be restored to this branch or formally superseded and approved before implementation.
+- **Roadmap evidence:** `docs/product/PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md` is present in the current branch. Its terminology confirms that this is Roadmap Phase 3 within Product Specification Phase 1 MVP; its presence does not supply any of the pending human approvals required before implementation.
 
 ## Business objective
 
@@ -216,7 +216,6 @@ handoff:
   blockers:
     - "Named Product Owner/PRB approval (D-01) is pending before implementation."
     - "Q-01 / OD-07 and tenancy conflict require authorised architecture decisions."
-    - "PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md is absent from this branch; the draft at 3dbc2fd must be restored or superseded and approved."
   approvals: []
   requested_action: "Produce the Phase 3 Architecture Work Package and proposed decision records; identify every human approval that still blocks implementation."
 ```

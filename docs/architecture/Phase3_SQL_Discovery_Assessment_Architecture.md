@@ -21,7 +21,7 @@ traceability:
 - **Incoming work item:** PH3-SQL-001
 - **Architecture exit state:** `BLOCKED_ARCHITECTURE_DECISION`
 - **Reason:** the architecture is implementation-ready as a proposal, but Q-01/OD-07, the ADR-001/HLD DD-05 tenancy conflict, D-01 product/PRB scope approval and I-06 test-service agreement lack named human approval evidence. `AGENTS.md` prohibits agents from closing those gates unilaterally.
-- **Roadmap baseline:** `docs/product/PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md` is absent from the current branch. Its draft was inspected from local branch `feature/agilisys-ui-theme` at commit `3dbc2fdca87cd0ea550e3d2928f068c6caad52fb`; restore it here or approve a superseding roadmap link before implementation hand-off. Its terminology confirms this is Roadmap Phase 3 within Product Specification Phase 1 MVP.
+- **Roadmap baseline:** `docs/product/PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md` is present in the current branch. Its terminology confirms this is Roadmap Phase 3 within Product Specification Phase 1 MVP; its presence does not close any pending product, architecture, security or test approval gate.
 
 ## Repository findings
 
@@ -451,7 +451,6 @@ handoff:
     - "ADR-001 versus HLD DD-05 requires TDA/Information Security decision."
     - "Synthetic CSV contracts/fixtures require named human approval."
     - "I-06 frontend and SQL Server test approach requires test-authority agreement."
-    - "PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md is absent from this branch; restore/supersede the draft at 3dbc2fd."
   approvals: []
   requested_action: "Do not implement; produce a scoped implementation plan and expected file/migration inventory for review after the blocking approvals are obtained."
 ```
