@@ -12,7 +12,8 @@ traceability:
   dependencies: ["D-01", "D-07", "D-08", "D-11", "D-13"]
   issues: ["I-03", "I-04", "I-06", "I-08"]
   open_questions: ["Q-01"]
-  approvals: []
+  approvals:
+    - "Product Owner JP (GitHub reviewer: opathre), 8 September 2026: approved for local POC implementation of PH3-SQL-001 subject to the Pull Request restrictions — https://github.com/onkarpathre/lgr-transformation-migration/pull/1#pullrequestreview-5147270679"
 ```
 
 ## Work item control
@@ -21,7 +22,8 @@ traceability:
 - **Title:** SQL Discovery and Assessment
 - **Priority:** Required prerequisite package for the next repository delivery increment
 - **Product Owner state:** `READY_FOR_ARCHITECTURE`
-- **Formal approval:** Pending a named Product Owner/PRB decision with date, scope and evidence link under D-01. This document does not manufacture that approval.
+- **Product Owner approval:** `RECEIVED — LOCAL POC IMPLEMENTATION ONLY`
+- **Formal approval:** JP, Product Owner, approved local POC implementation on 8 September 2026, subject to the restrictions recorded below and in Pull Request #1. This is not PRB, architecture, TDA, Information Security, production or release approval.
 - **Scope interpretation:** Roadmap Phase 3 is the repository delivery increment following the Phase 1 POC and Phase 2 Discovery Import implementation. It is an MVP-completion increment within Product Specification Phase 1, not Product Specification "Phase 3 - Scale and extend", and it does not authorise AI, direct integration, multi-cloud or automated provisioning.
 - **Roadmap evidence:** `docs/product/PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md` is present in the current branch. Its terminology confirms that this is Roadmap Phase 3 within Product Specification Phase 1 MVP; its presence does not supply any of the pending human approvals required before implementation.
 
@@ -145,7 +147,7 @@ The draft roadmap's AC-01 to AC-14 are retained as source traceability: AC-01 ma
 
 ### Entry dependencies
 
-- D-01: named Product Owner/PRB approval of scope, investment and phasing.
+- D-01: Product Owner approval for local POC implementation has been received; PRB scope, investment and phasing approval remains outstanding.
 - Q-01 / HLD OD-07: named Solution Architect/TDA approval of the single application stack.
 - TDA resolution of the conflict between ADR-001 shared tenant-aware persistence and HLD DD-05 database-per-customer wording.
 - Approved synthetic SQL Instance and Database CSV contracts and fixtures; no customer data.
@@ -186,9 +188,18 @@ This work item is done only when:
 
 ## Product Owner approval
 
-**Agent recommendation:** Approve the scope for architecture review only.
+**Decision:** Approved for local POC implementation of PH3-SQL-001 subject to the restrictions documented in the Pull Request.
 
-**Human Product Owner / PRB approval:** Pending. Required approval evidence must include approver name/role, decision, date, scope, conditions and link. `READY_FOR_ARCHITECTURE` is a hand-off state and is not permission to implement.
+- **Approver:** JP
+- **Role:** Product Owner
+- **GitHub reviewer account:** `opathre`
+- **Date:** 8 September 2026
+- **Approved scope:** Local POC implementation using feature-branch development and testing.
+- **Restrictions:** Feature-branch development and testing only; no production deployment; no real customer data; no destructive database changes; no migration execution; no approval of ADR-006 or ADR-007.
+- **Pull Request:** https://github.com/onkarpathre/lgr-transformation-migration/pull/1
+- **Approval permalink:** https://github.com/onkarpathre/lgr-transformation-migration/pull/1#pullrequestreview-5147270679
+
+This is a Product Owner decision only. It does not claim PRB, TDA, Information Security, architecture, production or release approval. ADR-006 and ADR-007 remain `Proposed`; `READY_FOR_ARCHITECTURE` remains the Product Owner hand-off state, and the Product Owner decision does not itself satisfy the architecture gate.
 
 ## Hand-off
 
@@ -208,14 +219,18 @@ handoff:
   evidence:
     - "Product Specification V0.1"
     - "Existing Phase 1 and Phase 2 functional documentation"
-  decisions: []
+    - "https://github.com/onkarpathre/lgr-transformation-migration/pull/1"
+    - "https://github.com/onkarpathre/lgr-transformation-migration/pull/1#pullrequestreview-5147270679"
+  decisions:
+    - "JP, Product Owner, 8 September 2026: approved local POC implementation of PH3-SQL-001 subject to the Pull Request restrictions."
   assumptions:
     - "Phase 3 is the next repository increment and does not enable Product Specification Phase 3 AI or automation scope."
   risks: ["R-01", "R-02", "R-03", "R-06", "R-09"]
   defects: []
   blockers:
-    - "Named Product Owner/PRB approval (D-01) is pending before implementation."
+    - "PRB approval of scope, investment and phasing remains outstanding; the Product Owner decision does not constitute PRB approval."
     - "Q-01 / OD-07 and tenancy conflict require authorised architecture decisions."
-  approvals: []
+  approvals:
+    - "Product Owner JP (GitHub reviewer: opathre), 8 September 2026 — local POC implementation only: https://github.com/onkarpathre/lgr-transformation-migration/pull/1#pullrequestreview-5147270679"
   requested_action: "Produce the Phase 3 Architecture Work Package and proposed decision records; identify every human approval that still blocks implementation."
 ```

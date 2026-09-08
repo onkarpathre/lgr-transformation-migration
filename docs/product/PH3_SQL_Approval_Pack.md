@@ -12,14 +12,19 @@ traceability:
   dependencies: ["D-01", "D-03", "D-04", "D-05", "D-07", "D-08", "D-10", "D-11", "D-13"]
   issues: ["I-01", "I-02", "I-03", "I-04", "I-06", "I-08"]
   open_questions: ["Q-01", "Q-06", "Q-09"]
-  approvals: []
+  approvals:
+    - "Product Owner JP (GitHub reviewer: opathre), 8 September 2026: approved for local POC implementation of PH3-SQL-001 subject to the Pull Request restrictions — https://github.com/onkarpathre/lgr-transformation-migration/pull/1#pullrequestreview-5147270679"
 ```
 
 **Work item:** PH3-SQL-001  
 **Current quality gate:** `PHASE 3 BLOCKED`  
-**Purpose:** Present the existing Phase 3 scope, proposed decisions, source contracts and test approach for named human approval. This pack records no approval and authorises no implementation.
+**Product Owner approval:** `RECEIVED — LOCAL POC IMPLEMENTATION ONLY`
+
+**Purpose:** Record the Product Owner's local POC implementation approval and present the remaining proposed decisions, source contracts and test approach for the named human approvals that are still required. This pack grants no PRB, architecture, TDA, Information Security, production or release approval.
 
 ## A. Product Owner / PRB approval
+
+The Product Owner approval recorded below applies only to local POC implementation on the feature branch and under the Pull Request restrictions. No PRB approval has been supplied or inferred.
 
 ### Business objective
 
@@ -72,23 +77,28 @@ Provide a governed, tenant-isolated record of discovered Microsoft SQL Server in
 
 ### Dependencies
 
-- D-01 Product Owner/PRB scope, investment and phasing approval.
+- D-01 Product Owner approval for local POC implementation has been received; PRB scope, investment and phasing approval remains outstanding.
 - Solution Architect/TDA approval of ADR-006 and closure of Q-01/HLD OD-07.
 - TDA/Information Security approval of ADR-007 for the non-production increment, with production tenancy separately governed.
 - Product Owner, Architect and DBA/Discovery SME approval of both CSV v1 contracts and synthetic fixtures.
 - Test-authority agreement for frontend and SQL Server tools, environments and entry/exit criteria.
 - Green same-commit baseline evidence, or a documented environment-only restore blocker that is resolved before implementation evidence is accepted.
 
-### Approval template
+### Recorded Product Owner approval
 
 ```text
-Decision: APPROVED / APPROVED WITH CONDITIONS / REJECTED
-Approver:
-Role:
-Date:
-Conditions:
-Evidence link:
+Decision: Approved for local POC implementation of PH3-SQL-001 subject to the restrictions documented in the Pull Request.
+Approver: JP
+GitHub reviewer account: opathre
+Role: Product Owner
+Date: 8 September 2026
+Approved scope: Local POC implementation on the feature branch, using synthetic test data and reversible changes.
+Restrictions: Feature-branch development and testing only; no production deployment; no real customer data; no destructive database changes; no migration execution; no approval of ADR-006 or ADR-007.
+Pull Request: https://github.com/onkarpathre/lgr-transformation-migration/pull/1
+Approval evidence: https://github.com/onkarpathre/lgr-transformation-migration/pull/1#pullrequestreview-5147270679
 ```
+
+This Product Owner decision does not constitute PRB approval, does not accept or close an architecture decision, and does not lift any production or release gate.
 
 ## B. Architecture / TDA approval
 
@@ -250,37 +260,96 @@ Conditions:
 Evidence link:
 ```
 
-## Baseline retry evidence
+## Current baseline validation evidence
 
-**Evidence recorded:** 2026-09-03T20:24:07Z  
-**Branch:** `feature/sql-discovery-assessment`  
-**Commit:** `1ab5b62ca454a45931c886717b085323ea0e6673`  
-**Change context:** The working-tree changes covered by this pack are documentation-only.
+- **Evidence recorded:** 8 September 2026
+- **Tester role:** Tester Agent workflow validation — not an independent human review
+- **Branch:** `feature/sql-discovery-assessment`
+- **Commit under test:** `b7a7fef948fdc980bf89b0edfeb4f585af052f0b`
+- **Execution provenance:** Onkar is currently the sole contributor and manually executed the .NET, SQL connectivity and EF checks in normal PowerShell on 8 September 2026. Codex did not execute those manually supplied commands and did not rerun them because its network restrictions had previously blocked NuGet access. The frontend results were already recorded for the same commit.
 
-### .NET baseline
+**Scope:** Existing Phase 1/2 technical baseline only. No Phase 3 application functionality, schema or migration was created or changed by the baseline validation.
 
-- SDK: .NET SDK `10.0.400`.
-- Command: `dotnet restore .\LgrTransformationMigration.sln`.
-- Result: **FAILED - ENVIRONMENT-ONLY RESTORE BLOCKER**.
-- Configured feed: enabled `nuget.org` at `https://api.nuget.org/v3/index.json`; no repository NuGet configuration or package lock file was found.
-- Affected projects: `src/api/LgrTransformationMigration.Api.csproj`, `tests/api.integration/LgrTransformationMigration.Api.IntegrationTests.csproj` and `tests/api.unit/LgrTransformationMigration.Api.UnitTests.csproj`.
-- Exact common error:
+The Product Work Package is traced and the named Product Owner approval for local POC implementation has now been received. That approval is necessary but not sufficient to satisfy the architecture, security, production or release gates: ADR-006/Q-01 and ADR-007 remain `Proposed`, the Architecture Work Package remains `BLOCKED_ARCHITECTURE_DECISION`, and no Implementation Work Package in `READY_FOR_TEST` state was supplied. The approval does not authorise work outside its documented feature-branch POC restrictions.
 
-```text
-error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json.
-error NU1301:   An attempt was made to access a socket in a way forbidden by its access permissions. (api.nuget.org:443)
-error NU1301:   An attempt was made to access a socket in a way forbidden by its access permissions.
-```
+### Toolchain and .NET 10 confirmation
 
-The socket-access failure occurred while contacting the configured external feed and supports an environment-only classification for this restore attempt. It does not establish that the source baseline passes. `dotnet build` and `dotnet test` were not run because restore did not succeed; same-commit .NET restore/build/test evidence remains missing.
+- .NET SDK: `10.0.400`.
+- ASP.NET Core/runtime: `10.0.11`.
+- EF CLI (`dotnet-ef`): `10.0.11`.
 
-### Frontend baseline
+**Conclusion:** the manually verified backend platform uses .NET 10 and EF 10. This technical result does not approve ADR-006 or close Q-01.
 
-- Toolchain: Node.js `v24.18.0`, npm `11.16.0`, Next.js `16.2.12`.
-- `npm.cmd run lint`: **PASS**, exit code 0.
-- `npm.cmd run build`: **PASS**, exit code 0; optimized production build completed and emitted 16 routes.
-- The working directory was returned to the repository root after the commands. The build-generated `next-env.d.ts` delta was removed so the approval-preparation change set remains documentation-only.
+### Checks and results
+
+| Check | Provenance | Result |
+|---|---|---|
+| Commit alignment | Supplied verified evidence | PASS; tested commit `b7a7fef948fdc980bf89b0edfeb4f585af052f0b`. |
+| Restore: API, unit-test and integration-test projects | Manually executed by Onkar in normal PowerShell on 8 September 2026 | PASS; all three projects restored successfully. |
+| Release build | Manually executed by Onkar in normal PowerShell on 8 September 2026 | PASS; 0 warnings and 0 errors. |
+| Unit tests | Manually executed by Onkar in normal PowerShell on 8 September 2026 | PASS; 32 passed, 0 failed, 0 skipped. |
+| Integration tests | Manually executed by Onkar in normal PowerShell on 8 September 2026 | PASS; 23 passed, 0 failed, 0 skipped. |
+| Combined .NET tests | Manually executed by Onkar in normal PowerShell on 8 September 2026 | PASS; 55 passed, 0 failed, 0 skipped. |
+| SQL Server Express connectivity | Manually executed by Onkar in normal PowerShell on 8 September 2026 | PASS; connection to the local SQL Server Express instance succeeded. |
+| EF migration history/status | Manually executed by Onkar in normal PowerShell on 8 September 2026 | PASS; `20260823111854_InitialCreate` and `20260824181918_AddDiscoveryImport` were listed and neither was reported as pending. |
+| EF pending-model-change check | Manually executed by Onkar in normal PowerShell on 8 September 2026 | PASS; `No changes have been made to the model since the last migration.` |
+| Frontend lint | Evidence already recorded for the tested commit | PASS. |
+| Frontend production build | Evidence already recorded for the tested commit | PASS; 16 routes emitted. |
+
+### API/frontend configuration consistency
+
+Static configuration is internally consistent for the documented local-development route:
+
+- API HTTP launch URL: `http://localhost:5000` (the HTTPS profile additionally exposes `https://localhost:7001`).
+- Frontend `.env.example` and `ApiContext` fallback API base: `http://localhost:5000`; no local `.env` override or process-level `NEXT_PUBLIC_API_BASE_URL` was present during the build.
+- API allowed origin: `http://localhost:3000`, matching the default Next.js origin.
+- Frontend headers `X-Customer-Id`, `X-Project-Id` and `X-User-Name` exactly match `CurrentCustomerContext`.
+
+This remains static configuration evidence; no additional API/frontend runtime-integration claim is made by this update.
+
+### SQL Server migration status
+
+- Onkar's manual normal-PowerShell check on 8 September 2026 connected successfully to the local SQL Server Express instance.
+- EF listed `20260823111854_InitialCreate` and `20260824181918_AddDiscoveryImport`; neither migration was reported as pending.
+- The EF model check returned: `No changes have been made to the model since the last migration.`
+- These are read-only baseline status results. This evidence update does not change the database schema, migrations or migration history.
+
+### Tester baseline decision
+
+**Recommendation:** `PASS` for technical baseline acceptance. The required same-commit restore, Release build, .NET unit and integration tests, SQL connectivity, EF migration/model checks, frontend lint and frontend production build are now evidenced as passing.
+
+**Baseline state:** `BASELINE PASSED`
+
+**Approval boundary:** `BASELINE PASSED` is a technical result only. Product Owner approval for local POC implementation has been received, but the overall production/release quality gate remains `PHASE 3 BLOCKED` by the approvals and hand-offs listed below.
+
+**Remaining human/governance blockers:**
+
+- PRB approval of scope, investment and phasing; the Product Owner review does not constitute PRB approval.
+- Solution Architect/TDA approval of ADR-006 and closure of Q-01/HLD OD-07.
+- Solution Architect/TDA and Information Security approval of ADR-007 for the non-production increment; production tenancy remains separately governed.
+- Product Owner, Architect and DBA/Discovery SME approval of both CSV v1 contracts and synthetic fixtures.
+- Test-authority approval of the proposed tools, environment and entry/exit criteria.
+- An Architecture Work Package in `READY_FOR_DEVELOPMENT` state and, before implementation testing, an Implementation Work Package in `READY_FOR_TEST` state.
 
 ## Approval record status
 
-No named human approval has been entered in this pack. Until the required approvers complete the relevant templates and durable evidence is linked from the authoritative work package/ADRs, the quality gate remains `PHASE 3 BLOCKED` and implementation must not begin.
+### Product Owner evidence record
+
+- **Decision:** Approved for local POC implementation of PH3-SQL-001 subject to the restrictions documented in the Pull Request.
+- **Approver:** JP
+- **Role:** Product Owner
+- **GitHub reviewer account:** `opathre`
+- **Date:** 8 September 2026
+- **Pull Request:** https://github.com/onkarpathre/lgr-transformation-migration/pull/1
+- **Approval permalink:** https://github.com/onkarpathre/lgr-transformation-migration/pull/1#pullrequestreview-5147270679
+- **Restrictions:** Feature-branch development and testing only; no production deployment; no real customer data; no destructive database changes; no migration execution; no approval of ADR-006 or ADR-007.
+
+### Quality Manager gate assessment
+
+- **Technical baseline:** `BASELINE PASSED`
+- **Product Owner approval:** `RECEIVED — LOCAL POC IMPLEMENTATION ONLY`
+- **ADR-006:** `Proposed`
+- **ADR-007:** `Proposed`
+- **Production/release decision:** `BLOCKED_PENDING_HUMAN_DECISION`
+
+The Product Owner approval is genuine and evidenced, but it does not constitute PRB, TDA, Information Security, architecture, production or release approval. The overall production/release gate remains blocked until the remaining named approvers complete their decisions and the required architecture, implementation, test and quality hand-offs are evidenced. No autonomous merge or production action follows.
