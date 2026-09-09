@@ -1,4 +1,5 @@
 using LgrTransformationMigration.Api.Contracts;
+using LgrTransformationMigration.Api.Infrastructure;
 using LgrTransformationMigration.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -6,6 +7,7 @@ namespace LgrTransformationMigration.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/sql-instances")]
+[ServiceFilter(typeof(SqlDiscoveryAssessmentFeatureFilter))]
 public sealed class SqlInstancesController(SqlInventoryService service) : ControllerBase
 {
     [HttpGet]
@@ -69,6 +71,7 @@ public sealed class SqlInstancesController(SqlInventoryService service) : Contro
 
 [ApiController]
 [Route("api/v1/sql-databases")]
+[ServiceFilter(typeof(SqlDiscoveryAssessmentFeatureFilter))]
 public sealed class SqlDatabasesController(SqlInventoryService service) : ControllerBase
 {
     [HttpGet]

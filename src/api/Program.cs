@@ -2,6 +2,7 @@ using LgrTransformationMigration.Api.Infrastructure;
 using LgrTransformationMigration.Api.Services;
 using LgrTransformationMigration.Api.Services.Discovery;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,7 +32,29 @@ builder.Services.AddSingleton<IpTransitionPolicy>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddProblemDetails();
-builder.Services.AddControllers();
+builder.Services.Configure<FeatureOptions>(builder.Configuration.GetSection(FeatureOptions.SectionName));
+builder.Services.AddScoped<SqlDiscoveryAssessmentFeatureFilter>();
+builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var problemDetails = new ValidationProblemDetails(context.ModelState)
+        {
+            Type = "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.1",
+            Title = "Request validation failed",
+            Status = StatusCodes.Status400BadRequest,
+            Detail = "One or more request fields are invalid.",
+            Instance = context.HttpContext.Request.Path
+        };
+        problemDetails.Extensions["errorCode"] = "validation_failed";
+        problemDetails.Extensions["correlationId"] = context.HttpContext.TraceIdentifier;
+
+        return new BadRequestObjectResult(problemDetails)
+        {
+            ContentTypes = { "application/problem+json" }
+        };
+    };
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {

@@ -5,6 +5,7 @@ using LgrTransformationMigration.Api.Contracts;
 using LgrTransformationMigration.Api.Domain;
 using LgrTransformationMigration.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LgrTransformationMigration.Api.IntegrationTests;
@@ -12,6 +13,40 @@ namespace LgrTransformationMigration.Api.IntegrationTests;
 public sealed class SqlInventoryApiTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public async Task Sql_discovery_assessment_is_not_exposed_when_feature_is_disabled()
+    {
+        using var factory = new LgrWebApplicationFactory();
+        using var disabledFactory = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Features:SqlDiscoveryAssessment"] = "false"
+                })));
+        using var client = disabledFactory.CreateClient();
+
+        var listResponse = await client.GetAsync("/api/v1/sql-instances");
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/v1/sql-instances",
+            InstanceRequest(Guid.NewGuid(), "DISABLED-FEATURE") with { Port = 70000 });
+
+        Assert.Equal(HttpStatusCode.NotFound, listResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, createResponse.StatusCode);
+        using var document = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        Assert.Equal("feature_disabled", root.GetProperty("errorCode").GetString());
+        Assert.Equal("/api/v1/sql-instances", root.GetProperty("instance").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("correlationId").GetString()));
+        using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "feature_disabled",
+            createDocument.RootElement.GetProperty("errorCode").GetString());
+
+        using var scope = disabledFactory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Empty(await db.SqlInstances.ToListAsync());
+    }
 
     [Fact]
     public async Task Instance_and_database_crud_is_audited_and_uses_optimistic_concurrency()
@@ -225,6 +260,30 @@ public sealed class SqlInventoryApiTests
             missingMembers.Length == 0,
             $"Missing required Problem Details members: {string.Join(", ", missingMembers)}. Payload: {root}");
         Assert.Equal("validation_failed", root.GetProperty("errorCode").GetString());
+        Assert.True(root.GetProperty("errors").TryGetProperty("Port", out _));
+    }
+
+    [Fact]
+    public async Task Dto_validation_problem_details_values_are_complete_and_safe()
+    {
+        using var factory = new LgrWebApplicationFactory();
+        using var client = factory.CreateClient();
+        var serverId = await ServerIdAsync(client, "DC-HOU-SQL01");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/sql-instances",
+            InstanceRequest(serverId, "INVALID-DTO-VALUES") with { Port = 70000 });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        Assert.Equal((int)HttpStatusCode.BadRequest, root.GetProperty("status").GetInt32());
+        Assert.Equal("Request validation failed", root.GetProperty("title").GetString());
+        Assert.Equal("One or more request fields are invalid.", root.GetProperty("detail").GetString());
+        Assert.Equal("/api/v1/sql-instances", root.GetProperty("instance").GetString());
+        Assert.Equal("validation_failed", root.GetProperty("errorCode").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("correlationId").GetString()));
         Assert.True(root.GetProperty("errors").TryGetProperty("Port", out _));
     }
 
