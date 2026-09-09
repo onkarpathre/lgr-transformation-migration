@@ -207,3 +207,21 @@ handoff:
     - "PRB, test authority, production tenancy, DPO, service transition and release approvals not evidenced."
   requested_action: "Do not accept this package as READY_FOR_TEST. After a human/platform owner provides a writable working branch, restores approved NuGet/vulnerability access, records I-06/D-11 test authority and supplies an isolated SQL Server test environment, bind the unchanged implementation to an exact commit and independently prove CRUD, direct-object/cross-tenant/cross-project isolation, composite database constraints, duplicate-name concurrency, ETag concurrency, audit redaction, 200+ paging, migration apply/rollback and regression before returning PASS or RETURN_TO_DEVELOPER."
 ```
+
+## Tester Agent evidence update - 9 September 2026
+
+The independent test record is `docs/implementation/PH3_SQL_Slice1_Test_Evidence_Pack.md`.
+
+- Implementation commit tested: `abd466a014aebcfe02b0f72e4322328df12e203a`.
+- Comparison baseline: `5d3e9b02bc57989d79ee47a133ab35ad4a31d3f8`.
+- Branch discrepancy: the tested commit exists only on local `main`; requested branch `feature/ph3-sql-implementation` remains at the baseline and contains no Slice 1 implementation.
+- Restore: PASS for all three solution projects.
+- Release build: PASS, 0 warnings and 0 errors.
+- Committed tests: PASS, 87/87 (50 unit, 37 integration).
+- Tester-strengthened tests: FAIL, 87 passed and 1 failed of 88; the failing test proves automatic DTO validation omits four mandatory Problem Details members.
+- Phase 1/2 regression: PASS, 55/55 (32 unit, 23 integration).
+- EF pending-model-change validation: PASS with pinned EF CLI 10.0.11.
+- Phase 3 delta migration inspection: no destructive schema or data operation; SQL Server runtime migration/provider validation remains blocked and unevidenced.
+- Exact Tester state: `BLOCKED` / `RETURN_TO_DEVELOPER`; not `READY_FOR_QUALITY_REVIEW`.
+
+Open defects are PH3SQL-TST-001 (branch/handoff mismatch), PH3SQL-TST-002 (missing authenticated/project-role authorisation policy), PH3SQL-TST-003 (incomplete DTO-validation Problem Details) and PH3SQL-TST-004 (missing architecture-required default-off feature toggle). Mandatory SQL Server runtime evidence, I-06/D-11 test-authority approval and dependency vulnerability-feed evidence remain blocked. The original Developer hand-off state therefore remains `BLOCKED_IMPLEMENTATION`; this Tester update does not rewrite it or invent a Developer/human approval.

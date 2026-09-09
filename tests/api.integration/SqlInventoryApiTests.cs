@@ -29,7 +29,8 @@ public sealed class SqlInventoryApiTests
         var updateRequest = InstanceRequest(serverId, "POC01") with
         {
             SqlVersion = "SQL Server 2025 CU1",
-            ServiceStatus = "stopped"
+            ServiceStatus = "stopped",
+            ServiceAccountName = "SYNTHETIC\\sql-service"
         };
         Assert.Equal(
             (HttpStatusCode)428,
@@ -45,6 +46,7 @@ public sealed class SqlInventoryApiTests
         var updatedInstanceTag = update.Headers.ETag!.Tag;
         Assert.Equal("SQL Server 2025 CU1", updatedInstance.SqlVersion);
         Assert.Equal(SqlInstanceServiceStatuses.Stopped, updatedInstance.ServiceStatus);
+        Assert.Equal("SYNTHETIC\\sql-service", updatedInstance.ServiceAccountName);
         Assert.NotEqual(instanceTag, updatedInstanceTag);
 
         var (database, databaseTag) = await CreateDatabaseAsync(client, instance.Id, "SyntheticHousing");
@@ -94,6 +96,11 @@ public sealed class SqlInventoryApiTests
         var audit = await db.AuditEvents.Where(x => x.EntityId == instance.Id || x.EntityId == database.Id).ToListAsync();
         Assert.Contains(audit, x => x.Action == "SqlInstanceCreated" && x.ProjectId == SeedIds.DemoProject);
         Assert.Contains(audit, x => x.Action == "SqlInstanceUpdated" && x.PropertyName == "SqlVersion");
+        Assert.Contains(audit, x =>
+            x.Action == "SqlInstanceUpdated"
+            && x.PropertyName == "ServiceAccountName"
+            && x.OldValue is null
+            && x.NewValue == "[REDACTED]");
         Assert.Contains(audit, x => x.Action == "SqlDatabaseCreated");
         Assert.Contains(audit, x => x.Action == "SqlDatabaseUpdated" && x.PropertyName == "SizeMb");
         Assert.Contains(audit, x => x.Action == "SqlDatabaseArchived");
@@ -190,6 +197,35 @@ public sealed class SqlInventoryApiTests
             (await client.PostAsJsonAsync(
                 "/api/v1/sql-databases",
                 DatabaseRequest(instance.Id, "BadCompatibility") with { CompatibilityLevel = 70 })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Dto_validation_returns_the_approved_problem_details_contract()
+    {
+        using var factory = new LgrWebApplicationFactory();
+        using var client = factory.CreateClient();
+        var serverId = await ServerIdAsync(client, "DC-HOU-SQL01");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/sql-instances",
+            InstanceRequest(serverId, "INVALID-DTO") with { Port = 70000 });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        var requiredMembers = new[]
+        {
+            "type", "title", "status", "detail", "instance", "errorCode", "correlationId", "errors"
+        };
+        var missingMembers = requiredMembers
+            .Where(member => !root.TryGetProperty(member, out _))
+            .ToArray();
+
+        Assert.True(
+            missingMembers.Length == 0,
+            $"Missing required Problem Details members: {string.Join(", ", missingMembers)}. Payload: {root}");
+        Assert.Equal("validation_failed", root.GetProperty("errorCode").GetString());
+        Assert.True(root.GetProperty("errors").TryGetProperty("Port", out _));
     }
 
     [Fact]
