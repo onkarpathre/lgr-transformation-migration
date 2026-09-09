@@ -12,25 +12,32 @@ traceability:
   dependencies: ["D-01", "D-03", "D-04", "D-05", "D-10", "D-11"]
   issues: ["I-01", "I-02", "I-04"]
   open_questions: ["Q-01", "Q-06", "Q-09"]
-  approvals: []
+  approvals:
+    - "Solution Architect/TDA PT (GitHub reviewer: PTArchitect), 8 September 2026: accepted with conditions for local/non-production POC use only — https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147902432"
+    - "Information Security NTSecurity (GitHub reviewer: nextgenexamprep-crypto), 8 September 2026: accepted with conditions for local/non-production POC use only — https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147931094"
 ```
 
-Status: Proposed - pending Solution Architect/TDA and Information Security approval
+Status: Accepted - local/non-production PH3-SQL-001 POC scope only; conditions apply
 
-Proposed decision date: 3 September 2026
+Decision date: 8 September 2026
 
 Decision record reviewed: 8 September 2026 against baseline commit `579171c927905876640cdf6bcb48ee8261b6c301`
 
 Decision owners: Solution Architect / Technical Design Authority; Information Security for the isolation control position
 
-Approval evidence: Pending - no named approval evidence is present in the repository.
+Approval target commit: `127c3099b0fdb452259433daa472704d6820e241`
 
-## Decision required
+Approval evidence:
 
-The repository and HLD contain different tenant persistence models. A named human authority must decide both the bounded PH3-SQL-001 development topology and the production target. This ADR recommends a two-horizon decision but does not approve it:
+- Solution Architect/TDA PT (`PTArchitect`): https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147902432
+- Information Security NTSecurity (`nextgenexamprep-crypto`): https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147931094
 
-1. retain shared database/shared schema persistence for PH3-SQL-001 local development and approved non-production POC use, with strengthened tenant-aware keys and controls; and
-2. retain HLD DD-05 database-per-customer as the proposed production target until TDA either confirms it and commissions a transition or expressly supersedes it with an approved shared-production design.
+## Accepted scoped decision
+
+The repository and HLD contain different tenant persistence models. The named Solution Architect/TDA and Information Security approvers accepted only the first horizon of this two-horizon decision:
+
+1. **Accepted with conditions:** retain shared database/shared schema persistence for PH3-SQL-001 local development and approved non-production POC use, with strengthened tenant-aware keys and controls; and
+2. **Unresolved and separately governed:** retain HLD DD-05 database-per-customer as the proposed production target until TDA either confirms it and commissions a transition or expressly supersedes it with an approved shared-production design.
 
 No production customer processing, tenant-model migration, catalogue implementation or production deployment is authorised by this record.
 
@@ -46,7 +53,7 @@ No production customer processing, tenant-model migration, catalogue implementat
 
 The repository does not implement the DD-05 tenant catalogue, claim-to-database routing, per-customer connection resolution, fleet migration orchestration, drift control, per-customer backup/restore operations or offboarding workflow. Conversely, the HLD does not describe the composite ownership constraints and project-scoped invariants required to make the current shared schema a defensible production topology. Neither the ADR-001 label nor implementation history supplies the owner/date/approval evidence needed to supersede an open baseline conflict. Treating either position as already approved would conceal R-11 and breach the decision authority in `AGENTS.md`.
 
-## Recommended decision
+## Decision
 
 ### Horizon 1: PH3-SQL-001 local development and approved non-production POC
 
@@ -62,7 +69,7 @@ Retain the implemented shared database/shared schema for this bounded increment.
 
 The detailed keys, foreign keys, indexes and test conditions are normative in `Phase3_SQL_Discovery_Assessment_Architecture.md` once this ADR and the work package are approved.
 
-### Horizon 2: production target
+### Horizon 2: unresolved production target
 
 Retain DD-05 as a proposed target rather than claiming the current shared topology is production-approved. Before pilot/production, TDA must choose and approve one of these outcomes:
 
@@ -80,7 +87,7 @@ PH3-SQL-001 must not implement either production change by implication.
 
 ## Alternatives considered
 
-### A. Two-horizon alignment - recommended
+### A. Two-horizon alignment - selected for the restricted POC scope
 
 Use the existing tenant-aware shared topology only for the bounded local/non-production increment while preserving DD-05 as the proposed production target pending a formal decision and transition.
 
@@ -141,26 +148,57 @@ If DD-05 remains the production target, a separate approved transition must:
 
 Designing Phase 3 entities with ownership columns and immutable GUIDs reduces, but does not eliminate, this future work.
 
-## Human decision questions and acceptance conditions
+## Approval records, conditions and unresolved production decisions
 
-The Solution Architect/TDA decision must state:
+### Solution Architect / TDA
 
-1. whether shared database/shared schema is approved for PH3-SQL-001 local development and which non-production environments, if any;
-2. whether DD-05 remains the production target or is superseded;
-3. if DD-05 remains, the transition owner, decision/work-item reference and latest gate by which it must complete;
-4. if shared production is selected, the approved database, identity, isolation, backup/restore, capacity, retention/deletion, incident and offboarding controls;
-5. whether Azure SQL Row-Level Security is required, deferred or rejected, with rationale;
-6. which tenant model is in scope for performance, security, recovery and release evidence; and
-7. any effect on ADR-001, the HLD, Q-06, Q-09, I-01/I-02/I-04 and R-02/R-11.
+```text
+Decision: ACCEPTED WITH CONDITIONS
+Approver: PT
+GitHub reviewer account: PTArchitect
+Role: Solution Architect / TDA
+Date: 8 September 2026
+GitHub review submission state: COMMENTED; the review body records this conditional approval.
+Approved scope: Local/non-production PH3-SQL-001 POC use only.
+Conditions: Synthetic data only; no production deployment; server-side tenant and project authorisation; composite tenant constraints; cross-tenant negative testing; no secrets or credentials stored; production tenancy requires separate Information Security review.
+Approval target commit: 127c3099b0fdb452259433daa472704d6820e241
+Evidence link: https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147902432
+```
 
-Information Security must approve the isolation/threat-control position for the selected scope. Any approval must name the approver and role, date, scope, conditions and durable evidence link. A prompt or agent-authored edit is not approval evidence.
+### Information Security
 
-## Documentation changes required after approval
+```text
+Decision: ACCEPTED WITH CONDITIONS
+Approver: NTSecurity
+GitHub reviewer account: nextgenexamprep-crypto
+Role: Information Security
+Date: 8 September 2026
+GitHub review submission state: APPROVED
+Approved scope: Local/non-production PH3-SQL-001 POC use only.
+Conditions: Synthetic data only; no production deployment; server-side tenant and project authorisation; tenant-leading composite constraints; cross-tenant negative testing; no secrets or credentials stored; production tenancy requires separate Information Security review.
+Approval target commit: 127c3099b0fdb452259433daa472704d6820e241
+Evidence link: https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147931094
+```
 
-- Change this ADR to Accepted only after genuine approval evidence is recorded.
-- Amend ADR-001 status/scope to show whether it remains authoritative, is bounded to local/non-production use or is superseded.
-- Amend the HLD DD-05/Section 5.4 position, or explicitly record it as the future production target with transition gate and owner.
+Both condition sets apply. The more specific tenant-leading composite-constraint requirement in the Information Security decision is mandatory for this POC.
+
+The following production decisions remain unresolved. Before pilot/production, the Solution Architect/TDA decision must state:
+
+1. whether DD-05 remains the production target or is superseded;
+2. if DD-05 remains, the transition owner, decision/work-item reference and latest gate by which it must complete;
+3. if shared production is selected, the approved database, identity, isolation, backup/restore, capacity, retention/deletion, incident and offboarding controls;
+4. whether Azure SQL Row-Level Security is required, deferred or rejected, with rationale;
+5. which tenant model is in scope for performance, security, recovery and release evidence; and
+6. any effect on ADR-001, the HLD, Q-06, Q-09, I-01/I-02/I-04 and R-02/R-11.
+
+Information Security must separately review and approve the isolation/threat-control position for production. The approvals recorded above do not supply that decision.
+
+## Follow-on documentation and production decision requirements
+
+- Do not amend ADR-001 or HLD DD-05 as though the production conflict were resolved by this scoped acceptance.
+- Before pilot/production, amend ADR-001 status/scope to show whether it remains authoritative, is bounded to local/non-production use or is superseded.
+- Before pilot/production, amend the HLD DD-05/Section 5.4 position, or explicitly record it as the future production target with transition gate and owner.
 - Update `POC_Architecture.md`, `Data_Model.md`, security, identity, DR, retention/offboarding and automated-test documentation consistently.
 - Link the approval and conditions from PH3-SQL-001 and any transition work item.
 
-Until those approvals are recorded, ADR-007 remains Proposed. The Phase 3 Architecture Work Package is `READY_FOR_ARCHITECTURE_APPROVAL`; it must not be reissued as `READY_FOR_DEVELOPMENT`, and implementation remains blocked by the architecture decision.
+ADR-007 is effective only for the restricted local/non-production PH3-SQL-001 POC and only while every recorded condition is enforced. Production tenancy architecture, HLD DD-05/ADR-001 reconciliation, production Information Security approval and all production/release gates remain unresolved.

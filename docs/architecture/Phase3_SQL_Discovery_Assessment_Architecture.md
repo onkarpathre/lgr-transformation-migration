@@ -14,6 +14,9 @@ traceability:
   open_questions: ["Q-01", "Q-02", "Q-06", "Q-09"]
   approvals:
     - "Product Owner JP (GitHub reviewer: opathre), 8 September 2026: approved local POC implementation of PH3-SQL-001 subject to PR #1 restrictions; this is not architecture, TDA, Information Security, PRB, production or release approval."
+    - "Solution Architect/TDA PT (GitHub reviewer: PTArchitect), 8 September 2026: accepted ADR-006 with conditions for the local/non-production POC technology baseline only — https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147899102"
+    - "Solution Architect/TDA PT (GitHub reviewer: PTArchitect), 8 September 2026: accepted ADR-007 with conditions for local/non-production POC use only — https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147902432"
+    - "Information Security NTSecurity (GitHub reviewer: nextgenexamprep-crypto), 8 September 2026: accepted ADR-007 with conditions for local/non-production POC use only — https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147931094"
 ```
 
 ## Control and outcome
@@ -21,9 +24,10 @@ traceability:
 - **Architecture package:** PH3-SQL-ARCH-001
 - **Incoming work item:** PH3-SQL-001
 - **Incoming approval evidence:** Product Owner JP (`opathre`), 8 September 2026, approved local POC implementation subject to GitHub PR #1 restrictions; PR #1 was merged to `main` at `579171c927905876640cdf6bcb48ee8261b6c301`.
-- **Architecture exit state:** `READY_FOR_ARCHITECTURE_APPROVAL`
-- **Development authority:** Not granted. This state means the proposed work package is complete enough for named human review; it is explicitly not `READY_FOR_DEVELOPMENT`.
-- **Reason:** Q-01/OD-07 and ADR-006 require Solution Architect/TDA approval. ADR-007 requires Solution Architect/TDA and Information Security approval to reconcile ADR-001 with HLD DD-05. CSV contracts and the test approach also require the named approvals below. `AGENTS.md` prohibits an agent from closing those gates.
+- **Architecture approval target:** PR #2 commit `127c3099b0fdb452259433daa472704d6820e241`.
+- **Architecture exit state:** `READY_FOR_DEVELOPMENT`
+- **Development authority:** Granted only for PH3-SQL-001 local/non-production POC work using synthetic data and reversible changes, subject to every ADR-006, ADR-007 and PR #2 condition. No production, merge or release authority is granted.
+- **Reason:** PT accepted ADR-006 and conditionally accepted ADR-007 for the restricted POC scope; NTSecurity conditionally accepted ADR-007 for that same scope. Q-01/HLD OD-07 is closed only for this POC technology baseline. HLD DD-05 and production tenancy remain unresolved. CSV/source-contract and test-authority approvals remain downstream conditions and cannot be inferred from the architecture decisions.
 - **Roadmap baseline:** `docs/product/PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md` is present in the current branch. Its terminology confirms this is Roadmap Phase 3 within Product Specification Phase 1 MVP; its presence does not close any pending product, architecture, security or test approval gate.
 
 ## Traceability reconciliation and gate assessment
@@ -42,14 +46,14 @@ No new specification identifiers are introduced. The added references do not exp
 | Gate / dependency | Assessment for this package | Effect |
 |---|---|---|
 | Product Owner approval | Evidenced for local POC implementation only through PR #1. | Satisfies the Product Owner entry decision only. It does not supply PRB or technical approval. |
-| Q-01 / HLD OD-07 / ADR-006 | Open; ADR-006 is Proposed. | Blocks development under `AGENTS.md` until a named Solution Architect/TDA decision is recorded. |
-| ADR-001 versus HLD DD-05 / ADR-007 | Open; ADR-007 is Proposed. | Blocks using the shared persistence recommendation for this increment until Solution Architect/TDA and Information Security decide its scope and conditions. |
+| Q-01 / HLD OD-07 / ADR-006 | ADR-006 accepted by PT for the local/non-production PH3-SQL-001 POC technology baseline at commit `127c3099b0fdb452259433daa472704d6820e241`. | Closed only for the restricted POC scope; wider MVP/production stack approval is not inferred. |
+| ADR-001 versus HLD DD-05 / ADR-007 | ADR-007 accepted with conditions by PT and NTSecurity for the shared-schema local/non-production POC at commit `127c3099b0fdb452259433daa472704d6820e241`. | Clears only the POC development topology. Production tenancy and HLD DD-05/ADR-001 reconciliation remain unresolved and separately governed. |
 | Q-02 / D-01 | PRB budget, investment and phasing evidence is absent. | Does not block preparing this architecture; blocks asserting a committed delivery/release baseline or spending beyond the Product Owner's expressly limited local POC approval. |
 | Q-06 | Open. | Does not block synthetic local development; blocks production personal-data processing pending DPO determination and any required DPIA. |
 | Q-09 | Open. | Does not block domain work that remains isolated from external identity; blocks external customer access. Development headers remain local/test-only. |
 | I-06 / D-11 | Test tools, environment and entry/exit criteria await the named test authority. | Must be agreed before implementation evidence can be accepted as formal system/test evidence. |
 
-The merge commit contains the six PH3-SQL-001 product/architecture documents and no application, test or database implementation. It proves repository adoption of the approval pack, not implementation or technical approval.
+Approval target commit `127c3099b0fdb452259433daa472704d6820e241` changes only ADR-006, ADR-007 and this Architecture Work Package; it contains no application, test, migration or schema implementation. PR #2 and the three review permalinks provide the scoped TDA and Information Security decision evidence.
 
 ## Repository findings
 
@@ -68,7 +72,7 @@ The selected architectural recommendation is:
 - Structure: modular monolith with DTO-based REST APIs.
 - Azure posture: deployable through a future approved Bicep/IaC pipeline; no Azure resource creation or production deployment in this work item.
 
-This matches the HLD direction and current repository. Microsoft lists .NET 10 as active LTS through November 2028 and EF Core 10 as supported through November 2028. Vercel lists Next.js 16 as Active LTS, and the Node.js project lists Node.js 24 as LTS. [ADR-006](ADR-006-application-technology-stack.md) records the evidence, alternatives, consequences and upgrade policy. Its status is Proposed because approval evidence is absent. Q-01/OD-07 therefore remains formally open and blocks implementation.
+This matches the HLD direction and current repository. Microsoft lists .NET 10 as active LTS through November 2028 and EF Core 10 as supported through November 2028. Vercel lists Next.js 16 as Active LTS, and the Node.js project lists Node.js 24 as LTS. [ADR-006](ADR-006-application-technology-stack.md) records the evidence, alternatives, consequences and upgrade policy. PT accepted it for the local/non-production PH3-SQL-001 POC baseline. Q-01/OD-07 is therefore closed only for that restricted scope; no wider MVP or production approval is claimed.
 
 ## Tenancy decision
 
@@ -77,7 +81,7 @@ The recommendation is a two-horizon decision, not a silent replacement of either
 1. For PH3-SQL-001 development and non-production only, retain the implemented shared database/shared schema with mandatory server-derived `CustomerId`, authorised `ProjectId` and layered application/database isolation. Do not introduce catalogue routing or a multi-database migration orchestrator as a side effect of this domain increment.
 2. For production, retain HLD DD-05 (catalogue plus database per customer) as the proposed target pending formal TDA approval and a separately approved transition work item. The shared model is not approved for production customer processing by this package.
 
-[ADR-007](ADR-007-phase3-tenancy-alignment.md) records the evidence, five alternatives, consequences, compensating controls and future transition requirements. Solution Architect/TDA and Information Security must approve, reject or condition this recommendation. If they prefer a shared production database, they must explicitly supersede HLD DD-05 and approve the corresponding RLS, recovery, deletion, offboarding, scale and security design. Until the human decision is recorded, ADR-007 is not effective and development is not authorised.
+[ADR-007](ADR-007-phase3-tenancy-alignment.md) records the evidence, five alternatives, consequences, compensating controls and future transition requirements. PT and NTSecurity accepted the shared-schema topology with conditions only for the local/non-production POC. Synthetic data, no production deployment, server-side tenant/project authorisation, tenant-leading composite constraints, cross-tenant negative testing and no stored secrets/credentials are mandatory. Production tenancy requires a separate TDA decision and Information Security review; any shared production selection must explicitly supersede HLD DD-05 and approve the corresponding RLS, recovery, deletion, offboarding, scale and security design.
 
 ## Component boundaries
 
@@ -553,28 +557,27 @@ The Tester must prove:
 
 ## Human decisions and approvals required
 
-The existing Product Owner approval permits only the stated local POC scope. It is recorded as evidence but does not approve this architecture. The exact next decisions are:
+The Product Owner, Solution Architect/TDA and Information Security decisions permit the Architecture Work Package to enter `READY_FOR_DEVELOPMENT` only for the stated local/non-production POC scope. The following decisions and gates remain:
 
-1. **Solution Architect/TDA:** accept, condition or reject ADR-006 and explicitly close or retain Q-01/HLD OD-07 for the named PH3-SQL-001 scope.
-2. **Solution Architect/TDA and Information Security:** jointly accept, condition or reject ADR-007, including the shared non-production baseline, mandatory isolation controls and the disposition of HLD DD-05/ADR-001. No shared production processing is implied.
-3. **Named Product Owner, human Architect and DBA/Discovery SME:** approve the two v1 CSV contracts, controlled assessment values and synthetic fixture set. Information Security must additionally approve any later `ServiceAccountName` source-contract amendment.
-4. **Agilisys Test Services or named test authority:** approve the SQL Server/frontend tools, isolated environment, synthetic data, entry/exit criteria and the division between SQLite fast tests and mandatory SQL Server evidence (I-06/D-11).
-5. **PRB:** approve scope investment/phasing before a committed delivery/release baseline or expenditure outside the limited local POC authority is asserted (D-01/Q-02).
-6. **Before production only:** Data Protection/DPO decides Q-06 and retention; Solution Architect/Information Security closes Q-09 for external identity; Managed Services/Service Transition approves support/operability; human release authority approves deployment. None is claimed here.
+1. **Named Product Owner, human Architect and DBA/Discovery SME:** approve the two v1 CSV contracts, controlled assessment values and synthetic fixture set. Information Security must additionally approve any later `ServiceAccountName` source-contract amendment.
+2. **Agilisys Test Services or named test authority:** approve the SQL Server/frontend tools, isolated environment, synthetic data, entry/exit criteria and the division between SQLite fast tests and mandatory SQL Server evidence (I-06/D-11).
+3. **PRB:** approve scope investment/phasing before a committed delivery/release baseline or expenditure outside the limited local POC authority is asserted (D-01/Q-02).
+4. **Production tenancy:** TDA must resolve HLD DD-05/ADR-001 and commission the selected production topology; Information Security must separately approve it. The POC acceptance does not decide this.
+5. **Before production only:** Data Protection/DPO decides Q-06 and retention; Solution Architect/Information Security closes Q-09 for external identity; Managed Services/Service Transition approves support/operability; human release authority approves deployment. None is claimed here.
 
-Each approval must record decision, named person/role, date, exact scope, conditions and durable evidence. ADR-006 and ADR-007 remain Proposed until their own required evidence is added.
+Each remaining approval must record decision, named person/role, date, exact scope, conditions and durable evidence. ADR-006 and ADR-007 are accepted only within their recorded POC boundaries.
 
 ## Hand-off
 
 ```yaml
 handoff:
   from_agent: "architect"
-  to_agent: "architect"
-  human_reviewers: ["Solution Architect / TDA", "Information Security"]
-  state: "READY_FOR_ARCHITECTURE_APPROVAL"
+  to_agent: "developer"
+  human_reviewers: ["Product Owner", "Architect", "DBA / Discovery SME", "Test authority"]
+  state: "READY_FOR_DEVELOPMENT"
   work_item: "PH3-SQL-001"
   branch: "feature/ph3-sql-architecture"
-  commit: null
+  commit: "127c3099b0fdb452259433daa472704d6820e241"
   baseline_commit: "579171c927905876640cdf6bcb48ee8261b6c301"
   traceability:
     product_version: "0.1"
@@ -596,24 +599,30 @@ handoff:
   evidence:
     - "Product Specification V0.1 and HLD V0.1 complete structural review; HLD approval/readiness fields contain no completed approval evidence."
     - "GitHub PR #1 Product Owner approval record and merge commit 579171c927905876640cdf6bcb48ee8261b6c301."
+    - "GitHub PR #2 targets commit 127c3099b0fdb452259433daa472704d6820e241 and contains no application, migration, schema or test changes."
+    - "ADR-006 Solution Architect/TDA approval by PT (PTArchitect), 8 September 2026: https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147899102"
+    - "ADR-007 Solution Architect/TDA conditional approval by PT (PTArchitect), 8 September 2026: https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147902432"
+    - "ADR-007 Information Security approval with conditions by NTSecurity (nextgenexamprep-crypto), 8 September 2026: https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147931094"
     - "Baseline repository application, persistence, migrations, import implementation, tests and package-lock inspection."
     - "Primary vendor lifecycle evidence linked from ADR-006."
   decisions:
-    - "Proposed application stack recorded in ADR-006; approval pending."
-    - "Proposed two-horizon tenancy alignment recorded in ADR-007; approval pending."
-    - "Proposed domain, relationship, key/index, API, CSV, ownership, audit, migration, rollback and test contracts recorded in PH3-SQL-ARCH-001; approval pending."
+    - "ADR-006 accepted with conditions for the local/non-production PH3-SQL-001 POC technology baseline only."
+    - "ADR-007 accepted with conditions for shared-schema local/non-production POC use only; production tenancy and HLD DD-05 remain unresolved."
+    - "Domain, relationship, key/index, API, CSV, ownership, audit, migration, rollback and test contracts recorded in PH3-SQL-ARCH-001 for restricted POC development."
   assumptions:
     - "Only synthetic CSV data is used."
     - "No PH3-SQL-001 implementation, migration or database change occurs in this architecture run."
   risks: ["R-01", "R-02", "R-03", "R-06", "R-09", "R-11"]
   defects: []
   blockers:
-    - "Q-01/OD-07 and ADR-006 TDA approval evidence missing."
-    - "ADR-001 versus HLD DD-05 requires TDA/Information Security decision."
     - "Versioned CSV contracts, controlled assessment values and synthetic fixtures require named Product Owner/human Architect/DBA approval."
     - "I-06 frontend and SQL Server test approach requires test-authority agreement."
     - "PRB investment/phasing approval remains absent for any committed delivery or release baseline beyond the limited local POC authority."
+    - "Production tenancy architecture and HLD DD-05/ADR-001 reconciliation require separate TDA and Information Security decisions before production."
   approvals:
     - "Product Owner JP (opathre), 8 September 2026: local POC implementation only, subject to PR #1 restrictions."
-  requested_action: "Named Solution Architect/TDA and Information Security reviewers must review PH3-SQL-ARCH-001, ADR-006 and ADR-007 and record accept/reject/conditions with names, roles, date, scope and durable evidence; do not hand off to the Developer until the applicable approvals are recorded and this package is reissued as READY_FOR_DEVELOPMENT."
+    - "Solution Architect/TDA PT (PTArchitect), 8 September 2026: ADR-006 accepted with conditions for the local/non-production POC technology baseline only."
+    - "Solution Architect/TDA PT (PTArchitect), 8 September 2026: ADR-007 accepted with conditions for local/non-production POC use only."
+    - "Information Security NTSecurity (nextgenexamprep-crypto), 8 September 2026: ADR-007 accepted with conditions for local/non-production POC use only."
+  requested_action: "Developer may begin only the restricted local/non-production PH3-SQL-001 POC using synthetic data and reversible changes. Obtain the named source-contract approvals before baselining contract-dependent behaviour and test-authority approval before treating implementation results as formal test evidence. Preserve every ADR/PR condition and all production-tenancy, PRB and release blockers; no production, merge or deployment action follows."
 ```

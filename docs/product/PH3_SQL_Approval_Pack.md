@@ -14,13 +14,19 @@ traceability:
   open_questions: ["Q-01", "Q-06", "Q-09"]
   approvals:
     - "Product Owner JP (GitHub reviewer: opathre), 8 September 2026: approved for local POC implementation of PH3-SQL-001 subject to the Pull Request restrictions — https://github.com/onkarpathre/lgr-transformation-migration/pull/1#pullrequestreview-5147270679"
+    - "Solution Architect/TDA PT (GitHub reviewer: PTArchitect), 8 September 2026: accepted ADR-006 with conditions for the local/non-production POC technology baseline only — https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147899102"
+    - "Solution Architect/TDA PT (GitHub reviewer: PTArchitect), 8 September 2026: accepted ADR-007 with conditions for local/non-production POC use only — https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147902432"
+    - "Information Security NTSecurity (GitHub reviewer: nextgenexamprep-crypto), 8 September 2026: accepted ADR-007 with conditions for local/non-production POC use only — https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147931094"
 ```
 
 **Work item:** PH3-SQL-001  
-**Current quality gate:** `PHASE 3 BLOCKED`  
+**Architecture hand-off:** `READY_FOR_DEVELOPMENT — RESTRICTED LOCAL/NON-PRODUCTION POC ONLY`
+
+**Production/release quality gate:** `BLOCKED_PENDING_HUMAN_DECISION`
+
 **Product Owner approval:** `RECEIVED — LOCAL POC IMPLEMENTATION ONLY`
 
-**Purpose:** Record the Product Owner's local POC implementation approval and present the remaining proposed decisions, source contracts and test approach for the named human approvals that are still required. This pack grants no PRB, architecture, TDA, Information Security, production or release approval.
+**Purpose:** Record the genuine Product Owner, Solution Architect/TDA and Information Security decisions for the restricted POC and present the remaining source-contract, test, production-tenancy, PRB and release blockers. The recorded architecture decisions grant no production, PRB, merge, deployment or release approval.
 
 ## A. Product Owner / PRB approval
 
@@ -78,8 +84,8 @@ Provide a governed, tenant-isolated record of discovered Microsoft SQL Server in
 ### Dependencies
 
 - D-01 Product Owner approval for local POC implementation has been received; PRB scope, investment and phasing approval remains outstanding.
-- Solution Architect/TDA approval of ADR-006 and closure of Q-01/HLD OD-07.
-- TDA/Information Security approval of ADR-007 for the non-production increment, with production tenancy separately governed.
+- Solution Architect/TDA approval of ADR-006 and scoped closure of Q-01/HLD OD-07 have been received for the local/non-production POC only.
+- Solution Architect/TDA and Information Security approvals of ADR-007 have been received with conditions for the local/non-production POC only; production tenancy remains separately governed.
 - Product Owner, Architect and DBA/Discovery SME approval of both CSV v1 contracts and synthetic fixtures.
 - Test-authority agreement for frontend and SQL Server tools, environments and entry/exit criteria.
 - Green same-commit baseline evidence, or a documented environment-only restore blocker that is resolved before implementation evidence is accepted.
@@ -102,7 +108,7 @@ This Product Owner decision does not constitute PRB approval, does not accept or
 
 ## B. Architecture / TDA approval
 
-ADR-006 proposes the existing repository stack as the Phase 3 baseline:
+ADR-006 accepts the existing repository stack as the local/non-production PH3-SQL-001 POC baseline:
 
 - Backend: .NET 10, ASP.NET Core and EF Core 10.
 - Persistence: SQL Server verification with SQL Server/Azure SQL-compatible schema and SQL.
@@ -110,41 +116,59 @@ ADR-006 proposes the existing repository stack as the Phase 3 baseline:
 - Application shape: modular monolith with DTO-based REST APIs.
 - No microservices, messaging, Azure provisioning or production deployment are authorised by this decision.
 
-ADR-006 remains `Proposed` until the Solution Architect/TDA records a named, dated decision and durable evidence that closes Q-01/HLD OD-07 for the approved scope.
+ADR-006 is `Accepted with conditions` only for the local/non-production POC. Q-01/HLD OD-07 is closed for that scope only and remains unresolved for any wider MVP or production baseline.
 
-### ADR-006 approval template
+### Recorded ADR-006 approval
 
 ```text
-Decision: ACCEPTED / ACCEPTED WITH CONDITIONS / REJECTED
-Approver:
+Decision: ACCEPTED WITH CONDITIONS
+Approver: PT
+GitHub reviewer account: PTArchitect
 Role: Solution Architect / TDA
-Date:
-Approved scope:
-Conditions:
-Q-01 / HLD OD-07 disposition:
-Evidence link:
+Date: 8 September 2026
+GitHub review submission state: APPROVED
+Approved scope: Local/non-production PH3-SQL-001 development; POC technology baseline only.
+Conditions: Retain the ADR-006 lifecycle, dependency, SQL Server provider-test and frontend-test conditions and all PR #2 scope exclusions. No production deployment, production tenancy architecture, real customer data, destructive database change, migration execution or autonomous provisioning is authorised.
+Q-01 / HLD OD-07 disposition: Closed for the restricted POC scope only; unresolved for any wider MVP or production baseline.
+Approval target commit: 127c3099b0fdb452259433daa472704d6820e241
+Pull Request: https://github.com/onkarpathre/lgr-transformation-migration/pull/2
+Evidence link: https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147899102
 ```
 
 ## C. Tenancy / Information Security approval
 
-ADR-007 proposes retaining the current shared database/shared schema only for Phase 3 development and non-production. Every SQL inventory, assessment, staging, snapshot, audit and relationship record must be isolated by server-derived `CustomerId` and authorised `ProjectId`, with query filters, explicit project predicates, same-tenant relationship checks and database constraints.
+ADR-007 accepts retaining the current shared database/shared schema only for local/non-production PH3-SQL-001 POC development. Every SQL inventory, assessment, staging, snapshot, audit and relationship record must be isolated by server-derived `CustomerId` and authorised `ProjectId`, with query filters, explicit project predicates, same-tenant relationship checks and tenant-leading composite database constraints.
 
-This proposal does not approve production customer processing. The HLD database-per-customer production position remains separately governed; TDA must decide whether it remains the production target or is superseded through an approved architecture, security, recovery and offboarding process.
+This scoped acceptance does not approve production customer processing. The HLD database-per-customer production position remains separately governed; TDA must decide whether it remains the production target or is superseded through an approved architecture, security, recovery and offboarding process, followed by separate Information Security review.
 
-### ADR-007 approval template
+### Recorded ADR-007 approvals
 
 ```text
-Decision: ACCEPTED / ACCEPTED WITH CONDITIONS / REJECTED
-Solution Architect / TDA approver:
-Information Security approver:
-Date:
-Approved scope: Phase 3 development/non-production shared database/shared schema
-CustomerId + ProjectId isolation conditions:
-Production tenancy disposition: SEPARATELY GOVERNED / other authorised decision
-HLD DD-05 / ADR-001 disposition:
-Conditions:
-Evidence link:
+Decision: ACCEPTED WITH CONDITIONS
+Solution Architect / TDA approver: PT
+GitHub reviewer account: PTArchitect
+Date: 8 September 2026
+GitHub review submission state: COMMENTED; the review body records this conditional approval.
+Approved scope: Local/non-production PH3-SQL-001 POC shared database/shared schema.
+Conditions: Synthetic data only; no production deployment; server-side tenant and project authorisation; composite tenant constraints; cross-tenant negative testing; no secrets or credentials stored; production tenancy requires separate Information Security review.
+Approval target commit: 127c3099b0fdb452259433daa472704d6820e241
+Evidence link: https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147902432
+
+Decision: ACCEPTED WITH CONDITIONS
+Information Security approver: NTSecurity
+GitHub reviewer account: nextgenexamprep-crypto
+Date: 8 September 2026
+GitHub review submission state: APPROVED
+Approved scope: Local/non-production PH3-SQL-001 POC shared database/shared schema.
+Conditions: Synthetic data only; no production deployment; server-side tenant and project authorisation; tenant-leading composite constraints; cross-tenant negative testing; no secrets or credentials stored; production tenancy requires separate Information Security review.
+Approval target commit: 127c3099b0fdb452259433daa472704d6820e241
+Evidence link: https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147931094
+
+Production tenancy disposition: UNRESOLVED AND SEPARATELY GOVERNED
+HLD DD-05 / ADR-001 disposition: UNRESOLVED; neither baseline is superseded for production.
 ```
+
+Both condition sets apply. The Information Security requirement for tenant-leading composite constraints is the mandatory interpretation for the POC.
 
 ## D. SQL source contract approval
 
@@ -270,7 +294,7 @@ Evidence link:
 
 **Scope:** Existing Phase 1/2 technical baseline only. No Phase 3 application functionality, schema or migration was created or changed by the baseline validation.
 
-The Product Work Package is traced and the named Product Owner approval for local POC implementation has now been received. That approval is necessary but not sufficient to satisfy the architecture, security, production or release gates: ADR-006/Q-01 and ADR-007 remain `Proposed`, the Architecture Work Package remains `BLOCKED_ARCHITECTURE_DECISION`, and no Implementation Work Package in `READY_FOR_TEST` state was supplied. The approval does not authorise work outside its documented feature-branch POC restrictions.
+The Product Work Package is traced. Product Owner approval and the commit-bound ADR-006/ADR-007 decisions now permit the Architecture Work Package to enter `READY_FOR_DEVELOPMENT` for the restricted local/non-production POC only. No Implementation Work Package in `READY_FOR_TEST` state or independent Test Evidence Pack has been supplied. Production tenancy, PRB and release gates remain blocked, and none of the approvals authorises work outside the documented POC restrictions.
 
 ### Toolchain and .NET 10 confirmation
 
@@ -278,7 +302,7 @@ The Product Work Package is traced and the named Product Owner approval for loca
 - ASP.NET Core/runtime: `10.0.11`.
 - EF CLI (`dotnet-ef`): `10.0.11`.
 
-**Conclusion:** the manually verified backend platform uses .NET 10 and EF 10. This technical result does not approve ADR-006 or close Q-01.
+**Conclusion:** the manually verified backend platform uses .NET 10 and EF 10. This technical result is separate from PT's later ADR-006 approval and does not extend that approval beyond the restricted POC scope.
 
 ### Checks and results
 
@@ -320,16 +344,18 @@ This remains static configuration evidence; no additional API/frontend runtime-i
 
 **Baseline state:** `BASELINE PASSED`
 
-**Approval boundary:** `BASELINE PASSED` is a technical result only. Product Owner approval for local POC implementation has been received, but the overall production/release quality gate remains `PHASE 3 BLOCKED` by the approvals and hand-offs listed below.
+**Approval boundary:** `BASELINE PASSED` is a technical result only. The Architecture Work Package is now `READY_FOR_DEVELOPMENT` for the restricted local/non-production POC, but the overall production/release quality gate remains `BLOCKED_PENDING_HUMAN_DECISION` by the approvals and hand-offs listed below.
 
 **Remaining human/governance blockers:**
 
 - PRB approval of scope, investment and phasing; the Product Owner review does not constitute PRB approval.
-- Solution Architect/TDA approval of ADR-006 and closure of Q-01/HLD OD-07.
-- Solution Architect/TDA and Information Security approval of ADR-007 for the non-production increment; production tenancy remains separately governed.
 - Product Owner, Architect and DBA/Discovery SME approval of both CSV v1 contracts and synthetic fixtures.
 - Test-authority approval of the proposed tools, environment and entry/exit criteria.
-- An Architecture Work Package in `READY_FOR_DEVELOPMENT` state and, before implementation testing, an Implementation Work Package in `READY_FOR_TEST` state.
+- Before implementation testing, an Implementation Work Package in `READY_FOR_TEST` state and an independent Test Evidence Pack against the same commit.
+- TDA resolution of production tenancy architecture and HLD DD-05/ADR-001, followed by separate production Information Security review.
+- Data Protection/DPO resolution of Q-06 and any required DPIA before production processing.
+- Solution Architect/Information Security resolution of Q-09 before external customer access.
+- Managed Services/Service Transition approval of production support and operability, plus named human release approval.
 
 ## Approval record status
 
@@ -346,10 +372,15 @@ This remains static configuration evidence; no additional API/frontend runtime-i
 
 ### Quality Manager gate assessment
 
+- **Assessment scope:** Architecture-approval evidence recording only; this is not an independent feature or release quality approval.
 - **Technical baseline:** `BASELINE PASSED`
 - **Product Owner approval:** `RECEIVED — LOCAL POC IMPLEMENTATION ONLY`
-- **ADR-006:** `Proposed`
-- **ADR-007:** `Proposed`
+- **Architecture approval target:** `127c3099b0fdb452259433daa472704d6820e241`
+- **ADR-006:** `Accepted — local/non-production POC only; conditions apply`
+- **ADR-007:** `Accepted — local/non-production POC only; conditions apply`
+- **Architecture Work Package:** `READY_FOR_DEVELOPMENT — restricted local/non-production POC only`
+- **Production tenancy / HLD DD-05:** `UNRESOLVED`
+- **PRB approval:** `NOT EVIDENCED`
 - **Production/release decision:** `BLOCKED_PENDING_HUMAN_DECISION`
 
-The Product Owner approval is genuine and evidenced, but it does not constitute PRB, TDA, Information Security, architecture, production or release approval. The overall production/release gate remains blocked until the remaining named approvers complete their decisions and the required architecture, implementation, test and quality hand-offs are evidenced. No autonomous merge or production action follows.
+The Product Owner, Solution Architect/TDA and Information Security approvals are genuine, named, dated, scoped and linked to PR #2 commit `127c3099b0fdb452259433daa472704d6820e241`. The Quality Manager records them as sufficient for the restricted architecture hand-off only. They do not constitute PRB approval, production-tenancy approval, HLD DD-05 resolution, production approval or release authority. The overall production/release gate remains blocked until the remaining named approvers complete their decisions and the implementation, independent test and quality evidence chain is complete. No autonomous merge or production action follows.

@@ -12,21 +12,27 @@ traceability:
   dependencies: ["D-01", "D-04", "D-13"]
   issues: ["I-08"]
   open_questions: ["Q-01"]
-  approvals: []
+  approvals:
+    - "Solution Architect/TDA PT (GitHub reviewer: PTArchitect), 8 September 2026: accepted with conditions for the local/non-production PH3-SQL-001 POC technology baseline only — https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147899102"
 ```
 
-Status: Proposed - pending Solution Architect/TDA approval
+Status: Accepted - local/non-production PH3-SQL-001 POC scope only; conditions apply
 
-Proposed decision date: 3 September 2026  
-Decision owner: Solution Architect / Technical Design Authority  
-Approval evidence: Pending - no named approver, approval date or evidence link is present in the repository.
-Architecture review updated: 8 September 2026 against baseline commit `579171c927905876640cdf6bcb48ee8261b6c301`.
+Decision date: 8 September 2026
+
+Decision owner: Solution Architect / Technical Design Authority
+
+Approver: PT (`PTArchitect`), Solution Architect/TDA
+
+Approval target commit: `127c3099b0fdb452259433daa472704d6820e241`
+
+Approval evidence: https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147899102
 
 ## Context
 
 Product Specification Q-01 and HLD OD-07 record a conflict between the HLD stack and an earlier development-plan stack. Phase 1 and Phase 2 have since been implemented consistently with the HLD direction. At the reviewed baseline, `LgrTransformationMigration.Api.csproj` targets `net10.0` and pins EF Core SQL Server/Design `10.0.11`; `src/web/package.json` pins Next.js `16.2.12`, React/React DOM `19.2.8` and TypeScript `5.9.3`. The merge commit for PR #1 adds the PH3-SQL-001 approval/architecture documents only; it is not implementation or TDA approval evidence.
 
-An agent-authored recommendation cannot close Q-01/OD-07. Under `AGENTS.md`, the decision becomes effective only when the named Solution Architect/TDA records approval evidence.
+The named Solution Architect/TDA approval makes this decision effective only for local/non-production PH3-SQL-001 POC development. It closes Q-01/HLD OD-07 for that restricted scope; it does not approve a wider MVP or production baseline and does not close production hosting, identity, tenancy, support, DPIA, commercial or release gates.
 
 ## Evidence
 
@@ -36,7 +42,7 @@ An agent-authored recommendation cannot close Q-01/OD-07. Under `AGENTS.md`, the
 - Microsoft records [.NET 10 as active LTS through 14 November 2028](https://dotnet.microsoft.com/en-us/platform/support/policy) and [EF Core 10 as supported through November 2028](https://learn.microsoft.com/en-us/ef/core/what-is-new/).
 - Vercel records [Next.js 16 as Active LTS](https://nextjs.org/support-policy) and requires [Node.js 20.9 or later for Next.js 16](https://nextjs.org/docs/app/guides/upgrading/version-16). The Node.js project records [Node.js 24 as an LTS line and Node.js 20 as end-of-life](https://nodejs.org/en/about/previous-releases) at the review date.
 
-## Proposed decision
+## Accepted decision
 
 Baseline one application stack for the Phase 3 SQL Discovery and Assessment increment:
 
@@ -94,19 +100,27 @@ Rejected. It perpetuates Q-01/R-11 and makes dependency, test, skills and delive
 - The repository's Next.js `16.2.12` and `eslint-config-next` `16.2.11` patch mismatch must be assessed and aligned through a reviewed dependency update rather than silently changed by this ADR.
 - This decision does not close external identity, production hosting, tenancy, support, DPIA, commercial or deployment gates.
 
-## Acceptance conditions for the human decision
+## Approval scope and conditions
 
-An acceptance should state whether it covers PH3-SQL-001 local development/non-production only or the wider MVP application baseline. It should confirm the supported Node.js line, patching cadence, dependency ownership, SQL Server provider test lane and frontend test expectation. Conditions must be carried into the Architecture Work Package and implementation hand-off.
+PT approved ADR-006 with conditions for local/non-production PH3-SQL-001 development and approved the POC technology baseline. The accepted scope is not the wider MVP or any production environment. All lifecycle, dependency, SQL Server provider-test and frontend-test conditions in this ADR remain binding and must be carried into the Architecture Work Package and implementation hand-off.
 
-## Approval required
+The PR #2 approval envelope is also preserved: no production deployment, production tenancy architecture, real customer data, destructive database changes, migration execution or autonomous provisioning is approved.
 
-To close Q-01/OD-07, update this ADR with:
+## Approval record
 
-- `Status: Accepted`;
-- named Solution Architect/TDA approver;
-- approval date;
-- decision scope and any conditions;
-- durable approval evidence link; and
-- confirmation that Product Specification Q-01, HLD OD-07, I-08 and R-11 are superseded for the approved scope.
+```text
+Decision: ACCEPTED WITH CONDITIONS
+Approver: PT
+GitHub reviewer account: PTArchitect
+Role: Solution Architect / TDA
+Date: 8 September 2026
+GitHub review submission state: APPROVED
+Approved scope: Local/non-production PH3-SQL-001 development; POC technology baseline only.
+Conditions: Retain every lifecycle, dependency, SQL Server provider-test and frontend-test condition in this ADR and every PR #2 scope exclusion. No production deployment, production tenancy architecture, real customer data, destructive database change, migration execution or autonomous provisioning is authorised.
+Q-01 / HLD OD-07 disposition: Closed for the restricted PH3-SQL-001 local/non-production POC scope only; unresolved for any wider MVP or production baseline.
+Approval target commit: 127c3099b0fdb452259433daa472704d6820e241
+Pull Request: https://github.com/onkarpathre/lgr-transformation-migration/pull/2
+Evidence link: https://github.com/onkarpathre/lgr-transformation-migration/pull/2#pullrequestreview-5147899102
+```
 
-Until then, the Architecture Work Package may be `READY_FOR_ARCHITECTURE_APPROVAL`, but it must not be reissued as `READY_FOR_DEVELOPMENT` and implementation is not authorised.
+Product Specification Q-01, HLD OD-07, I-08 and R-11 are superseded only for this approved local/non-production POC scope. This record is not PRB, Information Security, production, merge, release or deployment approval.
