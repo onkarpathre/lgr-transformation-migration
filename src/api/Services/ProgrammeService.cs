@@ -169,6 +169,10 @@ public sealed class ProgrammeService(
     public async Task DeleteServerAsync(Guid id, CancellationToken cancellationToken)
     {
         var entity = await FindServerAsync(id, cancellationToken);
+        if (await db.SqlInstances.AnyAsync(x => x.ServerId == id && x.ProjectId == context.ProjectId, cancellationToken))
+        {
+            throw new DomainConflictException("The server cannot be deleted while it has active SQL instances.");
+        }
         db.Servers.Remove(entity); AddAudit("Server", entity.Id, "Deleted", context.ProjectId);
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -502,7 +506,7 @@ public sealed class ProgrammeService(
     private void AddAudit(string entityType, Guid entityId, string action, Guid? projectId) => db.AuditEvents.Add(new AuditEvent
     {
         Id = Guid.NewGuid(), CustomerId = context.CustomerId, ProjectId = projectId, EntityType = entityType, EntityId = entityId,
-        Action = action, ChangedBy = context.UserName, ChangedAt = Now
+        Action = action, ChangedBy = context.UserName, ChangedAt = Now, CorrelationId = context.CorrelationId
     });
 
     private static void ValidateDates(DateOnly? start, DateOnly? end)

@@ -26,6 +26,8 @@ public sealed class AppDbContext(
     public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
     public DbSet<DiscoveryImportRow> DiscoveryImportRows => Set<DiscoveryImportRow>();
     public DbSet<ServerDiscoverySnapshot> ServerDiscoverySnapshots => Set<ServerDiscoverySnapshot>();
+    public DbSet<SqlInstance> SqlInstances => Set<SqlInstance>();
+    public DbSet<SqlDatabase> SqlDatabases => Set<SqlDatabase>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +46,7 @@ public sealed class AppDbContext(
         modelBuilder.Entity<Project>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.CustomerId, x.Id }).HasName("AK_Projects_CustomerId_Id");
             entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(50).IsRequired();
             entity.HasIndex(x => x.CustomerId);
@@ -64,6 +67,8 @@ public sealed class AppDbContext(
         modelBuilder.Entity<Server>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .HasName("AK_Servers_CustomerId_ProjectId_Id");
             entity.Property(x => x.Hostname).HasMaxLength(253).IsRequired();
             entity.Property(x => x.IpAddress).HasMaxLength(45);
             ConfigureBusinessStrings(entity);
@@ -190,6 +195,7 @@ public sealed class AppDbContext(
             entity.Property(x => x.EntityType).HasMaxLength(100).IsRequired();
             entity.Property(x => x.Action).HasMaxLength(50).IsRequired();
             entity.Property(x => x.ChangedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.CorrelationId).HasMaxLength(100);
             entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.ChangedAt });
             entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
         });
@@ -207,6 +213,8 @@ public sealed class AppDbContext(
         modelBuilder.Entity<ImportBatch>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .HasName("AK_ImportBatches_CustomerId_ProjectId_Id");
             entity.Property(x => x.SourceType).HasMaxLength(80).IsRequired();
             entity.Property(x => x.OriginalFileName).HasMaxLength(260).IsRequired();
             entity.Property(x => x.StoredFileName).HasMaxLength(260);
@@ -263,7 +271,113 @@ public sealed class AppDbContext(
             entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
         });
 
+        modelBuilder.Entity<SqlInstance>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .HasName("AK_SqlInstances_CustomerId_ProjectId_Id");
+            entity.Property(x => x.InstanceName).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.NormalizedInstanceName).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.SqlVersion).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.Edition).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.ServiceStatus).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.DiscoverySource).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.ServiceAccountName).HasMaxLength(256);
+            entity.Property(x => x.CreatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.UpdatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.DeletedBy).HasMaxLength(200);
+            ConfigureRowVersion(entity.Property(x => x.RowVersion));
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_SqlInstances_Port",
+                "[Port] IS NULL OR ([Port] >= 1 AND [Port] <= 65535)"));
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.ServerId, x.NormalizedInstanceName })
+                .IsUnique()
+                .HasDatabaseName("UX_SqlInstances_Owner_Server_NormalizedName_Active")
+                .HasFilter("[IsDeleted] = 0");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.IsDeleted, x.NormalizedInstanceName })
+                .HasDatabaseName("IX_SqlInstances_Owner_Active_Name");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.IsDeleted, x.ServiceStatus })
+                .HasDatabaseName("IX_SqlInstances_Owner_Active_ServiceStatus");
+            entity.HasOne(x => x.Project)
+                .WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Server)
+                .WithMany(x => x.SqlInstances)
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.ServerId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.LastImportBatch)
+                .WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.LastImportBatchId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId && !x.IsDeleted);
+        });
+
+        modelBuilder.Entity<SqlDatabase>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .HasName("AK_SqlDatabases_CustomerId_ProjectId_Id");
+            entity.Property(x => x.Name).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.NormalizedName).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.RecoveryModel).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.Collation).HasMaxLength(128);
+            entity.Property(x => x.Status).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.CreatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.UpdatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.DeletedBy).HasMaxLength(200);
+            ConfigureRowVersion(entity.Property(x => x.RowVersion));
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint("CK_SqlDatabases_SizeMb", "[SizeMb] >= 0");
+                table.HasCheckConstraint(
+                    "CK_SqlDatabases_CompatibilityLevel",
+                    "[CompatibilityLevel] >= 80 AND [CompatibilityLevel] <= 200");
+            });
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.SqlInstanceId, x.NormalizedName })
+                .IsUnique()
+                .HasDatabaseName("UX_SqlDatabases_Owner_Instance_NormalizedName_Active")
+                .HasFilter("[IsDeleted] = 0");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.IsDeleted, x.NormalizedName })
+                .HasDatabaseName("IX_SqlDatabases_Owner_Active_Name");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.IsDeleted, x.Status })
+                .HasDatabaseName("IX_SqlDatabases_Owner_Active_Status");
+            entity.HasOne(x => x.Project)
+                .WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.SqlInstance)
+                .WithMany(x => x.Databases)
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.SqlInstanceId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.LastImportBatch)
+                .WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.LastImportBatchId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId && !x.IsDeleted);
+        });
+
         SeedData.Configure(modelBuilder);
+    }
+
+    private void ConfigureRowVersion(
+        Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<byte[]> property)
+    {
+        property.IsRequired().IsConcurrencyToken();
+        if (Database.IsSqlServer())
+        {
+            property.IsRowVersion();
+        }
+        else
+        {
+            property.ValueGeneratedNever();
+        }
     }
 
     private static void ConfigureBusinessStrings<TEntity>(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity> entity)

@@ -87,6 +87,7 @@ public sealed class Server : IProjectOwned
     public DateTimeOffset UpdatedAt { get; set; }
     public Project Project { get; set; } = null!;
     public ICollection<ApplicationServer> ApplicationServers { get; set; } = [];
+    public ICollection<SqlInstance> SqlInstances { get; set; } = [];
     public ICollection<ServerDiscoverySnapshot> DiscoverySnapshots { get; set; } = [];
     public ImportBatch? LastImportBatch { get; set; }
     public AzureTarget? AzureTarget { get; set; }
@@ -359,6 +360,7 @@ public sealed class AuditEvent : ICustomerOwned
     public string? NewValue { get; set; }
     public string ChangedBy { get; set; } = string.Empty;
     public DateTimeOffset ChangedAt { get; set; }
+    public string? CorrelationId { get; set; }
 }
 
 public sealed class LookupOption

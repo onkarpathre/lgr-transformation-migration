@@ -12,6 +12,7 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(
     builder.Configuration.GetConnectionString("LgrDatabase")
     ?? throw new InvalidOperationException("ConnectionStrings:LgrDatabase is required.")));
 builder.Services.AddScoped<ProgrammeService>();
+builder.Services.AddScoped<SqlInventoryService>();
 builder.Services.AddScoped<IpAllocationService>();
 builder.Services.AddScoped<RunbookService>();
 builder.Services.Configure<DiscoveryImportOptions>(builder.Configuration.GetSection(DiscoveryImportOptions.SectionName));
