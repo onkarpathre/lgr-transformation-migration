@@ -4,11 +4,11 @@
 traceability:
   product_version: "0.1"
   phase: "Phase 1 - MVP"
-  capabilities: ["C-02", "C-03", "C-04", "C-06"]
-  functional_requirements: ["F-03", "F-04", "F-05", "F-07", "F-15"]
+  capabilities: ["C-01", "C-02", "C-03", "C-04", "C-06"]
+  functional_requirements: ["F-01", "F-02", "F-03", "F-04", "F-05", "F-07", "F-15"]
   non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-04", "NF-05", "NF-06", "NF-08", "NF-09", "NF-10", "NF-11", "NF-12", "NF-13"]
   risks: ["R-01", "R-02", "R-03", "R-06", "R-09", "R-11"]
-  assumptions: ["A-01", "A-02", "A-05", "A-06", "A-08", "A-11", "A-13", "A-15", "A-16", "A-18"]
+  assumptions: ["A-01", "A-02", "A-03", "A-05", "A-06", "A-08", "A-11", "A-13", "A-15", "A-16", "A-18"]
   dependencies: ["D-01", "D-03", "D-04", "D-05", "D-07", "D-08", "D-10", "D-11", "D-13"]
   issues: ["I-01", "I-02", "I-03", "I-04", "I-06", "I-08"]
   open_questions: ["Q-01", "Q-02", "Q-06", "Q-09"]
@@ -25,15 +25,18 @@ traceability:
 - **Incoming work item:** PH3-SQL-001
 - **Incoming approval evidence:** Product Owner JP (`opathre`), 8 September 2026, approved local POC implementation subject to GitHub PR #1 restrictions; PR #1 was merged to `main` at `579171c927905876640cdf6bcb48ee8261b6c301`.
 - **Architecture approval target:** PR #2 commit `127c3099b0fdb452259433daa472704d6820e241`.
-- **Architecture exit state:** `READY_FOR_DEVELOPMENT`
-- **Development authority:** Granted only for PH3-SQL-001 local/non-production POC work using synthetic data and reversible changes, subject to every ADR-006, ADR-007 and PR #2 condition. No production, merge or release authority is granted.
-- **Reason:** PT accepted ADR-006 and conditionally accepted ADR-007 for the restricted POC scope; NTSecurity conditionally accepted ADR-007 for that same scope. Q-01/HLD OD-07 is closed only for this POC technology baseline. HLD DD-05 and production tenancy remain unresolved. CSV/source-contract and test-authority approvals remain downstream conditions and cannot be inferred from the architecture decisions.
+- **Architecture package current exit state:** `READY_FOR_ARCHITECTURE_APPROVAL`
+- **Current amendment:** ADR-008 supplies the authentication, internal principal, customer/project membership and exact SQL Inventory project-RBAC contract requested by `PH3SQL-TST-002`.
+- **Approval status:** ADR-008 has no approval evidence. The previous `READY_FOR_DEVELOPMENT` hand-off remains historical evidence for the domain slice only and does not authorise implementation of the new identity/RBAC decision.
+- **Development authority:** No additional development authority follows from this amendment until named Solution Architect/TDA and Information Security approval is recorded. The previously approved scope remains restricted to PH3-SQL-001 local/non-production POC work using synthetic data and reversible changes, subject to every ADR-006, ADR-007 and PR #2 condition. No production, merge or release authority is granted.
+- **Reason:** The Tester identified that record-level isolation is present but SQL routes have no authenticated principal, project-membership lookup or project-role policy. [ADR-008](ADR-008-internal-authentication-project-rbac.md) is complete for human architecture/security review and maps the resolution to F-15, NF-01, NF-02 and `PH3SQL-TST-002`. Q-01/HLD OD-07 remains closed only for the approved POC technology baseline. Q-09 still blocks external customer access; HLD DD-05 and production tenancy remain unresolved.
 - **Roadmap baseline:** `docs/product/PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md` is present in the current branch. Its terminology confirms this is Roadmap Phase 3 within Product Specification Phase 1 MVP; its presence does not close any pending product, architecture, security or test approval gate.
 
 ## Traceability reconciliation and gate assessment
 
 The Architecture Work Package retains every capability, functional requirement, non-functional requirement, risk, assumption, dependency, issue and open question listed by PH3-SQL-001. It adds only existing Product Specification references made relevant by the architecture review:
 
+- C-01, F-01, F-02 and A-03 for the internal identity, customer/project membership and role foundation required to satisfy F-15/NF-01/NF-02;
 - NF-03, NF-05, NF-11 and NF-12 for encryption/private connectivity, UK residency, security alignment and supportability;
 - R-11 for the Product Specification technology-baseline conflict;
 - A-15 and A-16 for Azure SQL capacity and pre-production security/privacy confirmation;
@@ -51,6 +54,7 @@ No new specification identifiers are introduced. The added references do not exp
 | Q-02 / D-01 | PRB budget, investment and phasing evidence is absent. | Does not block preparing this architecture; blocks asserting a committed delivery/release baseline or spending beyond the Product Owner's expressly limited local POC approval. |
 | Q-06 | Open. | Does not block synthetic local development; blocks production personal-data processing pending DPO determination and any required DPIA. |
 | Q-09 | Open. | Does not block domain work that remains isolated from external identity; blocks external customer access. Development headers remain local/test-only. |
+| ADR-008 / PH3SQL-TST-002 | Proposed and complete for architecture/security review; no approval evidence exists. | Blocks implementation and independent retest of authenticated SQL project RBAC until Solution Architect/TDA and Information Security approve the decision. It is separable from Q-09 because only Agilisys workforce identities and synthetic local/test principals are in scope. |
 | I-06 / D-11 | Test tools, environment and entry/exit criteria await the named test authority. | Must be agreed before implementation evidence can be accepted as formal system/test evidence. |
 
 Approval target commit `127c3099b0fdb452259433daa472704d6820e241` changes only ADR-006, ADR-007 and this Architecture Work Package; it contains no application, test, migration or schema implementation. PR #2 and the three review permalinks provide the scoped TDA and Information Security decision evidence.
@@ -277,16 +281,33 @@ No API implements hard delete, restore or bulk cascade deletion of SQL workloads
 ## Tenant isolation and authorisation
 
 - Add EF global `CustomerId` filters to SqlInstance, SqlDatabase, SqlAssessment and both SQL snapshot entities. Canonical filters also exclude `IsDeleted`; audit/history services use explicit, separately authorised history queries rather than request-path `IgnoreQueryFilters`.
-- Every scoped query and mutation also requires `ProjectId == currentContext.ProjectId`. The context resolver must first prove that the project belongs to the authenticated customer and that the actor has the required project role; possession of GUIDs is never authorisation.
+- Every scoped query and mutation also requires `ProjectId == currentContext.ProjectId`. The context resolver must first validate an Entra or LocalTest principal, resolve an active server-side ProjectMembership for the untrusted selected ProjectId, derive CustomerId from that membership and prove the exact permission required by the action; possession of GUIDs is never authorisation.
 - Ownership fields, normalized keys, actor names, audit timestamps and import linkage are never accepted from create/update DTOs. They come from authenticated server-side context or trusted server-side processing.
 - Relationship lookup starts from the current customer/project and is backed by the composite FKs above. Cross-project or cross-customer parents are treated exactly like missing records and return a non-enumerating 404.
 - Lists are paged and bounded; sort fields come from an allow-list; search/filter values are parameterised. No dynamic SQL, raw string interpolation or unbounded materialisation is permitted.
 - Import matching starts from the current customer/project and cannot fall back to hostname, instance or database names in another project. No background task may execute without an immutable tenant/project scope captured from the authorised batch.
 - Audit events carry current customer/project, actor, correlation ID and UTC timestamp. Raw CSV rows, names, findings, notes, validation values and service-account display values are not emitted to general logs.
 - File storage uses generated names and a tenant/project-authorised metadata lookup; cache keys include customer and project. Production Blob storage, malware scanning, retention, private connectivity and managed identity remain outside this local increment and blocked by their own gates.
-- API policy separates read, inventory-edit, import-commit and assessment-edit permissions. A future Platform Administrator cross-customer path requires PIM/elevation and audit; it is not introduced here.
+- API policy separates `sql.inventory.read`, `sql.inventory.create`, `sql.inventory.update` and `sql.inventory.delete`; import-commit and assessment-edit remain separate future permissions. A future Platform Administrator cross-customer path requires PIM/elevation and audit; it is not introduced here and neither Platform Administrator nor Customer Administrator receives implicit SQL data access.
 
-The existing `X-Customer-Id`, `X-Project-Id` and `X-User-Name` resolver is permitted only when the host environment is Development or Testing and only with synthetic identities. Production must fail closed unless Entra-derived claims and Q-09-approved authorisation are configured. The feature flag is not an authorisation boundary.
+For Agilisys internal users, Microsoft Entra workforce authentication establishes the caller and the application membership store establishes customer/project roles. `X-Project-Id` may remain only as an untrusted context selector; it grants no access and CustomerId is derived server-side from an active membership. The current `X-Customer-Id`, `X-User-Name` and Demo Council/user fallbacks are superseded by ADR-008 once approved.
+
+Local Development/Testing may use only the ADR-008 `LocalTest` adapter with allow-listed synthetic principal aliases and server-side synthetic memberships. Outside those environments, identity/role headers are stripped or ignored as authority, LocalTest configuration causes startup failure, and the API requires a valid Entra access token. Q-09 remains open and blocks external customer identity; it does not block this separable internal-only contract. The feature flag is not an authorisation boundary.
+
+### PH3SQL-TST-002 project-role contract
+
+[ADR-008](ADR-008-internal-authentication-project-rbac.md) is normative for identity, claims, membership, denial, errors, auditing, local/test simulation and service access. The exact SQL Instance and SQL Database method matrix is:
+
+| Project role | GET list/detail | POST create | PUT update | DELETE logical archive |
+|---|---:|---:|---:|---:|
+| `DatabaseSme` | Allow | Allow | Allow | Allow |
+| `MigrationArchitect` | Allow | Deny | Deny | Deny |
+| `ProjectManager` | Allow | Deny | Deny | Deny |
+| `DiscoveryAnalyst` | Allow | Deny | Deny | Deny |
+| `ReviewerAuditor` | Allow | Deny | Deny | Deny |
+| Any other, unknown, customer-level or platform role | Deny | Deny | Deny | Deny |
+
+Permissions are additive across active roles, but a disabled/suspended principal or membership overrides all allows. There is no wildcard or administrator bypass. `delete` means the existing logical archive operation; no hard-delete permission exists.
 
 ## API contract proposal
 
@@ -317,8 +338,10 @@ Discovery-managed technical fields remain manually correctable through authorise
 - Detail and create/update responses include an `ETag` derived from the opaque `rowversion`. `PUT` and `DELETE` require `If-Match`; missing preconditions return 428 and stale versions return 412 without mutation.
 - Discovery batch detail/preview uses an ETag backed by an additive `ImportBatch.RowVersion`. Commit additionally requires a caller-generated `Idempotency-Key`; repeat delivery returns the already completed result or a conflict, never a second application.
 - `POST` returns 201 with `Location` and `ETag`; successful `PUT` returns 200 with the updated DTO/ETag; logical `DELETE` returns 204. Preview/commit return 200 with the batch summary. No endpoint returns raw EF entities.
-- Invalid syntax/field/state returns 400; authentication failure 401; insufficient role 403; missing or inaccessible records 404; business uniqueness/dependent conflicts 409; missing/stale preconditions 428/412; oversized upload 413; unsupported media/contract 415/422; and unexpected failures 500 with no internal detail.
+- Invalid syntax/field/state returns 400; authentication failure 401; insufficient permission for an active project member 403; missing membership or missing/inaccessible records 404; business uniqueness/dependent conflicts 409; missing/stale preconditions 428/412; oversized upload 413; unsupported media/contract 415/422; authorization-store unavailability 503; and unexpected failures 500 with no internal detail.
 - Problem Details include stable `type`, `title`, `status`, safe `detail`, `instance`, `errorCode`, `correlationId` and field errors where applicable. They never reveal another tenant/project, SQL object existence, raw source values, stack traces or SQL/provider text.
+
+ADR-008 fixes the authorization error codes as `authentication_required` (401), `invalid_project_context` or `project_context_required` (400), `api_access_denied` or `permission_denied` (403), `resource_not_found` (404) and `authorization_unavailable` (503). A valid but unauthorized ProjectId returns the same 404 as an unknown project. A production bearer-token failure never falls back to a header or configured development identity.
 
 The API must be described by generated OpenAPI and locked by approval tests. It remains an internal API; this work item does not approve external publication.
 
@@ -446,12 +469,13 @@ Keep existing `MatchedEntityId` as the Server match for existing Phase 2 behavio
 
 ### Trust boundaries and data handling
 
-- Browser input, route/query IDs, headers, CSV metadata and file content are untrusted. Controllers bind allow-listed DTOs; services establish authenticated customer/project scope, validate role and business rules, and then use parameterised EF queries. No SQL, PowerShell, shell, macro, formula, DMS, Azure SDK or migration-executor path exists.
+- Browser input, route/query IDs, headers, CSV metadata and file content are untrusted. The Entra adapter validates the access token, the server-side principal/membership adapter derives one immutable customer/project authorization context, controllers bind allow-listed DTOs, and services validate the exact permission and business rules before parameterised EF queries. No SQL, PowerShell, shell, macro, formula, DMS, Azure SDK or migration-executor path exists.
 - SQL names, versions, infrastructure facts, assessments, findings and source rows are customer-confidential. Retain only approved fields; development/test use synthetic data. HTML output is encoded and no raw staging value is inserted as markup.
 - The import boundary enforces authenticated permission, generated storage name, configured size/row/column limits, strict UTF-8/CSV parsing, source-contract selection, duplicate detection, validation, preview and explicit commit. Unsupported file types never reach a parser.
 - `ServiceAccountName` is metadata, not an authentication secret. The API/UI rejects credential-like content, provides no password/token/key/connection-string field, does not log the submitted value, and audits only that the property changed with redacted old/new values.
 - General telemetry contains correlation ID, opaque entity/batch/row IDs, counts, classifications, duration and safe outcome only. It excludes raw rows, original values, server/instance/database names, findings, blockers, notes, filenames and audit old/new content.
 - Existing local file storage and development headers are development/test only. Production Blob quarantine/promotion, Defender scanning, managed identity, Key Vault, private endpoints, retention and Entra claims require their separate approved designs; this package does not claim those controls exist.
+- After ADR-008 approval, local/test identity simulation uses only an allow-listed synthetic principal alias and server-side membership fixture. Production and production-like environments prohibit trusted customer, user, role, permission or test-principal headers and fail startup if LocalTest mode is selected.
 - No cache is required for PH3-SQL-001. If later introduced, its key must contain customer and project, its value must not be shared across scopes, and eviction must follow archive/commit changes.
 
 ### Audit and discovery history contract
@@ -523,6 +547,9 @@ This is the architecture/tester recommendation. I-06 closes only when Agilisys T
 
 The Tester must prove:
 
+- valid Entra-style delegated authentication, rejection of missing/invalid/wrong-issuer/wrong-tenant/wrong-audience/expired tokens, disallowed clients, missing scope, ID-token misuse and delegated/app-only claim confusion;
+- every `DatabaseSme`, `MigrationArchitect`, `ProjectManager`, `DiscoveryAnalyst`, `ReviewerAuditor` and deny-default role/method combination in the SQL Inventory CRUD matrix for both resource types;
+- missing/disabled/expired memberships, role/permission claim/header injection, administrator non-bypass, membership-revocation/cache behaviour and LocalTest production startup guards;
 - SQL Instance and Database positive/negative CRUD and safe errors;
 - unique normalized business keys, including concurrent create/commit on SQL Server;
 - same-tenant/project Server -> Instance -> Database relationships and cross-tenant/project direct-object rejection;
@@ -532,7 +559,8 @@ The Tester must prove:
 - deterministic Create/Update/Unchanged preview and transactional reconciliation;
 - stale-preview/repeat-commit/idempotency protection, typed snapshots and audit evidence;
 - versioned routes plus legacy alias equivalence, bounded API queries, DTO boundaries, non-enumerating errors and Phase 1/2 regression;
-- frontend component/browser/a11y behaviour plus lint/build; and
+- frontend component/browser/a11y behaviour plus lint/build;
+- workload tokens denied on interactive CRUD routes, least-privilege project grants on any future service route, stable audit actor/correlation evidence and safe 400/401/403/404/503 Problem Details; and
 - the absence of DMS, migration execution, AI recommendation, remediation and Azure provisioning paths.
 
 ## Acceptance-criteria architecture and test traceability
@@ -546,7 +574,7 @@ The Tester must prove:
 | SQL-AC-005 | Idempotent match keys, blank-does-not-clear policy and protected-field matrix. | Re-import tests and byte-for-byte protected-field assertions. |
 | SQL-AC-006 | Assessment XOR model, controlled states/targets and human-only write DTO. | Instance/database assessment workflow, validation, ETag and audit tests. |
 | SQL-AC-007 | Six-value target constraint with no executor/provisioner mapping. | Allowed/rejected value tests and repository/behavioural absence checks. |
-| SQL-AC-008 | Server-derived customer/project scope, composite FKs, query filters and non-enumerating errors. | Horizontal/vertical access tests for list/detail/write/import/history/assessment and relationship IDs. |
+| SQL-AC-008 | ADR-008 Entra/InternalPrincipal/ProjectMembership policies, exact project-role CRUD matrix, server-derived customer/project scope, composite FKs, query filters and non-enumerating errors. | Token, membership, role/method, LocalTest/production-header, horizontal/vertical and direct-object tests for list/detail/write/import/history/assessment and relationship IDs. |
 | SQL-AC-009 | Append-only AuditEvent contract plus typed snapshots and actor/UTC metadata. | Significant-change, field-change, archive and commit-summary audit assertions. |
 | SQL-AC-010 | Next.js module using the internal v1 API with accessible states and controls. | Lint/build, component, Playwright, keyboard and accessibility evidence. |
 | SQL-AC-011 | Bounded queries, owner-leading indexes and no N+1 parent resolution. | Synthetic 200+ mixed-asset run with timings/query plans and leakage checks. |
@@ -557,17 +585,22 @@ The Tester must prove:
 
 ## Human decisions and approvals required
 
-The Product Owner, Solution Architect/TDA and Information Security decisions permit the Architecture Work Package to enter `READY_FOR_DEVELOPMENT` only for the stated local/non-production POC scope. The following decisions and gates remain:
+The earlier Product Owner, Solution Architect/TDA and Information Security decisions permitted only the original Architecture Work Package to enter restricted local/non-production POC development. The PH3SQL-TST-002 amendment is now `READY_FOR_ARCHITECTURE_APPROVAL`; no new development authority is claimed. The following decisions and gates remain:
 
-1. **Named Product Owner, human Architect and DBA/Discovery SME:** approve the two v1 CSV contracts, controlled assessment values and synthetic fixture set. Information Security must additionally approve any later `ServiceAccountName` source-contract amendment.
-2. **Agilisys Test Services or named test authority:** approve the SQL Server/frontend tools, isolated environment, synthetic data, entry/exit criteria and the division between SQLite fast tests and mandatory SQL Server evidence (I-06/D-11).
-3. **PRB:** approve scope investment/phasing before a committed delivery/release baseline or expenditure outside the limited local POC authority is asserted (D-01/Q-02).
-4. **Production tenancy:** TDA must resolve HLD DD-05/ADR-001 and commission the selected production topology; Information Security must separately approve it. The POC acceptance does not decide this.
-5. **Before production only:** Data Protection/DPO decides Q-06 and retention; Solution Architect/Information Security closes Q-09 for external identity; Managed Services/Service Transition approves support/operability; human release authority approves deployment. None is claimed here.
+1. **Solution Architect/TDA and Information Security:** approve, conditionally approve or reject ADR-008's internal authentication, principal, membership, exact SQL CRUD RBAC, deny, header, audit and service-access contract. Both approvals are required before the Developer implements PH3SQL-TST-002.
+2. **Product Owner:** confirm the ADR-008 role-to-permission mapping matches the already approved PH3-SQL-001 personas and acceptance intent. This confirmation cannot substitute for TDA or Information Security approval.
+3. **Identity Platform owner:** confirm the environment-specific Entra tenant, app registrations, allowed clients, API scope, Conditional Access/MFA and managed-identity configuration before Entra mode is used in a deployed environment.
+4. **Named Product Owner, human Architect and DBA/Discovery SME:** approve the two v1 CSV contracts, controlled assessment values and synthetic fixture set. Information Security must additionally approve any later `ServiceAccountName` source-contract amendment.
+5. **Agilisys Test Services or named test authority:** approve the SQL Server/frontend/authentication tools, isolated environment, synthetic data, entry/exit criteria and the division between fast tests and mandatory provider/security evidence (I-06/D-11).
+6. **PRB:** approve scope investment/phasing before a committed delivery/release baseline or expenditure outside the limited local POC authority is asserted (D-01/Q-02).
+7. **Production tenancy:** TDA must resolve HLD DD-05/ADR-001 and commission the selected production topology; Information Security must separately approve it. The POC acceptance does not decide this.
+8. **Before production only:** Data Protection/DPO decides Q-06 and retention; Solution Architect/Information Security closes Q-09 for external identity; Managed Services/Service Transition approves support/operability; human release authority approves deployment. None is claimed here.
 
 Each remaining approval must record decision, named person/role, date, exact scope, conditions and durable evidence. ADR-006 and ADR-007 are accepted only within their recorded POC boundaries.
 
-## Hand-off
+## Original hand-off (historical; superseded for PH3SQL-TST-002)
+
+The following commit-bound hand-off records the previously approved domain architecture. It does not include or approve ADR-008 and is superseded by the current amendment hand-off below for the unresolved authorization defect.
 
 ```yaml
 handoff:
@@ -625,4 +658,63 @@ handoff:
     - "Solution Architect/TDA PT (PTArchitect), 8 September 2026: ADR-007 accepted with conditions for local/non-production POC use only."
     - "Information Security NTSecurity (nextgenexamprep-crypto), 8 September 2026: ADR-007 accepted with conditions for local/non-production POC use only."
   requested_action: "Developer may begin only the restricted local/non-production PH3-SQL-001 POC using synthetic data and reversible changes. Obtain the named source-contract approvals before baselining contract-dependent behaviour and test-authority approval before treating implementation results as formal test evidence. Preserve every ADR/PR condition and all production-tenancy, PRB and release blockers; no production, merge or deployment action follows."
+```
+
+## Current PH3SQL-TST-002 architecture amendment hand-off
+
+```yaml
+handoff:
+  from_agent: "architect"
+  to_agent: "architect"
+  human_reviewers: ["Solution Architect / TDA", "Information Security"]
+  state: "READY_FOR_ARCHITECTURE_APPROVAL"
+  work_item: "PH3-SQL-001-slice-1-remediation-PH3SQL-TST-002"
+  branch: "feature/ph3-sql-rbac-architecture"
+  commit: null
+  baseline_commit: "5d3e9b02bc57989d79ee47a133ab35ad4a31d3f8"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01", "C-03", "C-04", "C-06"]
+    functional_requirements: ["F-01", "F-02", "F-04", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-11", "NF-12"]
+    risks: ["R-02", "R-09"]
+    assumptions: ["A-01", "A-02", "A-03", "A-16", "A-18"]
+    dependencies: ["D-03", "D-04", "D-10", "D-11", "D-13"]
+    issues: ["I-02", "I-06"]
+    open_questions: ["Q-06", "Q-09"]
+    approvals: []
+  artefacts:
+    - "docs/architecture/ADR-008-internal-authentication-project-rbac.md"
+    - "docs/architecture/Phase3_SQL_Discovery_Assessment_Architecture.md"
+  evidence:
+    - "Product Specification V0.1 F-15, NF-01 and NF-02; its document-control table records approval as pending."
+    - "HLD V0.1 API-03/API-04, ID-01..ID-06, Table 27 roles, TI-01..TI-07 and release-blocking authentication/RBAC/isolation tests; its approval/readiness fields are incomplete."
+    - "ADR-006 and ADR-007 named conditional approvals for the restricted local/non-production POC only."
+    - "Developer Implementation Work Package read from feature/ph3-sql-implementation at fa479713ab0cc882397a86f9c962570e9f74e2da; it requests this architecture contract."
+    - "Independent Tester evidence at 4c61979e941974d05009727f3ad7959b372f71c1 identifies PH3SQL-TST-002 as missing authentication, membership and role policy."
+    - "Read-only inspection confirmed CurrentCustomerContext uses Development/Testing headers and Program registers authorization without authentication or named SQL policies."
+  decisions:
+    - "Recommend Entra workforce authentication plus an application-owned InternalPrincipal, CustomerMembership, ProjectMembership and exact permission policies."
+    - "DatabaseSme receives SQL Inventory read/create/update/logical-delete; MigrationArchitect, ProjectManager, DiscoveryAnalyst and ReviewerAuditor receive read only; every unlisted role denies."
+    - "LocalTest uses allow-listed synthetic aliases and memberships only; no production identity, customer, role or permission header is trusted."
+    - "Interactive SQL CRUD is human-delegated only; future workloads require managed identity, application role and explicit project grant, with no delete or wildcard."
+  assumptions:
+    - "Only Agilisys internal identities and synthetic local/test principals are in scope; external users remain blocked by Q-09."
+    - "No code, tests, migration, database, Azure, merge or deployment action occurs in this architecture work."
+  risks:
+    - "R-02 remains open until ADR-008 is approved, implemented and independently abuse-tested."
+    - "The persistent membership administration model and production identity configuration are not implemented or approved."
+    - "Existing header fallback must be removed/superseded without weakening Phase 1/2 regression coverage."
+    - "The Product Specification and HLD document-control tables do not evidence final approval."
+  defects:
+    - "PH3SQL-TST-002: architecture decision complete; approval, implementation and independent retest remain outstanding."
+  blockers:
+    - "Named Solution Architect/TDA and Information Security approval of ADR-008 is required before implementation."
+    - "Product Owner role-mapping confirmation and Identity Platform configuration evidence remain required."
+    - "I-06/D-11 test-authority, SQL Server runtime and dependency-vulnerability evidence remain unresolved downstream."
+    - "Q-06, Q-09, production tenancy, Service Transition and release decisions remain open for production."
+  approvals:
+    - "No ADR-008 approval is claimed."
+  requested_action: "Solution Architect/TDA and Information Security must review and approve, conditionally approve or reject ADR-008. If approved, return PH3SQL-TST-002 to the Developer for implementation on feature/ph3-sql-implementation and a commit-bound READY_FOR_TEST hand-off, then require independent Tester retest before any quality review."
 ```
