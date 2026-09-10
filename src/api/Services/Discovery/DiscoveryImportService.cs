@@ -324,7 +324,9 @@ public sealed class DiscoveryImportService(
         {
             Id = Guid.NewGuid(), CustomerId = context.CustomerId, ProjectId = projectId,
             EntityType = entityType, EntityId = entityId, Action = action, PropertyName = propertyName,
-            OldValue = oldValue, NewValue = newValue, ChangedBy = context.UserName, ChangedAt = changedAt
+            OldValue = oldValue, NewValue = newValue, ChangedBy = context.UserName,
+            ActorPrincipalType = context.Principal.PrincipalType.ToString(), ChangedAt = changedAt,
+            CorrelationId = context.CorrelationId
         });
 
     private static IReadOnlyDictionary<string, string> DeserializeRaw(string json) =>

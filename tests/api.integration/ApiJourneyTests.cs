@@ -18,9 +18,7 @@ public sealed class ApiJourneyTests
         var demoApps = await demo.GetFromJsonAsync<PagedResult<ApplicationDto>>("/api/applications", JsonOptions);
         Assert.Equal(5, demoApps!.TotalCount);
 
-        using var other = factory.CreateClient();
-        other.DefaultRequestHeaders.Add("X-Customer-Id", otherCustomer.ToString());
-        other.DefaultRequestHeaders.Add("X-Project-Id", otherProject.ToString());
+        using var other = factory.CreateAuthenticatedClient("dba-project-b", otherProject);
         var otherApps = await other.GetFromJsonAsync<PagedResult<ApplicationDto>>("/api/applications", JsonOptions);
         var summary = await other.GetFromJsonAsync<DashboardSummaryDto>("/api/dashboard/summary", JsonOptions);
         Assert.Equal(1, otherApps!.TotalCount);

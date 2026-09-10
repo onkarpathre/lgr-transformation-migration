@@ -195,6 +195,7 @@ public sealed class AppDbContext(
             entity.Property(x => x.EntityType).HasMaxLength(100).IsRequired();
             entity.Property(x => x.Action).HasMaxLength(50).IsRequired();
             entity.Property(x => x.ChangedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.ActorPrincipalType).HasMaxLength(20);
             entity.Property(x => x.CorrelationId).HasMaxLength(100);
             entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.ChangedAt });
             entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);

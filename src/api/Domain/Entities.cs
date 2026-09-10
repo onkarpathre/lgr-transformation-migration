@@ -359,6 +359,7 @@ public sealed class AuditEvent : ICustomerOwned
     public string? OldValue { get; set; }
     public string? NewValue { get; set; }
     public string ChangedBy { get; set; } = string.Empty;
+    public string? ActorPrincipalType { get; set; }
     public DateTimeOffset ChangedAt { get; set; }
     public string? CorrelationId { get; set; }
 }

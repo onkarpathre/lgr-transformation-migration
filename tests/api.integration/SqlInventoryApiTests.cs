@@ -25,6 +25,7 @@ public sealed class SqlInventoryApiTests
                     ["Features:SqlDiscoveryAssessment"] = "false"
                 })));
         using var client = disabledFactory.CreateClient();
+        LgrWebApplicationFactory.ApplySyntheticIdentity(client, "dba-project-a", SeedIds.DemoProject);
 
         var listResponse = await client.GetAsync("/api/v1/sql-instances");
         var createResponse = await client.PostAsJsonAsync(
@@ -45,7 +46,7 @@ public sealed class SqlInventoryApiTests
 
         using var scope = disabledFactory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        Assert.Empty(await db.SqlInstances.ToListAsync());
+        Assert.Empty(await db.SqlInstances.IgnoreQueryFilters().ToListAsync());
     }
 
     [Fact]
@@ -128,7 +129,9 @@ public sealed class SqlInventoryApiTests
 
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var audit = await db.AuditEvents.Where(x => x.EntityId == instance.Id || x.EntityId == database.Id).ToListAsync();
+        var audit = await db.AuditEvents.IgnoreQueryFilters()
+            .Where(x => x.EntityId == instance.Id || x.EntityId == database.Id)
+            .ToListAsync();
         Assert.Contains(audit, x => x.Action == "SqlInstanceCreated" && x.ProjectId == SeedIds.DemoProject);
         Assert.Contains(audit, x => x.Action == "SqlInstanceUpdated" && x.PropertyName == "SqlVersion");
         Assert.Contains(audit, x =>
@@ -292,7 +295,7 @@ public sealed class SqlInventoryApiTests
     {
         using var factory = new LgrWebApplicationFactory();
         var otherScope = await factory.SeedSecondTenantAsync();
-        using var other = ContextClient(factory, otherScope.CustomerId, otherScope.ProjectId);
+        using var other = ContextClient(factory, "dba-project-b", otherScope.ProjectId);
         var (otherInstance, otherTag) = await CreateInstanceAsync(
             other,
             LgrWebApplicationFactory.SecondTenantServerId,
@@ -332,7 +335,7 @@ public sealed class SqlInventoryApiTests
     {
         using var factory = new LgrWebApplicationFactory();
         var otherScope = await factory.SeedSecondProjectForDemoCustomerAsync();
-        using var otherProject = ContextClient(factory, SeedIds.DemoCustomer, otherScope.ProjectId);
+        using var otherProject = ContextClient(factory, "dba-project-a2", otherScope.ProjectId);
         var (otherInstance, otherTag) = await CreateInstanceAsync(otherProject, otherScope.ServerId, "OTHER-PROJECT");
         using var demo = factory.CreateClient();
 
@@ -372,7 +375,7 @@ public sealed class SqlInventoryApiTests
     {
         using var factory = new LgrWebApplicationFactory();
         var otherScope = await factory.SeedSecondTenantAsync();
-        using var mismatched = ContextClient(factory, otherScope.CustomerId, SeedIds.DemoProject);
+        using var mismatched = ContextClient(factory, "dba-project-b", SeedIds.DemoProject);
 
         Assert.Equal(
             HttpStatusCode.NotFound,
@@ -412,7 +415,7 @@ public sealed class SqlInventoryApiTests
 
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var audit = await db.AuditEvents
+        var audit = await db.AuditEvents.IgnoreQueryFilters()
             .Where(x => x.EntityId == firstInstance.Id || x.EntityId == database.Id)
             .ToListAsync();
         Assert.Contains(audit, x =>
@@ -667,8 +670,8 @@ public sealed class SqlInventoryApiTests
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var orphanedServers = await (
-            from server in db.Servers
-            join project in db.Projects
+            from server in db.Servers.IgnoreQueryFilters()
+            join project in db.Projects.IgnoreQueryFilters()
                 on new { server.CustomerId, server.ProjectId }
                 equals new { project.CustomerId, ProjectId = project.Id }
                 into projects
@@ -676,8 +679,8 @@ public sealed class SqlInventoryApiTests
             where project == null
             select server.Id).CountAsync();
         var orphanedBatches = await (
-            from batch in db.ImportBatches
-            join project in db.Projects
+            from batch in db.ImportBatches.IgnoreQueryFilters()
+            join project in db.Projects.IgnoreQueryFilters()
                 on new { batch.CustomerId, batch.ProjectId }
                 equals new { project.CustomerId, ProjectId = project.Id }
                 into projects
@@ -721,14 +724,8 @@ public sealed class SqlInventoryApiTests
     private static SqlDatabaseWriteV1 DatabaseRequest(Guid sqlInstanceId, string name) =>
         new(sqlInstanceId, name, 1024, 160, SqlDatabaseRecoveryModels.Full, "Latin1_General_100_CI_AS", SqlDatabaseStatuses.Online);
 
-    private static HttpClient ContextClient(LgrWebApplicationFactory factory, Guid customerId, Guid projectId)
-    {
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Customer-Id", customerId.ToString());
-        client.DefaultRequestHeaders.Add("X-Project-Id", projectId.ToString());
-        client.DefaultRequestHeaders.Add("X-User-Name", "synthetic.tester@example.test");
-        return client;
-    }
+    private static HttpClient ContextClient(LgrWebApplicationFactory factory, string alias, Guid projectId) =>
+        factory.CreateAuthenticatedClient(alias, projectId);
 
     private static async Task<HttpResponseMessage> SendWithIfMatchAsync(
         HttpClient client,
@@ -751,7 +748,19 @@ public sealed class SqlInventoryApiTests
     {
         public Guid CustomerId => SeedIds.DemoCustomer;
         public Guid ProjectId => SeedIds.DemoProject;
-        public string UserName => "synthetic.schema@example.test";
+        public string UserName => Principal.AuditActor;
         public string CorrelationId => "synthetic-schema-generation";
+        public InternalPrincipal Principal { get; } = new(
+            Guid.Parse("70000000-0000-0000-0000-000000000099"),
+            InternalPrincipalType.Human,
+            "EntraId",
+            Guid.Parse("99999999-9999-9999-9999-999999999999"),
+            Guid.Parse("70000000-0000-0000-0000-000000000099"),
+            Guid.Parse("88888888-8888-8888-8888-888888888888"),
+            "synthetic-schema",
+            "Synthetic schema principal",
+            InternalAuthenticationDefaults.LocalTestMode,
+            IsActive: true,
+            ApiAccessAllowed: true);
     }
 }

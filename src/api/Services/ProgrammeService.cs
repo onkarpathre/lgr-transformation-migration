@@ -506,7 +506,8 @@ public sealed class ProgrammeService(
     private void AddAudit(string entityType, Guid entityId, string action, Guid? projectId) => db.AuditEvents.Add(new AuditEvent
     {
         Id = Guid.NewGuid(), CustomerId = context.CustomerId, ProjectId = projectId, EntityType = entityType, EntityId = entityId,
-        Action = action, ChangedBy = context.UserName, ChangedAt = Now, CorrelationId = context.CorrelationId
+        Action = action, ChangedBy = context.UserName, ActorPrincipalType = context.Principal.PrincipalType.ToString(),
+        ChangedAt = Now, CorrelationId = context.CorrelationId
     });
 
     private static void ValidateDates(DateOnly? start, DateOnly? end)

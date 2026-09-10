@@ -4,11 +4,11 @@
 traceability:
   product_version: "0.1"
   phase: "Phase 1 - MVP"
-  capabilities: ["C-02", "C-03", "C-04", "C-06"]
-  functional_requirements: ["F-03", "F-04", "F-05", "F-07", "F-15"]
+  capabilities: ["C-01", "C-02", "C-03", "C-04", "C-06"]
+  functional_requirements: ["F-01", "F-02", "F-03", "F-04", "F-05", "F-07", "F-15"]
   non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-04", "NF-05", "NF-06", "NF-08", "NF-09", "NF-10", "NF-11", "NF-12", "NF-13"]
   risks: ["R-01", "R-02", "R-03", "R-06", "R-09", "R-11"]
-  assumptions: ["A-01", "A-02", "A-05", "A-06", "A-08", "A-11", "A-13", "A-15", "A-16", "A-18"]
+  assumptions: ["A-01", "A-02", "A-03", "A-05", "A-06", "A-08", "A-11", "A-13", "A-15", "A-16", "A-18"]
   dependencies: ["D-01", "D-03", "D-04", "D-05", "D-07", "D-08", "D-10", "D-11", "D-13"]
   issues: ["I-01", "I-02", "I-03", "I-04", "I-06", "I-08"]
   open_questions: ["Q-01", "Q-02", "Q-06", "Q-09"]
@@ -16,6 +16,121 @@ traceability:
     - "Product Owner JP (opathre), 8 September 2026: local POC implementation only, subject to PR restrictions."
     - "Solution Architect/TDA PT (PTArchitect), 8 September 2026: ADR-006 and ADR-007 accepted with conditions for the local/non-production PH3-SQL-001 POC only."
     - "Information Security NTSecurity (nextgenexamprep-crypto), 8 September 2026: ADR-007 accepted with conditions for the local/non-production PH3-SQL-001 POC only."
+    - "Solution Architect/TDA PTArchitect, 10 September 2026: ADR-008 and PH3-SQL-ARCH-001 authentication/RBAC amendment approved for local/non-production implementation and testing only."
+    - "Information Security nextgenexamprep-crypto, 10 September 2026: ADR-008 controls approved for local/non-production implementation and testing only."
+    - "Product Owner opathre, 10 September 2026: exact SQL Inventory role-to-permission mapping confirmed for the same restricted scope."
+```
+
+## ADR-008 Developer remediation update - 10 September 2026
+
+This section supersedes the 9 September Developer remediation status for PH3SQL-TST-002. The historical Developer and Tester records retained later in this package remain evidence of the earlier state; `PH3_SQL_Slice1_Test_Evidence_Pack.md` was not modified.
+
+Post-reboot recovery verification found the requested branch still at exact baseline `3650852bb91a8b8ca89a92d1de6ed352b37dde79` with the same 16 tracked modifications and six untracked implementation files. The recovered `InternalPrincipal`, LocalTest configuration, authorization tests and `20260910082037_AddInternalPrincipalAuditType` migration were preserved in place; duplicate-type and duplicate-migration inspection found no second implementation. The historical Tester evidence hash still matches `HEAD`. All current Developer checks below were rerun against this recovered working tree on 10 September 2026.
+
+### Implemented authorization contract
+
+- Microsoft Entra mode validates signed v2 access tokens against an exact configured HTTPS issuer, API audience and OpenID signing keys, requires matching `tid`, immutable `oid`, `sub`, allow-listed `azp` and appropriate delegated `scp`, and denies app-only or mixed human/workload identity on interactive SQL routes.
+- Authentication constructs the immutable application-owned `InternalPrincipal`. The request-scoped project authorization context is created only from a server-side membership result and contains the derived customer, selected project, frozen role/permission sets and membership version.
+- The fallback policy requires an authenticated internal human with active project membership. `/health` is the sole reviewed anonymous endpoint and returns no identity, tenant or dependency detail.
+- `SqlInventoryRead`, `SqlInventoryCreate`, `SqlInventoryUpdate` and `SqlInventoryDelete` are applied to every SQL Instance and SQL Database action. `DatabaseSme` receives all four permissions; `MigrationArchitect`, `ProjectManager`, `DiscoveryAnalyst` and `ReviewerAuditor` receive read only; all other roles deny.
+- Missing, inactive, disabled, expired, not-yet-valid or cross-scope membership returns `404/resource_not_found`; an active member lacking a required permission returns `403/permission_denied`; absent/invalid authentication returns `401/authentication_required`; membership-authority failure returns `503/authorization_unavailable`; missing/malformed project selection returns the approved safe 400 codes.
+- LocalTest is usable only in exact Development/Testing environments, accepts only configured synthetic aliases, and obtains customer/project/roles only from server-side fixtures. Any other environment fails startup if LocalTest is selected or required Entra settings are missing. Production-like tests prove identity/customer/user/role/permission headers cannot grant access and bearer failure never falls back.
+- Existing customer query filters, explicit project predicates, same-owner relationship validation, composite constraints and the default-off `SqlDiscoveryAssessment` feature filter remain in force. Authentication runs before authorization, which runs before MVC feature filters.
+- SQL mutation audit rows now carry the canonical stable actor, `ActorPrincipalType`, derived customer/project, UTC time and correlation ID. Operational access logging uses only stable IDs, route templates, method, status and correlation; it does not log bearer tokens, header values or SQL inventory names.
+
+### Current Developer checks
+
+| Command/check | Observed result |
+|---|---|
+| Branch/starting-point validation | PASS: clean `feature/ph3-sql-implementation` at exact commit `3650852bb91a8b8ca89a92d1de6ed352b37dde79` before editing. Changes remain intentionally uncommitted and unpushed. |
+| `dotnet restore LgrTransformationMigration.sln` | PASS; all projects up to date. No dependency version changed. |
+| Release build with `--no-restore` | PASS; 0 warnings, 0 errors. |
+| Complete solution tests with `--no-build --no-restore` | PASS; 73 unit + 85 integration = 158 passed, 0 failed, 0 skipped. |
+| Focused ADR-008 unit tests | PASS; 23 passed, 0 failed, 0 skipped. Covers permission mapping plus Entra signature, signing key, issuer, audience, lifetime, version, tenant, object ID, client, scope and workload/human claim handling. |
+| Focused SQL authorization integration tests | PASS; 45 passed, 0 failed, 0 skipped. Covers both resource types, all methods/roles, membership lifecycle, isolation/injection, safe errors, revocation, production guards, stable audit actor and fallback policy. |
+| Explicit Phase 1/2 regression | PASS; 32 unit + 23 integration = 55 passed, 0 failed, 0 skipped. |
+| Pinned `dotnet-ef 10.0.11 migrations has-pending-model-changes` | PASS: `No changes have been made to the model since the last migration.` |
+| Generated ADR-008 migration delta | PASS: one nullable `ALTER TABLE [AuditEvents] ADD [ActorPrincipalType] nvarchar(20) NULL`; no other operation. Generated/inspected only; not applied. |
+| Frontend `npm.cmd run lint` / `npm.cmd run build` | PASS; lint exit 0 and Next.js 16.2.12 production build exit 0 with 16 routes. Build-only `next-env.d.ts` output was restored. |
+| Scoped whitespace verification / `git diff --check` | PASS for ADR-008 code/tests; no whitespace errors. Existing line-ending notices only. |
+| Scoped credential-pattern inspection | PASS; no credential/private-key pattern in new identity configuration/code/tests. `gitleaks` and `trivy` are not installed. |
+| NuGet/npm vulnerability advisory queries | BLOCKED by denied outbound advisory endpoints. Existing packages restored and no package reference changed; no clean connected-feed assertion is made. |
+
+### Defect disposition
+
+| Defect | Developer disposition | Remaining action |
+|---|---|---|
+| PH3SQL-TST-001 | REMEDIATED | Work is on the requested feature branch and exact starting point; the working tree is intentionally uncommitted by instruction. |
+| PH3SQL-TST-002 | IMPLEMENTED; Developer verification PASS | Independent Tester must retest the exact future implementation commit. R-02 remains open until that evidence exists. |
+| PH3SQL-TST-003 | REMEDIATED and preserved; full suite PASS | Independent regression remains required. |
+| PH3SQL-TST-004 | REMEDIATED and preserved; full suite PASS | Default-off/local-only feature behavior remains subject to independent regression. |
+
+### Current Developer hand-off
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "PH3-SQL-001-slice-1-remediation-PH3SQL-TST-002"
+  branch: "feature/ph3-sql-implementation"
+  commit: null
+  baseline_commit: "3650852bb91a8b8ca89a92d1de6ed352b37dde79"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01", "C-02", "C-03", "C-04", "C-06"]
+    functional_requirements: ["F-01", "F-02", "F-03", "F-04", "F-05", "F-07", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-04", "NF-05", "NF-06", "NF-08", "NF-09", "NF-10", "NF-11", "NF-12", "NF-13"]
+    risks: ["R-01", "R-02", "R-03", "R-06", "R-09", "R-11"]
+    assumptions: ["A-01", "A-02", "A-03", "A-05", "A-06", "A-08", "A-11", "A-13", "A-15", "A-16", "A-18"]
+    dependencies: ["D-01", "D-03", "D-04", "D-05", "D-07", "D-08", "D-10", "D-11", "D-13"]
+    issues: ["I-01", "I-02", "I-03", "I-04", "I-06", "I-08"]
+    open_questions: ["Q-01", "Q-02", "Q-06", "Q-09"]
+    approvals:
+      - "Solution Architect/TDA PTArchitect, 10 September 2026: ADR-008 restricted local/non-production implementation and testing."
+      - "Information Security nextgenexamprep-crypto, 10 September 2026: ADR-008 restricted local/non-production controls."
+      - "Product Owner opathre, 10 September 2026: exact SQL Inventory role mapping for the restricted scope."
+  artefacts:
+    - "docs/implementation/PH3_SQL_Slice1_Implementation_Work_Package.md"
+    - "src/api/Infrastructure/IdentityAuthorization.cs"
+    - "src/api/Infrastructure/Migrations/20260910082037_AddInternalPrincipalAuditType.cs"
+    - "tests/api.unit/IdentityAuthorizationTests.cs"
+    - "tests/api.integration/SqlInventoryAuthorizationTests.cs"
+  evidence:
+    - "Release build: 0 warnings, 0 errors."
+    - "Complete solution suite: 158 passed, 0 failed, 0 skipped."
+    - "Focused ADR-008: 23 unit and 45 integration tests passed."
+    - "Phase 1/2 regression: 55 passed, 0 failed, 0 skipped."
+    - "EF pending-model validation: no pending model changes."
+    - "Migration delta: one nullable audit principal-type column; no database action."
+    - "Historical Tester evidence pack preserved unchanged."
+  decisions:
+    - "Implement ADR-008 through Entra bearer validation plus an application-owned immutable principal and server-side membership interfaces."
+    - "Use configuration-backed allow-listed synthetic LocalTest fixtures only in Development/Testing; fail closed elsewhere."
+    - "Add only the nullable audit principal-type column required for ADR-008 audit evidence; do not add production membership persistence or administration."
+  assumptions:
+    - "Only synthetic identities and data were used."
+    - "The explicit no-commit instruction means this READY_FOR_TEST working tree is not yet commit-bound."
+  risks:
+    - "R-02 remains open pending independent authorization/isolation abuse testing."
+    - "R-09/I-06 SQL Server runtime and named test-authority evidence remain absent."
+    - "R-11 wider production technology/tenancy approval remains unresolved."
+  defects:
+    - "PH3SQL-TST-001 REMEDIATED"
+    - "PH3SQL-TST-002 IMPLEMENTED; DEVELOPER PASS; INDEPENDENT RETEST REQUIRED"
+    - "PH3SQL-TST-003 REMEDIATED; DEVELOPER PASS"
+    - "PH3SQL-TST-004 REMEDIATED; DEVELOPER PASS"
+  blockers:
+    - "A permitted repository owner must bind this uncommitted working tree to an exact commit before commit-bound independent Tester evidence can be issued."
+    - "Identity Platform configuration confirmation remains required before Entra mode is used in any deployed environment."
+    - "I-06/D-11 named test-authority approval and approved isolated SQL Server runtime evidence remain required."
+    - "NuGet/npm connected vulnerability-feed evidence remains unavailable."
+    - "Q-06/Q-09, production identity, persistent membership administration, production tenancy, customer data, deployment, Service Transition and human release approval remain blocked."
+  approvals:
+    - "Restricted local/non-production Product Owner, Solution Architect/TDA and Information Security approvals evidenced in ADR-008/PH3-SQL-ARCH-001."
+    - "No Identity Platform, named test-authority, PRB, production-tenancy, DPO, Service Transition or release approval is claimed."
+  requested_action: "After an authorised repository owner binds this working tree to an exact commit without changing it, the independent Tester should retest PH3SQL-TST-002 against that commit, preserve the existing Test Evidence Pack as historical evidence, and issue a new evidence record. No merge, deployment or production action follows."
 ```
 
 ## Control and outcome
@@ -23,12 +138,12 @@ traceability:
 - Work item: `PH3-SQL-001`, development slice 1.
 - Architecture package: `PH3-SQL-ARCH-001`.
 - Approved starting baseline: `main` commit `5d3e9b02bc57989d79ee47a133ab35ad4a31d3f8`; verified before editing.
-- Remediation starting point: `feature/ph3-sql-implementation` at commit `4c61979e941974d05009727f3ad7959b372f71c1`; branch, commit and clean status verified before editing on 9 September 2026. The original Slice 1 implementation commit `abd466a014aebcfe02b0f72e4322328df12e203a` is an ancestor of this feature branch.
-- Implementation state: `NEEDS_ARCHITECTURE_DECISION`.
-- Branch/commit: `feature/ph3-sql-implementation`; remediation changes are intentionally uncommitted on starting commit `4c61979e941974d05009727f3ad7959b372f71c1` because the authorised instruction prohibits committing or pushing.
+- ADR-008 remediation starting point: clean `feature/ph3-sql-implementation` at exact commit `3650852bb91a8b8ca89a92d1de6ed352b37dde79`; branch, commit and clean status verified before editing on 10 September 2026.
+- Implementation state: `READY_FOR_TEST` for implementable ADR-008 local/non-production requirements; independent Tester and downstream human evidence remain outstanding.
+- Branch/commit: `feature/ph3-sql-implementation`; the implementation is intentionally uncommitted on starting commit `3650852bb91a8b8ca89a92d1de6ed352b37dde79` because the authorised instruction prohibits committing or pushing. No commit-bound independent-test claim is made.
 - Authority: restricted local/non-production POC only. No merge, migration application, deployment, production data, customer data, Azure provisioning, migration execution or AI action was performed.
 
-The source changes implement the bounded SQL Instance and SQL Database inventory slice. Remediation closes the branch-placement finding, completes the automatic validation Problem Details contract and adds the architecture-required default-off `SqlDiscoveryAssessment` feature toggle. The package is not declared `READY_FOR_TEST`: PH3SQL-TST-002 cannot be completed without an approved internal identity/project-membership and role-to-permission contract, vulnerability-feed evidence remains unavailable, and I-06/D-11 test-authority approval plus an approved isolated SQL Server test environment remain unevidenced. Developer command results are observations, not independent test-authority acceptance.
+The current source changes implement ADR-008 for the bounded SQL Instance and SQL Database inventory slice: Microsoft Entra bearer-token validation architecture for internal users, an immutable application-owned `InternalPrincipal`, server-side project membership resolution, deny-by-default fallback authorization, exact named SQL Inventory policies, safe authorization Problem Details, LocalTest production guards and synthetic Development/Testing identities. PH3SQL-TST-002 is implemented and Developer verification passes, but remains open until independent Tester retest against a future exact implementation commit. Vulnerability-feed evidence, I-06/D-11 test-authority approval and approved isolated SQL Server runtime evidence remain unavailable. Developer command results are observations, not independent test-authority acceptance.
 
 ## Requirements implemented
 
@@ -36,9 +151,9 @@ The source changes implement the bounded SQL Instance and SQL Database inventory
 |---|---|---|
 | SQL-PO-001, SQL-PO-002, SQL-PO-005, SQL-AC-001 | Versioned REST create, retrieve, update, logical delete and bounded list endpoints for instances and databases; default page size 50, maximum 200; filters by search, parent and status; model validation; Problem Details; ETag/`If-Match` concurrency. | Implemented for slice 1 |
 | SQL-PO-003, SQL-PO-004, SQL-AC-002 | Required same-owner Server-to-Instance and Instance-to-Database relationships; tenant-leading composite alternate keys and foreign keys; active-name uniqueness within each parent. | Implemented for slice 1 |
-| SQL-PO-015, SQL-AC-008 | Write DTOs cannot set ownership; global customer filters, explicit project predicates, same-owner relationship checks and database constraints prevent cross-customer/project record access. Authentication, actor membership and required project-role enforcement are not implemented because the approved package does not define the internal identity/membership contract or role-to-permission mapping. | Partial; `NEEDS_ARCHITECTURE_DECISION` |
+| SQL-PO-015, SQL-AC-008 | ADR-008 Entra/LocalTest authentication creates only an application-owned typed principal; server-side membership derives CustomerId from the untrusted selected ProjectId; fallback and named read/create/update/delete policies enforce the exact role matrix before existing tenant/project predicates and composite constraints execute. Client identity/customer/role/permission headers confer no authority. | Implemented for restricted local/non-production Slice 1; independent retest outstanding |
 | SQL-PO-016, SQL-AC-009 | Significant create, field update, relationship change and archive operations append scoped audit events with actor, UTC time, correlation ID and redacted sensitive values. | Implemented for slice 1 |
-| SQL-PO-017 | DTO-only versioned controllers, validation, typed service layer, stable safe error codes and correlation IDs. Automatic DataAnnotations failures now return complete RFC Problem Details with `status`, `title`, `detail`, `instance`, `errorCode`, `correlationId` and field `errors`. Tenant authorisation remains blocked with PH3SQL-TST-002. | Partial; safe-error defect remediated |
+| SQL-PO-017 | DTO-only versioned controllers, validation, typed service layer, stable safe error codes and correlation IDs. Automatic validation, feature denial, authentication and authorization failures return the complete approved Problem Details members. | Implemented for Slice 1 |
 | SQL-PO-019, SQL-AC-011 | Synthetic integration scenario creates 205 instances and 205 databases and verifies bounded paging and filters. | Automated command observed; formal test authority outstanding |
 | SQL-PO-020, SQL-AC-014 | No database-migration execution, DMS orchestration, remediation, AI inference or Azure provisioning path was added. | Implemented as an exclusion |
 | SQL-PO-021, SQL-AC-015 | Optional manual service-account display metadata rejects credential-like/multiline values; audit changes are redacted. It is not part of an import contract. | Implemented for manual slice-1 CRUD only |
@@ -53,8 +168,11 @@ SQL-PO-006 through SQL-PO-014, SQL-PO-018 and SQL-PO-022 are not claimed by this
 - Names are trimmed, Unicode NFC-normalised and invariant-uppercase-normalised for uniqueness. Default-instance aliases normalise to `MSSQLSERVER`.
 - Active instances are unique by `(CustomerId, ProjectId, ServerId, NormalizedName)`; active databases are unique by `(CustomerId, ProjectId, SqlInstanceId, NormalizedName)`.
 - Query filters enforce current-customer visibility and logical deletion; every service query also binds the current project.
-- Development/test headers and configured fallback context remain limited to `Development` or `Testing`; other environments fail closed pending the approved identity design. They are not represented as authentication or project-role proof.
-- The approved documents require an authenticated actor, validated `(CustomerId, ProjectId)` membership and endpoint permission separation. The draft HLD lists broad application-role descriptions, but neither it nor the approved PH3 package defines the internal principal/claim contract, membership authority or a normative mapping from those roles to the PH3 read and inventory-edit permissions. No identity contract was invented during remediation.
+- Every API endpoint is protected by an authenticated-human plus active-project-membership fallback policy except the explicitly anonymous, data-free `/health` probe. SQL Instance and SQL Database actions additionally require named read/create/update/delete permission policies.
+- Entra mode validates signature, signing key, exact issuer/audience/lifetime and maps only validated `tid`, `oid`, `sub`, `azp`, `ver`, delegated `scp` and workload `roles` semantics. Human SQL routes require `lgr.access` and an allowed client; app-only or mixed human/workload callers are denied.
+- `X-Project-Id` is only an untrusted selector. The server-side membership provider derives CustomerId, roles, permissions and membership version. Missing/inactive/expired/not-yet-valid membership returns non-enumerating 404; an active member without permission receives 403; unavailable authorization returns 503.
+- LocalTest accepts only exact synthetic allow-listed aliases in Development/Testing. Every other environment requires complete Entra configuration and fails startup if LocalTest is selected. Client-supplied customer, user, principal, role and permission headers are ignored as authority and removed outside local/test.
+- Stable canonical actor identifiers, principal type, server-derived customer/project scope, UTC time and correlation ID are recorded for mutations. Authorized operational access logs use principal/scope, route template, method, status and correlation only.
 - `SqlDiscoveryAssessment` defaults to `false`. SQL Instance and SQL Database controllers are exposed only when the flag is explicitly enabled and the host is `Development` or `Testing`; disabled access returns a non-enumerating 404 Problem Details response before service execution.
 - Database port, database size and compatibility level have database check constraints as well as request validation.
 - Parent deletes are restricted: an active Server cannot be archived while it owns an active SQL Instance, and an active instance cannot be archived while it owns an active database.
@@ -75,24 +193,30 @@ SQL-PO-006 through SQL-PO-014, SQL-PO-018 and SQL-PO-022 are not claimed by this
 - `src/api/Infrastructure/AppDbContext.cs` - DbSets, ownership keys, query filters, constraints, indexes and relationships.
 - `src/api/Infrastructure/TenantContext.cs` - correlation context and non-development fail-closed behaviour.
 - `src/api/Infrastructure/ApiExceptionHandler.cs` - safe 400/404/409/412/428 Problem Details mappings.
+- `src/api/Infrastructure/IdentityAuthorization.cs` - ADR-008 authentication options/validation, Microsoft Entra access-token validation, immutable principal and authorization context, synthetic LocalTest identity/membership authority, exact SQL permissions, policy handlers, safe authorization results, prohibited-header handling and access telemetry.
 - `src/api/Infrastructure/SqlDiscoveryAssessmentFeatureFilter.cs` - default-off feature options and local/test-only SQL route gate.
 - `src/api/Services/ProgrammeService.cs` - prevent logical deletion of Servers with active SQL Instances and include audit correlation IDs.
 - `src/api/Program.cs` - scoped inventory service registration, feature-gate registration and complete automatic validation Problem Details.
 - `src/api/appsettings.json` - default `SqlDiscoveryAssessment` value of `false`.
 - `src/api/appsettings.Development.json` - explicit approved local-development enablement.
 - `src/api/appsettings.Testing.json` - explicit automated-test enablement.
+- `src/api/appsettings.LocalTest.json` - Development/Testing-only allow-listed synthetic principals and server-side memberships; not loaded outside those environments.
 
 ### Database
 
 - `src/api/Infrastructure/Migrations/20260909164944_AddSqlInventory.cs`.
 - `src/api/Infrastructure/Migrations/20260909164944_AddSqlInventory.Designer.cs`.
 - `src/api/Infrastructure/Migrations/AppDbContextModelSnapshot.cs`.
+- `src/api/Infrastructure/Migrations/20260910082037_AddInternalPrincipalAuditType.cs`.
+- `src/api/Infrastructure/Migrations/20260910082037_AddInternalPrincipalAuditType.Designer.cs`.
 
 ### Tests and evidence
 
 - `tests/api.unit/SqlInventoryRulesTests.cs`.
 - `tests/api.integration/SqlInventoryApiTests.cs` - Tester-owned validation contract preserved unchanged; remediation adds default-off/no-mutation feature-gate coverage. Existing direct-object, cross-customer, cross-project and mismatched-context tests remain in place and pass.
 - `tests/api.integration/LgrWebApplicationFactory.cs` - deterministic synthetic cross-customer/cross-project fixtures.
+- `tests/api.unit/IdentityAuthorizationTests.cs` - exact role/permission union, Entra signature/issuer/audience/lifetime/claim/principal mapping and human/workload API-access validation.
+- `tests/api.integration/SqlInventoryAuthorizationTests.cs` - full SQL route role/method matrix, membership lifecycle, safe errors, injection/isolation, revocation, LocalTest and production-like controls, stable audit actor and fallback-policy coverage.
 - `docs/implementation/PH3_SQL_Slice1_Implementation_Work_Package.md` - this package.
 
 ## Migration and compatibility
@@ -106,6 +230,8 @@ Migration `20260909164944_AddSqlInventory` is additive. Its `Up` operation:
 5. Adds filtered active-name unique indexes, lookup indexes and value-range check constraints.
 
 The migration was generated and its SQL/script/model-drift output was inspected. It was not applied to any database and no production or customer data was read or modified. The normal generated `Down` method is reserved for explicitly authorised disposable development environments; rollback for a deployed expand-first release should first disable/revert application use while retaining the additive schema until a separately reviewed cleanup change.
+
+ADR-008 remediation adds migration `20260910082037_AddInternalPrincipalAuditType`. Its `Up` operation adds only nullable `AuditEvents.ActorPrincipalType nvarchar(20)` so new audit events can record the required principal type while historical rows remain valid. The generated delta contains no other operation. It was not applied to a database. The LocalTest membership implementation is configuration-backed and introduces no principal/membership persistence or administration schema; production membership persistence remains a separately governed work item.
 
 ## Commands executed and results
 
@@ -161,11 +287,11 @@ Because external NuGet access is blocked, these raw cached-package command resul
 
 ## Unresolved risks and blockers
 
-1. **PH3SQL-TST-002 / architecture decision required:** F-15, NF-01/NF-02, ADR-007 and PH3-SQL-ARCH-001 require authentication, validated `(CustomerId, ProjectId)` membership and a required project role. The approved package names read, inventory-edit, import-commit and assessment-edit permissions. The draft HLD lists broad roles such as Database SME / DBA and Reviewer / Auditor, but there is no approved PH3 contract for the internal authentication scheme, membership authority/data contract, principal claims, role-to-permission mapping, trusted local/test identity fixture or privileged administration path. `PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md` assigns those decisions to the later Internal Entra ID/RBAC foundation and lists an approved internal identity design as an entry dependency. Selecting roles for each SQL method or trusting a new role header here would invent the missing design and breach the Architect-owned boundary. Solution Architect/TDA and Information Security must provide the internal identity/membership contract and read/write role mapping before implementation and meaningful permitted/rejected-role tests can proceed. Q-09 continues to block external customer identity separately.
-2. External NuGet vulnerability-feed access is blocked. Restore/build/tests succeeded from the available package state and no dependency changed, but connected advisory evidence is unavailable.
-3. I-06/D-11 named test-authority approval is not evidenced. The commands above are Developer observations, not an independent Test Evidence Pack.
-4. No approved isolated SQL Server test database was supplied. Generated SQL Server DDL was inspected, but actual migration application/rollback, SQL Server collation, concurrency and constraint behaviour remain to be independently proven. The migration was intentionally not auto-applied.
-5. Q-06/Q-09, production tenancy/HLD DD-05 reconciliation, PRB, production Information Security, service transition and release approvals remain open. This implementation is not authorised for external customer access or production.
+1. **PH3SQL-TST-002 independent closure:** ADR-008 is implemented for the restricted scope and Developer automation passes. The high defect remains open until the independent Tester retests the full authorization/abuse matrix against an exact future implementation commit. This working tree is intentionally uncommitted by instruction, so Developer evidence is not commit-bound Tester evidence.
+2. **Identity Platform and production membership authority:** no real Entra tenant, app registration, Conditional Access/MFA setting or deployed identity configuration was created. The Entra adapter is implemented and fails startup on incomplete non-local configuration; non-local membership fails closed until a separately approved persistent provider is supplied. Identity Platform approval remains mandatory before deployed Entra use.
+3. **Dependency advisory evidence:** NuGet and npm advisory endpoints are inaccessible in this environment. Restore/build/tests use the existing dependency graph and no package reference changed, but connected vulnerability evidence remains unavailable.
+4. **I-06/D-11 and SQL Server runtime evidence:** named test-authority approval and an approved isolated SQL Server test database were not supplied. Generated SQL Server DDL and the additive delta were inspected, but runtime apply/rollback, collation, concurrency, constraint and query-plan evidence remain to be independently produced. No migration was applied.
+5. **Production and external-access governance:** Q-06/Q-09, production tenancy/HLD DD-05 reconciliation, PRB, production Information Security, Service Transition and human release approvals remain open. This implementation is not authorised for external customer access, production identity/tenancy, customer data, deployment or release.
 6. CSV/source-contract, discovery history, assessment and browser work are excluded from slice 1 and must not be inferred from these APIs.
 
 ## Original Developer hand-off (historical; superseded by remediation status below)

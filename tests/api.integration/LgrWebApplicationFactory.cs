@@ -18,6 +18,25 @@ public sealed class LgrWebApplicationFactory : WebApplicationFactory<Program>
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly string _storagePath = Path.Combine(Path.GetTempPath(), "lgr-discovery-import-tests", Guid.NewGuid().ToString("N"));
 
+    public new HttpClient CreateClient() => CreateAuthenticatedClient("dba-project-a", SeedIds.DemoProject);
+
+    public HttpClient CreateAuthenticatedClient(string alias, Guid projectId)
+    {
+        var client = base.CreateClient();
+        ApplySyntheticIdentity(client, alias, projectId);
+        return client;
+    }
+
+    public HttpClient CreateUnauthenticatedClient() => base.CreateClient();
+
+    public static void ApplySyntheticIdentity(HttpClient client, string alias, Guid projectId)
+    {
+        client.DefaultRequestHeaders.Remove("X-Lgr-Test-Principal");
+        client.DefaultRequestHeaders.Remove("X-Project-Id");
+        client.DefaultRequestHeaders.Add("X-Lgr-Test-Principal", alias);
+        client.DefaultRequestHeaders.Add("X-Project-Id", projectId.ToString("D"));
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         _connection.Open();

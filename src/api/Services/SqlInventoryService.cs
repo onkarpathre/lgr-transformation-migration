@@ -493,6 +493,7 @@ public sealed class SqlInventoryService(
             OldValue = AuditValue(oldValue),
             NewValue = AuditValue(newValue),
             ChangedBy = Actor,
+            ActorPrincipalType = context.Principal.PrincipalType.ToString(),
             ChangedAt = Now,
             CorrelationId = context.CorrelationId
         });

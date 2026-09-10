@@ -29,6 +29,7 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problemDetailsSer
         var detail = exception switch
         {
             DbUpdateException => "The requested change conflicts with existing data.",
+            KeyNotFoundException => "The requested resource was not found.",
             _ when status == StatusCodes.Status500InternalServerError => "The request could not be completed.",
             _ => exception.Message
         };
@@ -40,6 +41,7 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problemDetailsSer
             Exception = exception,
             ProblemDetails = new ProblemDetails
             {
+                Type = ProblemType(status),
                 Status = status,
                 Title = title,
                 Detail = detail,
@@ -52,4 +54,16 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problemDetailsSer
             }
         });
     }
+
+    private static string ProblemType(int status) =>
+        status switch
+        {
+            StatusCodes.Status400BadRequest => "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.1",
+            StatusCodes.Status404NotFound => "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.5",
+            StatusCodes.Status409Conflict => "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.10",
+            StatusCodes.Status412PreconditionFailed => "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.13",
+            StatusCodes.Status428PreconditionRequired => "https://www.rfc-editor.org/rfc/rfc6585#section-3",
+            StatusCodes.Status500InternalServerError => "https://www.rfc-editor.org/rfc/rfc9110#section-15.6.1",
+            _ => "about:blank"
+        };
 }

@@ -1,6 +1,7 @@
 using LgrTransformationMigration.Api.Contracts;
 using LgrTransformationMigration.Api.Infrastructure;
 using LgrTransformationMigration.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LgrTransformationMigration.Api.Controllers;
@@ -11,6 +12,7 @@ namespace LgrTransformationMigration.Api.Controllers;
 public sealed class SqlInstancesController(SqlInventoryService service) : ControllerBase
 {
     [HttpGet]
+    [Authorize(Policy = SqlInventoryAuthorizationPolicies.Read)]
     public async Task<ActionResult<PagedResult<SqlInstanceDto>>> List(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -27,6 +29,7 @@ public sealed class SqlInstancesController(SqlInventoryService service) : Contro
             cancellationToken));
 
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = SqlInventoryAuthorizationPolicies.Read)]
     public async Task<ActionResult<SqlInstanceDto>> Get(Guid id, CancellationToken cancellationToken)
     {
         var result = await service.GetInstanceAsync(id, cancellationToken);
@@ -35,6 +38,7 @@ public sealed class SqlInstancesController(SqlInventoryService service) : Contro
     }
 
     [HttpPost]
+    [Authorize(Policy = SqlInventoryAuthorizationPolicies.Create)]
     public async Task<ActionResult<SqlInstanceDto>> Create(
         SqlInstanceWriteV1 request,
         CancellationToken cancellationToken)
@@ -45,6 +49,7 @@ public sealed class SqlInstancesController(SqlInventoryService service) : Contro
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = SqlInventoryAuthorizationPolicies.Update)]
     public async Task<ActionResult<SqlInstanceDto>> Update(
         Guid id,
         SqlInstanceWriteV1 request,
@@ -60,6 +65,7 @@ public sealed class SqlInstancesController(SqlInventoryService service) : Contro
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = SqlInventoryAuthorizationPolicies.Delete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         await service.ArchiveInstanceAsync(id, Request.Headers.IfMatch.ToString(), cancellationToken);
@@ -75,6 +81,7 @@ public sealed class SqlInstancesController(SqlInventoryService service) : Contro
 public sealed class SqlDatabasesController(SqlInventoryService service) : ControllerBase
 {
     [HttpGet]
+    [Authorize(Policy = SqlInventoryAuthorizationPolicies.Read)]
     public async Task<ActionResult<PagedResult<SqlDatabaseDto>>> List(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -91,6 +98,7 @@ public sealed class SqlDatabasesController(SqlInventoryService service) : Contro
             cancellationToken));
 
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = SqlInventoryAuthorizationPolicies.Read)]
     public async Task<ActionResult<SqlDatabaseDto>> Get(Guid id, CancellationToken cancellationToken)
     {
         var result = await service.GetDatabaseAsync(id, cancellationToken);
@@ -99,6 +107,7 @@ public sealed class SqlDatabasesController(SqlInventoryService service) : Contro
     }
 
     [HttpPost]
+    [Authorize(Policy = SqlInventoryAuthorizationPolicies.Create)]
     public async Task<ActionResult<SqlDatabaseDto>> Create(
         SqlDatabaseWriteV1 request,
         CancellationToken cancellationToken)
@@ -109,6 +118,7 @@ public sealed class SqlDatabasesController(SqlInventoryService service) : Contro
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = SqlInventoryAuthorizationPolicies.Update)]
     public async Task<ActionResult<SqlDatabaseDto>> Update(
         Guid id,
         SqlDatabaseWriteV1 request,
@@ -124,6 +134,7 @@ public sealed class SqlDatabasesController(SqlInventoryService service) : Contro
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = SqlInventoryAuthorizationPolicies.Delete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         await service.ArchiveDatabaseAsync(id, Request.Headers.IfMatch.ToString(), cancellationToken);
