@@ -12,18 +12,31 @@ traceability:
   dependencies: ["D-03", "D-04", "D-10", "D-11", "D-13"]
   issues: ["I-02", "I-06"]
   open_questions: ["Q-06", "Q-09"]
-  approvals: []
+  approvals:
+    - "Solution Architect/TDA approval by GitHub account PTArchitect, 10 September 2026: local/non-production implementation and testing scope only — https://github.com/onkarpathre/lgr-transformation-migration/pull/3#pullrequestreview-5164009938"
+    - "Information Security approval by GitHub account nextgenexamprep-crypto, 10 September 2026: local/non-production implementation and testing scope only — https://github.com/onkarpathre/lgr-transformation-migration/pull/3#pullrequestreview-5164020739"
+    - "Product Owner role-mapping confirmation by GitHub account opathre, 10 September 2026: local/non-production scope only — https://github.com/onkarpathre/lgr-transformation-migration/pull/3#issuecomment-5614835348"
 ```
 
-Status: Proposed - `READY_FOR_ARCHITECTURE_APPROVAL`
+Status: Accepted - local/non-production implementation and testing scope only
 
 Decision date: 9 September 2026
+
+Acceptance date: 10 September 2026
 
 Decision owner: Solution Architect / Technical Design Authority
 
 Security decision owner: Information Security
 
-Approval evidence: None. This ADR is complete for review but is not effective and does not authorise implementation until the named human owners approve it.
+Approved architecture commit: `09078a048cb99a24d6a89552843d955b643a219b`
+
+Approval evidence:
+
+- Solution Architect/TDA approval by GitHub account `PTArchitect`, 10 September 2026: <https://github.com/onkarpathre/lgr-transformation-migration/pull/3#pullrequestreview-5164009938>
+- Information Security approval by GitHub account `nextgenexamprep-crypto`, 10 September 2026: <https://github.com/onkarpathre/lgr-transformation-migration/pull/3#pullrequestreview-5164020739>
+- Product Owner role-to-permission mapping confirmation by GitHub account `opathre`, 10 September 2026: <https://github.com/onkarpathre/lgr-transformation-migration/pull/3#issuecomment-5614835348>
+
+These decisions accept ADR-008 and the associated PH3-SQL-ARCH-001 amendment only for PH3-SQL-001 implementation and testing in the expressly approved local/non-production scope. They do not authorise production identity configuration, external customer identity, production tenancy, production deployment, real customer data, migration execution or release.
 
 ## Context
 
@@ -35,7 +48,7 @@ ADR-007 permits the shared-schema model only for restricted local/non-production
 
 The repository currently has no application principal, customer-membership or project-membership model. `CurrentCustomerContext` reads `X-Customer-Id`, `X-Project-Id` and `X-User-Name` in Development/Testing and fails closed elsewhere. Those headers are development conveniences, not authentication or role evidence.
 
-The Product Specification and HLD files are authoritative baselines for this work, but their own document-control tables do not contain completed approval evidence. The existing named Product Owner, TDA and Information Security approvals are restricted to the PH3-SQL-001 local/non-production POC and ADR-006/ADR-007. They are not approval of this ADR.
+The Product Specification and HLD files are authoritative baselines for this work, but their own document-control tables do not contain completed approval evidence. PR #3 records Solution Architect/TDA and Information Security approval of this ADR and its PH3-SQL-ARCH-001 amendment, plus Product Owner confirmation of the role-to-permission mapping, against approved architecture commit `09078a048cb99a24d6a89552843d955b643a219b`. Every decision is restricted to PH3-SQL-001 local/non-production implementation and testing and does not approve any production identity, tenancy, customer-data, deployment or release scope.
 
 ## Decision scope
 
@@ -261,7 +274,7 @@ Minimum synthetic principals are:
 | `unassigned` | Authenticated principal with no membership. |
 | `disabled` | Disabled principal or membership. |
 
-The current `X-Customer-Id`, `X-User-Name` and configured Demo Council/user fallbacks are superseded for identity simulation by this contract once ADR-008 is approved.
+The current `X-Customer-Id`, `X-User-Name` and configured Demo Council/user fallbacks are superseded for identity simulation by this accepted contract within the restricted local/non-production implementation and testing scope.
 
 ### 8. Prohibited trusted identity headers outside local/test
 
@@ -395,14 +408,15 @@ Deferred. Entra External ID, B2B guests or another external approach remains Q-0
 
 ## Consequences
 
-- `PH3SQL-TST-002` has a complete architecture contract but remains open until ADR-008 is approved, implemented and independently retested.
-- The current header-derived context and Demo Council/user fallback cannot remain the Phase 3 authorization mechanism after approval.
+- `PH3SQL-TST-002` has an accepted architecture contract for the restricted local/non-production scope but remains open until it is implemented and independently retested against the exact implementation commit.
+- The current header-derived context and Demo Council/user fallback cannot remain the Phase 3 authorization mechanism under the accepted local/non-production implementation.
 - The Developer will need authentication registration, middleware ordering, typed principal/context services, a membership provider, named permission policies and tests. This ADR itself makes none of those changes.
 - Eventual persistent principal/membership administration may require additive schema and migration work under a separately reviewed Implementation Work Package. For restricted local/test remediation, an allow-listed synthetic provider can implement the same interfaces without a production membership schema.
 - Existing SQL global filters, project predicates and composite constraints remain mandatory defence in depth; authentication/RBAC does not replace them.
 - Existing Phase 1/2 routes will be affected by the secure fallback policy and must receive an approved policy or an explicit, reviewed anonymous exception. Regression evidence is required.
 - Customer Administrator and Platform Administrator no longer imply migration-data access. Operational support needing customer data requires a separate elevated, time-bound and audited design.
-- External customer access, production identity configuration, Q-06, Q-09, production tenancy, test authority, vulnerability-feed evidence and release approval remain blocked.
+- Identity Platform configuration confirmation and named test-authority approval remain outstanding downstream gates. SQL Server runtime assurance and vulnerability-feed evidence also remain unresolved downstream.
+- External customer access under Q-09, production identity configuration, production deployment, real customer-data use, production tenancy, Service Transition and release approval remain blocked. Q-06 also remains open for production processing.
 
 ## Traceability and defect disposition
 
@@ -411,36 +425,38 @@ Deferred. Entra External ID, B2B guests or another external approach remains Q-0
 | F-15 | Entra authentication, server-side membership, least-privilege permission policies, stable audit actor and fail-closed handling. | Approved ADR, implementation and independent security/RBAC evidence. |
 | NF-01 | Entra workforce authentication, delegated scope validation, exact CRUD role matrix, managed identity for future workloads and deny-by-default policies. | Token-validation, policy-matrix, local/test guard and service-principal tests. |
 | NF-02 | Customer derived from active project membership, explicit project predicates, non-enumerating denial, no admin wildcard and retained ADR-007 constraints. | Cross-customer/project and direct-object abuse tests on every SQL route. |
-| PH3SQL-TST-002 | Supplies the missing identity provider, principal/claims, membership authority, project roles, SQL CRUD matrix, local/test fixture, denial/error, audit and workload contracts. | TDA and Information Security approval, Developer implementation on a working branch, exact `READY_FOR_TEST` hand-off and independent Tester retest. |
+| PH3SQL-TST-002 | Supplies the accepted identity provider, principal/claims, membership authority, project roles, SQL CRUD matrix, local/test fixture, denial/error, audit and workload contracts for the restricted local/non-production scope. | Developer implementation on a working branch, exact `READY_FOR_TEST` hand-off and independent Tester retest; downstream Identity Platform and named test-authority gates remain. |
 
-## Approval and implementation gate
+## Approval and downstream implementation gates
 
-Required decision approvals:
+Received decisions for approved architecture commit `09078a048cb99a24d6a89552843d955b643a219b`:
 
-1. Solution Architect / TDA - accept or reject the identity, principal, membership, role and service-access architecture.
-2. Information Security - accept or reject the token validation, header prohibition, least-privilege matrix, fail-closed, audit and isolation controls.
+1. Solution Architect/TDA approval by GitHub account `PTArchitect`, 10 September 2026, for local/non-production PH3-SQL-001 implementation and testing only: <https://github.com/onkarpathre/lgr-transformation-migration/pull/3#pullrequestreview-5164009938>.
+2. Information Security approval by GitHub account `nextgenexamprep-crypto`, 10 September 2026, for the same restricted scope: <https://github.com/onkarpathre/lgr-transformation-migration/pull/3#pullrequestreview-5164020739>.
+3. Product Owner role-to-permission mapping confirmation by GitHub account `opathre`, 10 September 2026, for the approved local/non-production business-access model only: <https://github.com/onkarpathre/lgr-transformation-migration/pull/3#issuecomment-5614835348>.
 
-Required consultation/evidence before the affected implementation can be accepted:
+Outstanding downstream consultation/evidence:
 
-- Product Owner confirms that the applicable role-to-permission mapping matches the PH3-SQL-001 personas and acceptance intent; this does not substitute for TDA or Information Security approval.
 - Identity Platform owner confirms environment app registrations, tenant, clients, Conditional Access/MFA and managed-identity configuration before any deployed environment uses Entra mode.
-- Agilisys Test Services or the named test authority confirms the authentication/RBAC test environment and entry/exit criteria under I-06/D-11.
-- Q-09 remains separately owned by Solution Architect/Information Security and blocks all external customer access.
+- Agilisys Test Services or the named test authority approves the authentication/RBAC and SQL Server test environment, tools and entry/exit criteria under I-06/D-11 before implementation results are accepted as formal test evidence.
+- SQL Server runtime assurance and dependency/vulnerability evidence remain required in the downstream Developer/Test packages.
+- Q-09 remains separately owned by Solution Architect/Information Security and blocks external customer identity and access. Production identity configuration is not approved.
+- Real customer data remains prohibited; only synthetic or properly anonymised data may be used in development/test. No production deployment is authorised.
 - Data Protection/DPO, production tenancy, Service Transition and human release decisions remain required before production as already recorded.
 
-No approval is inferred from existing ADR-006/ADR-007 reviews, the user instruction, this ADR's author, or the status `READY_FOR_ARCHITECTURE_APPROVAL`.
+No production, customer-data, deployment or release approval is inferred from the PR #3 decisions, existing ADR-006/ADR-007 reviews, the user instruction, this ADR's author, or the status `READY_FOR_DEVELOPMENT`.
 
 ## Hand-off
 
 ```yaml
 handoff:
   from_agent: "architect"
-  to_agent: "architect"
-  human_reviewers: ["Solution Architect / TDA", "Information Security"]
-  state: "READY_FOR_ARCHITECTURE_APPROVAL"
+  to_agent: "developer"
+  human_reviewers: ["Identity Platform owner", "Named test authority"]
+  state: "READY_FOR_DEVELOPMENT"
   work_item: "PH3-SQL-001-slice-1-remediation-PH3SQL-TST-002"
   branch: "feature/ph3-sql-rbac-architecture"
-  commit: null
+  commit: "09078a048cb99a24d6a89552843d955b643a219b"
   baseline_commit: "5d3e9b02bc57989d79ee47a133ab35ad4a31d3f8"
   traceability:
     product_version: "0.1"
@@ -453,37 +469,46 @@ handoff:
     dependencies: ["D-03", "D-04", "D-10", "D-11", "D-13"]
     issues: ["I-02", "I-06"]
     open_questions: ["Q-06", "Q-09"]
-    approvals: []
+    approvals:
+      - "Solution Architect/TDA approval by PTArchitect, 10 September 2026: local/non-production implementation and testing only."
+      - "Information Security approval by nextgenexamprep-crypto, 10 September 2026: local/non-production implementation and testing only."
+      - "Product Owner role-mapping confirmation by opathre, 10 September 2026: approved local/non-production business-access model only."
   artefacts:
     - "docs/architecture/ADR-008-internal-authentication-project-rbac.md"
     - "docs/architecture/Phase3_SQL_Discovery_Assessment_Architecture.md"
   evidence:
     - "Product Specification V0.1 F-15, NF-01 and NF-02; document-control approval field remains unevidenced."
     - "HLD V0.1 API-03/API-04, ID-01..ID-06, Table 27 roles, TI-01..TI-07 and release-blocking authentication/RBAC/isolation tests; HLD approval/readiness fields remain unevidenced."
-    - "ADR-006 and ADR-007 conditional local/non-production POC approvals; neither approves ADR-008."
+    - "GitHub PR #3 head and approved architecture commit: 09078a048cb99a24d6a89552843d955b643a219b."
+    - "Solution Architect/TDA approval by PTArchitect, 10 September 2026: https://github.com/onkarpathre/lgr-transformation-migration/pull/3#pullrequestreview-5164009938"
+    - "Information Security approval by nextgenexamprep-crypto, 10 September 2026: https://github.com/onkarpathre/lgr-transformation-migration/pull/3#pullrequestreview-5164020739"
+    - "Product Owner role-mapping confirmation by opathre, 10 September 2026: https://github.com/onkarpathre/lgr-transformation-migration/pull/3#issuecomment-5614835348"
+    - "ADR-006 and ADR-007 conditional local/non-production POC approvals remain applicable within their recorded boundaries."
     - "feature/ph3-sql-implementation at fa479713ab0cc882397a86f9c962570e9f74e2da: Implementation Work Package requests the missing architecture contract."
     - "Tester evidence at 4c61979e941974d05009727f3ad7959b372f71c1: PH3SQL-TST-002 records missing authentication, membership and project-role policy."
     - "Microsoft primary documentation links in this ADR for token claims, scope/app-role validation, fallback authorization and managed identity."
   decisions:
-    - "Recommend Entra workforce authentication plus application-owned principal/customer/project membership and permission policies."
+    - "Accept Entra workforce authentication plus application-owned principal/customer/project membership and permission policies for restricted local/non-production implementation and testing only."
     - "Only DatabaseSme receives SQL Inventory create/update/logical-delete; applicable planning/review roles are read-only; all other roles deny."
     - "LocalTest uses allow-listed synthetic aliases and server-side memberships only; production never trusts identity or role headers."
   assumptions:
     - "Only Agilisys internal users and synthetic local/test identities are in scope."
     - "No code, test, migration, database, Azure, merge or deployment action occurs in this architecture work."
   risks:
-    - "R-02 remains open until approval, implementation and independent abuse testing."
+    - "R-02 remains open until implementation and independent abuse testing."
     - "Membership administration and production persistence are not implemented or approved."
     - "Q-09 external customer identity and production tenancy remain open."
     - "The Product Specification and HLD document-control tables do not evidence final approval."
   defects:
-    - "PH3SQL-TST-002: architecture contract supplied; implementation and retest remain outstanding."
+    - "PH3SQL-TST-002: architecture amendment accepted for restricted local/non-production implementation and testing; implementation and independent retest remain outstanding."
   blockers:
-    - "ADR-008 requires named Solution Architect/TDA and Information Security approval before implementation."
-    - "Product Owner role-mapping confirmation and test-authority agreement remain required evidence."
-    - "I-06/D-11, SQL Server runtime assurance and vulnerability-feed evidence remain unresolved in the Developer/Test packages."
-    - "Q-06, Q-09, production tenancy, Service Transition and release approvals remain open for production."
+    - "Identity Platform configuration confirmation remains required before Entra mode is used in any deployed environment."
+    - "Named test-authority approval under I-06/D-11 remains required before implementation results are accepted as formal test evidence."
+    - "SQL Server runtime assurance and vulnerability-feed evidence remain unresolved in the Developer/Test packages."
+    - "Q-09 external customer identity, production identity configuration, production tenancy, production deployment, real customer-data use, Service Transition and release approval remain blocked; Q-06 remains open for production processing."
   approvals:
-    - "No ADR-008 approval is claimed."
-  requested_action: "Solution Architect/TDA and Information Security must review and approve, conditionally approve or reject ADR-008. If approved, return PH3SQL-TST-002 to the Developer for implementation on feature/ph3-sql-implementation and a commit-bound READY_FOR_TEST hand-off, followed by independent Tester retest."
+    - "Solution Architect/TDA — PTArchitect — 10 September 2026 — restricted local/non-production implementation and testing — https://github.com/onkarpathre/lgr-transformation-migration/pull/3#pullrequestreview-5164009938"
+    - "Information Security — nextgenexamprep-crypto — 10 September 2026 — restricted local/non-production implementation and testing — https://github.com/onkarpathre/lgr-transformation-migration/pull/3#pullrequestreview-5164020739"
+    - "Product Owner role-mapping confirmation — opathre — 10 September 2026 — restricted local/non-production business-access model — https://github.com/onkarpathre/lgr-transformation-migration/pull/3#issuecomment-5614835348"
+  requested_action: "Developer may implement PH3SQL-TST-002 only within the approved local/non-production scope using synthetic data and reversible changes, then provide a commit-bound READY_FOR_TEST hand-off for independent Tester retest. Preserve the outstanding Identity Platform, named test-authority, SQL runtime, Q-09, production identity, production tenancy, production deployment, customer-data, Service Transition and release gates; no merge or production action follows."
 ```
