@@ -21,6 +21,29 @@ traceability:
     - "Product Owner opathre, 10 September 2026: exact SQL Inventory role-to-permission mapping confirmed for the same restricted scope."
 ```
 
+## Tester Agent independent retest update - 10 September 2026
+
+This is a Tester-owned status update for the exact committed implementation. It does not alter or replace the Developer's historical command evidence or claim Developer/human approval.
+
+- Branch and immutable commit: `feature/ph3-sql-implementation` at `dc31d60303525da7727d92acba455007fd24ef9a`; exact match and clean working tree confirmed before testing.
+- Approved architecture baseline: `7f2d6aa12c7f1cffd3d6d9215955bac0b8eca600`; ancestry confirmed.
+- Previous implementation baseline: `3650852bb91a8b8ca89a92d1de6ed352b37dde79`; ancestry confirmed.
+- Initial committed test run: PASS, 73 unit + 85 integration = 158 passed, 0 failed, 0 skipped.
+- Tester-strengthened test run: PASS, 82 unit + 87 integration = 169 passed, 0 failed, 0 skipped.
+- Focused current totals: 32 identity/token/principal/permission unit tests; 47 SQL authorization integration tests; 17 SQL Inventory API integration tests; 55 Phase 1/2 regression tests. All pass with zero skipped.
+- Role and method result: `DatabaseSme` read/create/update/logical-delete pass for SQL Instances and Databases. `MigrationArchitect`, `ProjectManager`, `DiscoveryAnalyst` and `ReviewerAuditor` read pass and all mutation attempts return `403/permission_denied`. Customer Administrator, Platform Administrator and unknown roles receive no SQL Inventory permission.
+- Abuse result: unknown/unauthenticated identities, invalid memberships, cross-customer/project requests, direct-object database and instance attempts, production header injection and app-only/mixed principals fail closed with the approved non-enumerating Problem Details contracts.
+- LocalTest result: allow-listed synthetic identities operate in Testing; configuration validation accepts only Development/Testing and production-like LocalTest startup fails. Production-like valid bearer requests cannot be widened by identity, customer, test-principal, role or permission headers. Authentication is evidenced before project authorization.
+- Audit result: stable actor, principal type, derived customer/project, UTC time and correlation ID pass; service-account values remain redacted.
+- Build/model/frontend result: Release build 0 warnings/0 errors; EF model has no pending changes via global pinned `dotnet-ef 10.0.11`; frontend lint and 16-route production build pass.
+- Migration result: `20260910082037_AddInternalPrincipalAuditType` adds only nullable `AuditEvents.ActorPrincipalType nvarchar(20)` and is additive/backward compatible in `Up`. It was inspected and never applied.
+- Dependency assurance: NuGet and npm vulnerability advisory calls are blocked by unavailable/denied endpoints; `gitleaks` and `trivy` are not installed. No dependency manifest or lockfile changed in the ADR-008 delta.
+- Defect disposition: PH3SQL-TST-001, PH3SQL-TST-002, PH3SQL-TST-003 and PH3SQL-TST-004 are independently closed for the exact restricted local/non-production commit. No new application defect was found.
+- Remaining blockers: I-06/D-11 named test-authority approval and an approved isolated SQL Server runtime; connected dependency-advisory evidence; Identity Platform/deployed membership confirmation; Q-06/Q-09 and all production/tenancy/customer-data/Service Transition/release decisions.
+- Tester gate: `BLOCKED`, not `READY_FOR_QUALITY_REVIEW` and not `RETURN_TO_DEVELOPER`, because no implementation defect remains but mandatory environment/human evidence is unavailable.
+
+The authoritative current-run details and exact commit-bound hand-off are in `docs/implementation/PH3_SQL_Slice1_Test_Evidence_Pack.md`. The statement in the historical Developer section below that the evidence pack was unmodified was accurate when that Developer evidence was authored; it is superseded by this Tester update.
+
 ## ADR-008 Developer remediation update - 10 September 2026
 
 This section supersedes the 9 September Developer remediation status for PH3SQL-TST-002. The historical Developer and Tester records retained later in this package remain evidence of the earlier state; `PH3_SQL_Slice1_Test_Evidence_Pack.md` was not modified.

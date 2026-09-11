@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using LgrTransformationMigration.Api.Infrastructure;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -95,20 +97,45 @@ public sealed class IdentityAuthorizationTests
     }
 
     [Theory]
+    [InlineData("missing-tid")]
+    [InlineData("malformed-tid")]
     [InlineData("missing-oid")]
     [InlineData("malformed-oid")]
+    [InlineData("missing-azp")]
+    [InlineData("malformed-azp")]
+    [InlineData("missing-sub")]
     [InlineData("wrong-tid")]
     [InlineData("v1-token")]
     public async Task Entra_principal_mapping_rejects_invalid_required_claims(string variation)
     {
         var claims = HumanClaims().ToList();
-        if (variation == "missing-oid")
+        if (variation == "missing-tid")
+        {
+            claims.RemoveAll(claim => claim.Type == "tid");
+        }
+        else if (variation == "malformed-tid")
+        {
+            ReplaceClaim(claims, "tid", "not-a-guid");
+        }
+        else if (variation == "missing-oid")
         {
             claims.RemoveAll(claim => claim.Type == "oid");
         }
         else if (variation == "malformed-oid")
         {
             ReplaceClaim(claims, "oid", "not-a-guid");
+        }
+        else if (variation == "missing-azp")
+        {
+            claims.RemoveAll(claim => claim.Type == "azp");
+        }
+        else if (variation == "malformed-azp")
+        {
+            ReplaceClaim(claims, "azp", "not-a-guid");
+        }
+        else if (variation == "missing-sub")
+        {
+            claims.RemoveAll(claim => claim.Type == "sub");
         }
         else if (variation == "wrong-tid")
         {
@@ -154,6 +181,53 @@ public sealed class IdentityAuthorizationTests
         Assert.Equal(
             variation == "workload" ? InternalPrincipalType.Workload : InternalPrincipalType.Human,
             mapped.PrincipalType);
+    }
+
+    [Fact]
+    public void Internal_principal_identity_is_stable_when_mutable_display_claims_change()
+    {
+        var firstClaims = HumanClaims().ToList();
+        var secondClaims = HumanClaims().ToList();
+        ReplaceClaim(secondClaims, "name", "Changed Synthetic Display Name");
+        ReplaceClaim(secondClaims, "sub", "changed-pairwise-subject");
+
+        var first = EntraInternalPrincipalMapper.Map(Principal(firstClaims), EntraOptions());
+        var second = EntraInternalPrincipalMapper.Map(Principal(secondClaims), EntraOptions());
+
+        Assert.Equal(first.PrincipalId, second.PrincipalId);
+        Assert.Equal(first.AuditActor, second.AuditActor);
+        Assert.NotEqual(first.DisplayName, second.DisplayName);
+        Assert.NotEqual(first.Subject, second.Subject);
+    }
+
+    [Theory]
+    [InlineData("Development", true)]
+    [InlineData("Testing", true)]
+    [InlineData("Production", false)]
+    public void LocalTest_configuration_is_accepted_only_in_approved_environments(
+        string environmentName,
+        bool expectedSuccess)
+    {
+        var validator = new LgrAuthenticationOptionsValidator(new TestHostEnvironment(environmentName));
+        var options = new LgrAuthenticationOptions
+        {
+            Mode = InternalAuthenticationDefaults.LocalTestMode,
+            LocalTest = new LocalTestAuthenticationOptions
+            {
+                Principals =
+                [
+                    new LocalTestPrincipalOptions
+                    {
+                        Alias = "synthetic-reader",
+                        PrincipalId = Guid.Parse("70000000-0000-0000-0000-000000000099")
+                    }
+                ]
+            }
+        };
+
+        var result = validator.Validate(null, options);
+
+        Assert.Equal(expectedSuccess, result.Succeeded);
     }
 
     private static MicrosoftEntraAccessTokenValidator Validator(SecurityKey signingKey)
@@ -220,5 +294,13 @@ public sealed class IdentityAuthorizationTests
     {
         public Task<OpenIdConnectConfiguration> GetAsync(CancellationToken cancellationToken) =>
             Task.FromResult(configuration);
+    }
+
+    private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "LgrTransformationMigration.Api.UnitTests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }

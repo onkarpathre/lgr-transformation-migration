@@ -137,6 +137,27 @@ public sealed class SqlInventoryAuthorizationTests
         Assert.Contains("Bearer", response.Headers.WwwAuthenticate.Select(value => value.Scheme));
     }
 
+    [Fact]
+    public async Task Authentication_challenge_precedes_project_authorization()
+    {
+        using var factory = new LgrWebApplicationFactory();
+        using var anonymous = factory.CreateUnauthenticatedClient();
+        using var anonymousResponse = await anonymous.GetAsync("/api/v1/sql-instances");
+
+        using var authenticatedWithoutProject = factory.CreateUnauthenticatedClient();
+        authenticatedWithoutProject.DefaultRequestHeaders.Add("X-Lgr-Test-Principal", "dba-project-a");
+        using var missingProjectResponse = await authenticatedWithoutProject.GetAsync("/api/v1/sql-instances");
+
+        await AssertProblemDetailsAsync(
+            anonymousResponse,
+            HttpStatusCode.Unauthorized,
+            "authentication_required");
+        await AssertProblemDetailsAsync(
+            missingProjectResponse,
+            HttpStatusCode.BadRequest,
+            "project_context_required");
+    }
+
     [Theory]
     [InlineData("unassigned")]
     [InlineData("disabled")]
@@ -307,6 +328,84 @@ public sealed class SqlInventoryAuthorizationTests
     }
 
     [Fact]
+    public async Task Cross_customer_and_cross_project_databases_are_non_enumerating_for_detail_and_mutation()
+    {
+        using var factory = new LgrWebApplicationFactory();
+        var otherCustomer = await factory.SeedSecondTenantAsync();
+        using var otherCustomerClient = factory.CreateAuthenticatedClient("dba-project-b", otherCustomer.ProjectId);
+        var (otherCustomerInstance, _) = await CreateInstanceAsync(
+            otherCustomerClient,
+            LgrWebApplicationFactory.SecondTenantServerId,
+            "DATABASE-CUSTOMER-PARENT");
+        var (otherCustomerDatabase, otherCustomerTag) = await CreateDatabaseAsync(
+            otherCustomerClient,
+            otherCustomerInstance.Id,
+            "OtherCustomerDatabase");
+
+        var otherProject = await factory.SeedSecondProjectForDemoCustomerAsync();
+        using var otherProjectClient = factory.CreateAuthenticatedClient("dba-project-a2", otherProject.ProjectId);
+        var (otherProjectInstance, _) = await CreateInstanceAsync(
+            otherProjectClient,
+            otherProject.ServerId,
+            "DATABASE-PROJECT-PARENT");
+        var (otherProjectDatabase, otherProjectTag) = await CreateDatabaseAsync(
+            otherProjectClient,
+            otherProjectInstance.Id,
+            "OtherProjectDatabase");
+
+        using var demo = factory.CreateClient();
+        using var missing = await demo.GetAsync($"/api/v1/sql-databases/{Guid.NewGuid()}");
+        var missingProblem = await AssertProblemDetailsAsync(
+            missing,
+            HttpStatusCode.NotFound,
+            "resource_not_found");
+
+        foreach (var (database, tag) in new[]
+                 {
+                     (otherCustomerDatabase, otherCustomerTag),
+                     (otherProjectDatabase, otherProjectTag)
+                 })
+        {
+            using var detail = await demo.GetAsync($"/api/v1/sql-databases/{database.Id}");
+            var inaccessibleProblem = await AssertProblemDetailsAsync(
+                detail,
+                HttpStatusCode.NotFound,
+                "resource_not_found");
+            Assert.Equal(
+                missingProblem.GetProperty("title").GetString(),
+                inaccessibleProblem.GetProperty("title").GetString());
+            Assert.Equal(
+                missingProblem.GetProperty("detail").GetString(),
+                inaccessibleProblem.GetProperty("detail").GetString());
+
+            using var update = await SendWithIfMatchAsync(
+                demo,
+                HttpMethod.Put,
+                $"/api/v1/sql-databases/{database.Id}",
+                DatabaseRequest(database.SqlInstance.Id, database.Name),
+                tag);
+            await AssertProblemDetailsAsync(update, HttpStatusCode.NotFound, "resource_not_found");
+
+            using var archive = await SendWithIfMatchAsync(
+                demo,
+                HttpMethod.Delete,
+                $"/api/v1/sql-databases/{database.Id}",
+                null,
+                tag);
+            await AssertProblemDetailsAsync(archive, HttpStatusCode.NotFound, "resource_not_found");
+        }
+
+        var customerList = await demo.GetFromJsonAsync<PagedResult<SqlDatabaseDto>>(
+            "/api/v1/sql-databases?search=OtherCustomerDatabase",
+            JsonOptions);
+        var projectList = await demo.GetFromJsonAsync<PagedResult<SqlDatabaseDto>>(
+            "/api/v1/sql-databases?search=OtherProjectDatabase",
+            JsonOptions);
+        Assert.Empty(customerList!.Items);
+        Assert.Empty(projectList!.Items);
+    }
+
+    [Fact]
     public async Task Sql_mutation_audit_uses_stable_principal_identity_type_scope_and_correlation()
     {
         using var factory = new LgrWebApplicationFactory();
@@ -398,7 +497,12 @@ public sealed class SqlInventoryAuthorizationTests
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         client.DefaultRequestHeaders.Add("X-Project-Id", SeedIds.DemoProject.ToString("D"));
         client.DefaultRequestHeaders.Add("X-Roles", "DatabaseSme");
+        client.DefaultRequestHeaders.Add("X-Project-Roles", "DatabaseSme");
         client.DefaultRequestHeaders.Add("X-Permissions", "sql.inventory.create");
+        client.DefaultRequestHeaders.Add("X-Customer-Id", Guid.NewGuid().ToString("D"));
+        client.DefaultRequestHeaders.Add("X-User-Name", "forged-production-user");
+        client.DefaultRequestHeaders.Add("X-Principal-Id", Guid.NewGuid().ToString("D"));
+        client.DefaultRequestHeaders.Add("X-Lgr-Test-Principal", "dba-project-a");
 
         using var response = await client.PostAsJsonAsync(
             "/api/v1/sql-instances",
