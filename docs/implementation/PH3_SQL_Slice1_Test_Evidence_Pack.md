@@ -21,6 +21,160 @@ traceability:
     - "Product Owner opathre, 10 September 2026: SQL Inventory role-to-permission mapping confirmed for the same restricted scope."
 ```
 
+## Frontend security-remediation independent retest - 11 September 2026
+
+This section is the current commit-bound evidence for the frontend dependency remediation at `fdf85a24844e9d0b060a6dbdedb09cbb832a2812`. The 10 September implementation retest and all 9 September evidence below are preserved as historical evidence. They remain authoritative for their named commits but are not presented as execution against this remediation commit.
+
+### Test control, scope and entry gates
+
+- Tester role: independent Tester Agent under `AGENTS.md`.
+- Test branch and exact immutable commit: `feature/ph3-sql-implementation` at `fdf85a24844e9d0b060a6dbdedb09cbb832a2812`.
+- Previous Tester-evidence commit: `d97f044c2212b1ae1559dc878dc08f58e181a6b8`; verified as the direct parent and an ancestor of the tested commit.
+- Application implementation commit: `dc31d60303525da7727d92acba455007fd24ef9a`; verified as an ancestor of the tested commit.
+- Architecture baseline: `7f2d6aa12c7f1cffd3d6d9215955bac0b8eca600`; verified as an ancestor of the tested commit.
+- Entry state: branch and `HEAD` matched exactly, and tracked and untracked status were empty before testing.
+- Exact delta review: only `src/web/package.json`, `src/web/package-lock.json` and the Developer-owned `docs/implementation/PH3_SQL_Slice1_Implementation_Work_Package.md` changed from `d97f044...` to `fdf85a2...` (501 insertions, 208 deletions). No application code, test, migration, identity/RBAC, environment configuration or `next-env.d.ts` source changed.
+- Approved test scope: restricted local/non-production POC only under ADR-006 and ADR-008. Repository synthetic identities/data and isolated SQLite integration fixtures only were used. No migration was applied, no shared or production database was accessed, and no commit, push, merge, deployment or approval action occurred.
+- Environment observed for this retest: Windows; .NET SDK `10.0.400`; .NET runtime/test host `10.0.11`; pinned global EF CLI `10.0.11`; Node.js `v24.18.0`; npm `11.16.0`; Next.js `16.3.4`.
+
+### Package and lockfile verification
+
+The version-3 lockfile, installed package graph and direct manifest pins agree:
+
+| Package / lock path | Exact tested version | Independent result |
+|---|---:|---|
+| `next` / `node_modules/next` | `16.3.4` | PASS: direct manifest, lock root, installed graph and Next CLI agree. |
+| `eslint-config-next` / `node_modules/eslint-config-next` | `16.3.4` | PASS: aligned exactly with Next.js. |
+| `react` / `node_modules/react` | `19.2.8` | PASS: unchanged from `d97f044...`. |
+| `react-dom` / `node_modules/react-dom` | `19.2.8` | PASS: unchanged from `d97f044...`. |
+| `node_modules/brace-expansion` | `1.1.18` | PASS: ESLint/minimatch 3 path resolves to the patched 1.x line. |
+| `node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion` | `5.0.9` | PASS: TypeScript ESLint/minimatch 10 path resolves to the patched 5.x line. |
+| `node_modules/js-yaml` | `4.3.2` | PASS. |
+| `node_modules/nanoid` | `3.3.19` | PASS. |
+| `node_modules/postcss` | `8.5.23` | PASS. |
+| `node_modules/sharp` | `0.35.4` | PASS. |
+
+The package delta contains no `.npmrc`, `allowScripts`, `npm approve-scripts`, `audit fix --force` or `--force` change. No `allowScripts` key exists in either package file. The owner-run npm debug record for the remediation contains `argv "audit" "fix"` without `--force` and exit 0; the subsequent connected record contains `argv "audit" "--audit-level" "high"`, an empty audit report and exit 0. The `unrs-resolver` allow-scripts warning did not result in repository approval or configuration.
+
+### Manually supplied connected evidence
+
+Onkar supplied the following results as commands manually executed in normal PowerShell against exact commit `fdf85a24844e9d0b060a6dbdedb09cbb832a2812`:
+
+| Manually executed check | Supplied result |
+|---|---|
+| `dotnet list .\LgrTransformationMigration.sln package --vulnerable --include-transitive` | PASS: NuGet source `https://api.nuget.org/v3/index.json`; no vulnerable packages in `LgrTransformationMigration.Api`, `LgrTransformationMigration.Api.UnitTests` or `LgrTransformationMigration.Api.IntegrationTests`; exit code 0. |
+| `npm audit --audit-level=high` | PASS: 0 vulnerabilities, exit code 0. |
+| Frontend lint | PASS: exit code 0. |
+| Next.js production build | PASS: Next.js `16.3.4`, exit code 0. |
+| Production route generation | PASS: all 16 routes generated. |
+
+This table is manually supplied connected evidence, not a claim that Codex executed those commands. For the connected .NET vulnerability scan, Onkar also verified that `HEAD` remained `fdf85a24844e9d0b060a6dbdedb09cbb832a2812` and the working tree contained only the pre-existing uncommitted Test Evidence Pack update. Codex independently reran lint and production build below. Codex inspected the local npm debug command records but did not independently execute either connected vulnerability scan. The earlier Codex-run `NU1900` warnings are retained below as environment-specific history; the subsequent connected normal-PowerShell scan passed.
+
+### Independent commands and results
+
+| Command/check | Current-run result |
+|---|---|
+| Branch, exact `HEAD`, clean tracked/untracked status | PASS at entry: `feature/ph3-sql-implementation`, exact `fdf85a24844e9d0b060a6dbdedb09cbb832a2812`, empty status. |
+| Commit ancestry and `d97f044...fdf85a2` changed-file/diff review | PASS: previous evidence, application and architecture commits are ancestors; the delta is limited to the two package files and Developer evidence. |
+| Manifest/lock/installed graph assertions and targeted offline `npm ls ... --all --offline` | PASS, exit 0; all exact versions in the package table resolve without invalid/extraneous entries. |
+| Next CLI version | PASS: `Next.js v16.3.4`. |
+| Repository/package audit-fix and install-script approval inspection | PASS: no forced audit-fix or `allowScripts`/`approve-scripts` repository change. The owner-run debug `argv` records contain no `--force`. |
+| `npm.cmd run lint` | PASS, exit 0. |
+| `npm.cmd run build` | PASS, exit 0; Next.js `16.3.4` compiled successfully and generated 16/16 routes. |
+| `dotnet build LgrTransformationMigration.sln --configuration Release` | PASS, exit 0; 0 errors. Six `NU1900` warnings were emitted because `api.nuget.org:443` vulnerability-data access is forbidden in this environment. |
+| Complete solution tests with `--no-build --no-restore` | PASS, exit 0: 82 unit + 87 integration = 169 passed, 0 failed, 0 skipped. |
+| Focused `IdentityAuthorizationTests` | PASS, exit 0: 32 passed, 0 failed, 0 skipped. |
+| Focused `SqlInventoryAuthorizationTests` | PASS, exit 0: 47 passed, 0 failed, 0 skipped. |
+| Phase 1/2 filter `FullyQualifiedName!~SqlInventory&FullyQualifiedName!~IdentityAuthorization` | PASS, exit 0: 32 unit + 23 integration = 55 passed, 0 failed, 0 skipped. |
+| Manifest EF tool availability | The repository manifest pins `dotnet-ef 10.0.11`, but the local manifest tool is not restored. No tool restore was attempted. |
+| Global pinned `dotnet-ef 10.0.11 migrations has-pending-model-changes ... --configuration Release --no-build` | PASS, exit 0: `No changes have been made to the model since the last migration.` NuGet vulnerability-data warnings were emitted; no migration was applied and no database runtime lane was opened. |
+| `src/web/next-env.d.ts` cleanup | PASS final state: the build-generated route-import delta was inspected and restored to the exact committed content; normalized working-file hash equals the committed blob and final file diff is zero. The first Git restore attempt could not create the sandboxed `.git/index.lock`; no Git metadata changed, and the validated single-file content was restored through the index's targeted checkout conversion. |
+| Pre-evidence `git diff --check` | PASS, exit 0. |
+
+### Identity/RBAC and Phase 1/2 regression assessment
+
+The dependency-only delta does not modify the ADR-008 implementation or tests. Independent execution confirms the prior security behaviours remain intact:
+
+- all 32 token, immutable-principal, claim-validation, role-mapping and LocalTest environment unit cases pass;
+- all 47 SQL authorization integration cases pass, including the exact role/method matrix, server-derived customer/project membership, non-enumerating cross-scope denials, header/private-claim injection resistance, production-like fail-closed behaviour, app-only rejection, fallback policy, safe errors, stable audit actor and correlation metadata;
+- `DatabaseSme` retains read/create/update/logical-delete; `MigrationArchitect`, `ProjectManager`, `DiscoveryAnalyst` and `ReviewerAuditor` remain read-only; Customer Administrator, Platform Administrator and unknown roles receive no SQL Inventory permission; and
+- all 55 explicit Phase 1/2 regression cases pass with no failure or skip.
+
+This verifies no observed dependency-remediation regression in the ADR-008 local/API/SQLite scope. It does not infer deployed Entra, persistent membership, external identity, production tenancy or SQL Server runtime approval.
+
+### Security-remediation disposition and remaining blockers
+
+- Frontend dependency remediation: **PASS** for the approved restricted local/non-production scope at exact commit `fdf85a24844e9d0b060a6dbdedb09cbb832a2812`. The requested versions, independent lint/build, all-route generation and complete application regression pass. No new application defect was found.
+- Connected dependency vulnerability evidence: **PASS as manually supplied commit-bound evidence** from Onkar. The normal-PowerShell .NET scan used `https://api.nuget.org/v3/index.json`, reported no vulnerable packages for the API, unit-test or integration-test projects, and exited 0; the retained npm audit result is 0 vulnerabilities with exit 0. Codex did not execute either connected scan. Historical `PH3SQL-BLK-002` is superseded for this exact commit. Earlier Codex-run `NU1900` warnings remain recorded as environment-specific history and do not override the subsequent connected scan result.
+- Remaining blocker 1: I-06/D-11 named test-authority approval is absent.
+- Remaining blocker 2: approved isolated SQL Server runtime evidence is absent for migration rehearsal, constraints, rowversion, collation, concurrency and query-plan assurance.
+- Identity Platform/deployed membership confirmation, Q-06/Q-09, production identity/tenancy, external customer access, customer-data use, Service Transition, deployment and human release approvals remain outside this Tester authority and are not blockers for this exact commit-bound gate.
+
+**Tester recommendation for the frontend security remediation:** `PASS`.
+
+**Tester recommendation for complete Slice 1 release evidence:** `FAIL` because I-06/D-11 named test-authority approval and the approved isolated SQL Server runtime evidence remain absent; no risk acceptance is inferred.
+
+**One gate decision:** `BLOCKED` for the wider Slice 1 quality/release gate. This is not `RETURN_TO_DEVELOPER` because no remediation or application defect remains.
+
+```yaml
+handoff:
+  from_agent: "tester"
+  to_agent: "quality-manager"
+  state: "BLOCKED"
+  work_item: "PH3-SQL-001-frontend-dependency-remediation"
+  branch: "feature/ph3-sql-implementation"
+  commit: "fdf85a24844e9d0b060a6dbdedb09cbb832a2812"
+  baseline_commit: "d97f044c2212b1ae1559dc878dc08f58e181a6b8"
+  application_commit: "dc31d60303525da7727d92acba455007fd24ef9a"
+  architecture_commit: "7f2d6aa12c7f1cffd3d6d9215955bac0b8eca600"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01", "C-02", "C-03", "C-04", "C-06"]
+    functional_requirements: ["F-01", "F-02", "F-03", "F-04", "F-05", "F-07", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-04", "NF-05", "NF-06", "NF-08", "NF-09", "NF-10", "NF-11", "NF-12", "NF-13"]
+    risks: ["R-01", "R-02", "R-03", "R-06", "R-09", "R-11"]
+    assumptions: ["A-01", "A-02", "A-03", "A-05", "A-06", "A-08", "A-11", "A-13", "A-15", "A-16", "A-18"]
+    dependencies: ["D-01", "D-03", "D-04", "D-05", "D-07", "D-08", "D-10", "D-11", "D-13"]
+    issues: ["I-01", "I-02", "I-03", "I-04", "I-06", "I-08"]
+    open_questions: ["Q-01", "Q-02", "Q-06", "Q-09"]
+    approvals:
+      - "Restricted local/non-production Product Owner, Solution Architect/TDA and Information Security approvals recorded in ADR-006, ADR-007, ADR-008 and PH3-SQL-ARCH-001."
+  artefacts:
+    - "docs/implementation/PH3_SQL_Slice1_Test_Evidence_Pack.md (uncommitted Tester update)"
+    - "src/web/package.json (tested, unchanged by Tester)"
+    - "src/web/package-lock.json (tested, unchanged by Tester)"
+    - "docs/implementation/PH3_SQL_Slice1_Implementation_Work_Package.md (Developer evidence at tested commit; unchanged by Tester)"
+  evidence:
+    - "Exact entry branch/HEAD/clean state and ancestry checks pass."
+    - "Delta from d97f044 to fdf85a2 is limited to package.json, package-lock.json and Developer evidence."
+    - "Resolved graph: Next.js/eslint-config-next 16.3.4; React/React DOM 19.2.8; brace-expansion 1.1.18 and 5.0.9; js-yaml 4.3.2; nanoid 3.3.19; postcss 8.5.23; sharp 0.35.4."
+    - "Onkar manually supplied connected .NET vulnerability evidence from normal PowerShell: api.nuget.org source; no vulnerable packages in the API, unit-test or integration-test projects; exit 0; exact HEAD retained; only this pre-existing uncommitted evidence update remained. Codex did not execute the scan."
+    - "Onkar manually supplied connected npm audit evidence: 0 vulnerabilities, exit 0; Codex did not execute it."
+    - "Independent frontend lint/build pass; Next.js 16.3.4 generated 16 routes."
+    - "Independent Release build passes with 0 errors; its six NU1900 warnings are retained as Codex-environment-specific history and were followed by the passing connected normal-PowerShell scan."
+    - "Complete suite: 169/169; focused identity: 32/32; focused SQL authorization: 47/47; Phase 1/2 regression: 55/55."
+    - "EF pending-model validation: no changes since the last migration; no migration or database runtime action."
+    - "No forced npm audit fix or allowScripts approval was introduced; next-env.d.ts restored; git diff --check passes."
+  decisions:
+    - "Accept the frontend dependency remediation as passing for the restricted local/non-production scope at the exact tested commit."
+    - "Do not advance the wider Slice 1 quality/release gate while mandatory SQL Server and named test-authority evidence remains absent."
+  assumptions:
+    - "Onkar's supplied connected .NET and npm vulnerability results accurately report the manual command output against the named exact commit."
+    - "Only repository synthetic identities and data were exercised."
+  risks:
+    - "R-09/I-06 provider-specific SQL Server and formal test-authority evidence remain absent."
+    - "R-11 wider production technology/tenancy approval remains unresolved."
+  defects: []
+  blockers:
+    - "I-06/D-11 named test-authority approval is absent."
+    - "Approved isolated SQL Server runtime evidence is absent for migration rehearsal, constraints, rowversion, collation, concurrency and query-plan assurance."
+  approvals:
+    - "Restricted local/non-production Product Owner, Solution Architect/TDA and Information Security approvals are evidenced."
+    - "No I-06/D-11 named test-authority approval or approved isolated SQL Server runtime evidence is claimed."
+  requested_action: "Hold the wider Slice 1 Quality/release review until I-06/D-11 named test-authority approval is recorded and an approved isolated SQL Server runtime lane provides migration-rehearsal, constraint, rowversion, collation, concurrency and query-plan evidence. The frontend security remediation itself may be treated as independently regression-tested at the exact commit; no merge, migration application, deployment, production action or approval follows."
+```
+
 ## Current independent retest - 10 September 2026
 
 This section is the current-run evidence for implementation commit `dc31d60303525da7727d92acba455007fd24ef9a`. All 9 September evidence below is preserved as historical context only and is not counted as evidence for this retest.
