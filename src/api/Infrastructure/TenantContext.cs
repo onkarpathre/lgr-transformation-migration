@@ -5,33 +5,27 @@ public interface ICurrentCustomerContext
     Guid CustomerId { get; }
     Guid ProjectId { get; }
     string UserName { get; }
+    string CorrelationId { get; }
+    InternalPrincipal Principal { get; }
 }
 
 public sealed class CurrentCustomerContext(
     IHttpContextAccessor httpContextAccessor,
-    IConfiguration configuration) : ICurrentCustomerContext
+    IInternalPrincipalAccessor principalAccessor,
+    IProjectAuthorizationContextAccessor authorizationContextAccessor) : ICurrentCustomerContext
 {
-    public Guid CustomerId => ReadGuid("X-Customer-Id", "DevelopmentContext:CustomerId");
-    public Guid ProjectId => ReadGuid("X-Project-Id", "DevelopmentContext:ProjectId");
+    public Guid CustomerId => CurrentAuthorization.CustomerId;
+    public Guid ProjectId => CurrentAuthorization.ProjectId;
+    public string UserName => Principal.AuditActor;
+    public InternalPrincipal Principal => principalAccessor.Principal
+                                          ?? throw new InvalidOperationException(
+                                              "An authenticated internal principal is required.");
 
-    public string UserName =>
-        httpContextAccessor.HttpContext?.Request.Headers["X-User-Name"].FirstOrDefault()
-        ?? configuration["DevelopmentContext:UserName"]
-        ?? "local.developer";
+    public string CorrelationId =>
+        httpContextAccessor.HttpContext?.TraceIdentifier
+        ?? Guid.NewGuid().ToString("N");
 
-    private Guid ReadGuid(string headerName, string configurationKey)
-    {
-        var headerValue = httpContextAccessor.HttpContext?.Request.Headers[headerName].FirstOrDefault();
-        if (Guid.TryParse(headerValue, out var headerGuid))
-        {
-            return headerGuid;
-        }
-
-        if (Guid.TryParse(configuration[configurationKey], out var configuredGuid))
-        {
-            return configuredGuid;
-        }
-
-        throw new InvalidOperationException($"A valid {configurationKey} value is required.");
-    }
+    private ProjectAuthorizationContext CurrentAuthorization => authorizationContextAccessor.AuthorizationContext
+                                                                 ?? throw new InvalidOperationException(
+                                                                     "An authorized customer and project context is required.");
 }

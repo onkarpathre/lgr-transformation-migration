@@ -47,8 +47,8 @@ public sealed class DiscoveryImportApiTests
         Assert.Contains(servers.Items, x => x.Hostname == "DC-PARKS-APP01");
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        Assert.Contains(await db.AuditEvents.ToListAsync(), x => x.Action == "ServerCreatedFromDiscovery");
-        Assert.Contains(await db.AuditEvents.ToListAsync(), x => x.Action == "DiscoveryImportCommitted" && x.EntityId == batch.Id);
+        Assert.Contains(await db.AuditEvents.IgnoreQueryFilters().ToListAsync(), x => x.Action == "ServerCreatedFromDiscovery");
+        Assert.Contains(await db.AuditEvents.IgnoreQueryFilters().ToListAsync(), x => x.Action == "DiscoveryImportCommitted" && x.EntityId == batch.Id);
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public sealed class DiscoveryImportApiTests
         Assert.NotNull(updated.LastImportedAt);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        Assert.Contains(await db.AuditEvents.ToListAsync(), x =>
+        Assert.Contains(await db.AuditEvents.IgnoreQueryFilters().ToListAsync(), x =>
             x.Action == "ServerUpdatedFromDiscovery" && x.PropertyName == "MemoryMb" && x.OldValue == "16384" && x.NewValue == "32768");
     }
 
@@ -82,7 +82,7 @@ public sealed class DiscoveryImportApiTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var server = await db.Servers.SingleAsync(x => x.Hostname == "DC-HOU-APP01");
+            var server = await db.Servers.IgnoreQueryFilters().SingleAsync(x => x.Hostname == "DC-HOU-APP01");
             if (field == "MigrationScope") server.MigrationScope = "Board Approved Scope";
             else server.MigrationStrategy = "Replatform - manually approved";
             await db.SaveChangesAsync();
@@ -93,7 +93,7 @@ public sealed class DiscoveryImportApiTests
 
         using var verifyScope = factory.Services.CreateScope();
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var updated = await verifyDb.Servers.SingleAsync(x => x.Hostname == "DC-HOU-APP01");
+        var updated = await verifyDb.Servers.IgnoreQueryFilters().SingleAsync(x => x.Hostname == "DC-HOU-APP01");
         Assert.Equal(field == "MigrationScope" ? "Board Approved Scope" : "Replatform - manually approved",
             field == "MigrationScope" ? updated.MigrationScope : updated.MigrationStrategy);
     }
@@ -175,8 +175,10 @@ public sealed class DiscoveryImportApiTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(ImportBatchStatuses.Failed, failed!.Status);
-        Assert.False(await verifyDb.Servers.AnyAsync(x => x.Hostname == "DC-ROLLBACK-01"));
-        Assert.Empty(await verifyDb.ServerDiscoverySnapshots.Where(x => x.ImportBatchId == batch.Id).ToListAsync());
+        Assert.False(await verifyDb.Servers.IgnoreQueryFilters().AnyAsync(x => x.Hostname == "DC-ROLLBACK-01"));
+        Assert.Empty(await verifyDb.ServerDiscoverySnapshots.IgnoreQueryFilters()
+            .Where(x => x.ImportBatchId == batch.Id)
+            .ToListAsync());
     }
 
     [Fact]
@@ -308,10 +310,7 @@ public sealed class DiscoveryImportApiTests
 
     private static HttpClient OtherTenantClient(LgrWebApplicationFactory factory, (Guid CustomerId, Guid ProjectId) context)
     {
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Customer-Id", context.CustomerId.ToString());
-        client.DefaultRequestHeaders.Add("X-Project-Id", context.ProjectId.ToString());
-        return client;
+        return factory.CreateAuthenticatedClient("dba-project-b", context.ProjectId);
     }
 
     private static string Fixture(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", name));
