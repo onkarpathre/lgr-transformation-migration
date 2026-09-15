@@ -19,7 +19,126 @@ traceability:
     - "Solution Architect/TDA PTArchitect, 10 September 2026: ADR-008 and PH3-SQL-ARCH-001 authentication/RBAC amendment approved for local/non-production implementation and testing only."
     - "Information Security nextgenexamprep-crypto, 10 September 2026: ADR-008 controls approved for local/non-production implementation and testing only."
     - "Product Owner opathre, 10 September 2026: exact SQL Inventory role-to-permission mapping confirmed for the same restricted scope."
+    - "Authorised Test Authority Ashish Tester (GitHub: ashish50thbirthday-ship-it), 11 September 2026: approved PH3-SQL-001 Slice 1 SQL Server assurance against a new isolated local SQL Server Express database using synthetic data only at commit 284ebacc5633db0da940b206f6eeebf0d61447af - https://github.com/onkarpathre/lgr-transformation-migration/issues/4#issuecomment-5639746843"
+    - "Authorised Test Authority Ashish (GitHub: ashish50thbirthday-ship-it), 15 September 2026: phase-level approval for PH3-SQL-001 Phase 1 SQL Server assurance recovery at exact commit 284ebacc5633db0da940b206f6eeebf0d61447af on localhost\\SQLEXPRESS, beginning with exact fresh target LgrTransformationMigration_Ph3Sql_Assurance_20260915_Retry01 - https://github.com/onkarpathre/lgr-transformation-migration/issues/4#issuecomment-5672361217"
 ```
+
+## Tester Agent terminal Retry05 status - 15 September 2026
+
+This Tester-owned status note supersedes the earlier Tester runtime/rerun states
+for hand-off purposes without rewriting their historical evidence or changing
+the Developer implementation package. Read-only reconciliation of exact result
+`TestResults/PH3_SQL_Slice1_Assurance_20260915T080434432Z/result.json` against
+branch `feature/ph3-sql-implementation` and application subject commit
+`284ebacc5633db0da940b206f6eeebf0d61447af` records terminal outcome `PASS` with
+24/24 passed gates and zero fail/skip steps.
+
+The result proves the approved local SQL Server identity/non-existence gate,
+full migration and final migration history, schema/constraint inspection,
+normalization, rowversion, concurrent duplicate prevention, actual execution
+plans, rollback to `20260824181918_AddDiscoveryImport` and complete reapply. It
+records exact database
+`LgrTransformationMigration_Ph3Sql_Assurance_20260915_Retry05` retained fully
+migrated and not automatically dropped/deleted. All prior failed result
+artifacts and the harness remain preserved as historical Tester evidence.
+
+`PH3SQL-BLK-001` is closed for the exact restricted local/non-production Slice
+1 assurance scope. No open Tester blocker remains, so the Tester recommendation
+is `PASS` and the current Tester exit state is `READY_FOR_QUALITY_REVIEW`.
+Q-02, Q-06, Q-09 and all production, external-identity, deployment, Service
+Transition, PRB and human release decisions remain with their named owners; no
+approval or risk acceptance is inferred. The authoritative evidence matrix and
+Quality Manager hand-off are in
+`docs/implementation/PH3_SQL_Slice1_Test_Evidence_Pack.md`.
+
+## Tester Agent phase-level SQL assurance authority - 15 September 2026
+
+This Tester-owned technical note does not alter Developer implementation
+evidence or claim application repair. GitHub issue comment `5672361217` was
+validated as the phase-level approval by Ashish, Authorised Test Authority, for
+exact application commit `284ebacc5633db0da940b206f6eeebf0d61447af` on
+`localhost\SQLEXPRESS` using synthetic data only.
+
+The harness now requires the single exact first retry database
+`LgrTransformationMigration_Ph3Sql_Assurance_20260915_Retry01` by ordinal,
+case-sensitive equality. The approval permits a later unused RetryNN only after
+the preceding attempt fails; every later execution still requires a
+Tester-owned source change that pins one complete exact database name. No
+unrestricted RetryNN prefix match is permitted.
+
+The excluded existing 20260911 assurance database and all four failed result
+paths were left untouched. No SQL, harness, migration, commit or push operation
+was performed. Static validation is recorded in the authoritative
+`docs/implementation/PH3_SQL_Slice1_Test_Evidence_Pack.md`, with current Tester
+state `READY_FOR_AUTHORISED_RERUN` for exact Retry01 only.
+
+## Tester Agent SQL Server runtime assurance status - 11 September 2026
+
+This Tester-owned update does not alter Developer implementation evidence or
+claim implementation repair. The authoritative command matrix and commit-bound
+Quality Manager hand-off are in
+docs/implementation/PH3_SQL_Slice1_Test_Evidence_Pack.md.
+
+### Authority and exact test subject
+
+- Test Authority approval:
+  https://github.com/onkarpathre/lgr-transformation-migration/issues/4#issuecomment-5639746843.
+- Exact branch/HEAD at clean entry: feature/ph3-sql-implementation at
+  284ebacc5633db0da940b206f6eeebf0d61447af.
+- Application commit dc31d60303525da7727d92acba455007fd24ef9a and
+  security-remediation commit fdf85a24844e9d0b060a6dbdedb09cbb832a2812
+  were confirmed as ancestors.
+- Approved target: localhost\SQLEXPRESS and new isolated database
+  LgrTransformationMigration_Ph3Sql_Assurance_20260911, synthetic identities
+  and data only.
+
+### Independent result
+
+- Target selection passed: the literal DataSource was exactly
+  localhost\SQLEXPRESS, localhost resolved to loopback, MSSQL$SQLEXPRESS was
+  running, and registry/service metadata identified SQL Server 2022 Express
+  16.0.1000.6.
+- The mandatory database non-existence check was blocked before query
+  execution. System.Data.SqlClient returned "The target principal name is
+  incorrect. Cannot generate SSPI context." An independent sqlcmd probe also
+  failed before SELECT during ODBC encryption/SSL credential negotiation.
+- EF listed all four compiled migrations but explicitly could not access the
+  database or show applied/pending status. Its exit 0 is not treated as a
+  database pass.
+- The isolated application connection string was held only in the child process
+  environment. No repository configuration was changed and the value was not
+  printed.
+- In accordance with the pre-access guardrail, no assurance database was
+  created or modified; no migration, seed, constraint probe, concurrent write,
+  plan query, rollback, reapply or cleanup operation was attempted.
+- Offline EF model validation passed with no pending model changes.
+- Release build passed with 0 errors and 3 retained NU1900 warnings.
+- The complete suite passed 169/169: 82 unit and 87 integration, with zero
+  failures/skips.
+- Focused SQL Inventory rules/API passed 35/35: 18 unit and 17 integration.
+- Focused ADR-008 identity/SQL authorization passed 79/79: 32 unit and 47
+  integration.
+- Frontend lint and Next.js 16.3.4 production build passed; all 16 routes were
+  generated and the build-generated next-env.d.ts change was restored exactly.
+- No new application defect was found. Mandatory SQL Server composite/check
+  constraints, filtered uniqueness, rowversion, collation, concurrent-create,
+  cross-scope FK, execution-plan and rollback/reapply evidence remains absent.
+
+### Tester disposition
+
+The executable non-SQL scope passes, but the complete SQL Server runtime
+assurance is BLOCKED. This is not RETURN_TO_DEVELOPER because no implementation
+defect was demonstrated, and it is not READY_FOR_QUALITY_REVIEW because the
+required provider-runtime evidence does not exist.
+
+PH3SQL-BLK-001 is narrowed rather than closed: the named Test Authority and
+installed local SQL Express instance are evidenced, but the Tester process
+identity cannot authenticate to prove database non-existence or execute the
+approved matrix. No database cleanup is recommended or authorised. An
+authorised environment owner must provide an approved Windows identity able to
+connect only to the local instance/test-database context, after which the Tester
+must repeat the non-existence check and full provider run against unchanged
+commit 284ebacc5633db0da940b206f6eeebf0d61447af.
 
 ## Frontend dependency vulnerability remediation - 11 September 2026
 
