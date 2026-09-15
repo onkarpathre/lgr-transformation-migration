@@ -12,7 +12,11 @@ traceability:
   dependencies: ["D-01", "D-07", "D-08", "D-11", "D-13"]
   issues: ["I-03", "I-04", "I-06", "I-08"]
   open_questions: ["Q-01", "Q-02", "Q-06", "Q-09"]
-  approvals: []
+  approvals:
+    - "Product Owner scope decision by onkarpathre, recorded 2026-09-15T12:08:46Z against 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a."
+    - "Architect/TDA formal approval by opathre, recorded 2026-09-15T12:09:43Z against 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a."
+    - "Information Security formal approval by ashish50thbirthday-ship-it, recorded 2026-09-15T12:11:06Z against 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a."
+    - "DBA/Discovery SME formal approval by nextgenexamprep-crypto, recorded 2026-09-15T12:13:03Z against 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a."
 ```
 
 ## Control and outcome
@@ -23,7 +27,7 @@ traceability:
 - **Slice 1 position:** merged and quality-recommended for its restricted local/non-production scope. SQL Instance/Database inventory CRUD, relationships, isolation, audit and supporting controls are not replanned.
 - **Objective:** complete the approved SQL discovery, human assessment and browser journey so database workloads become governed inventory and planning evidence.
 - **Scope boundary:** synthetic data and file-based CSV only; record, plan and evidence only. No migration execution, DMS orchestration, AI, remediation, Azure provisioning, direct discovery API, multi-cloud, production deployment, SSIS, SSRS or linked-server scope.
-- **Product Owner state:** `READY_FOR_ARCHITECTURE`.
+- **Product Owner state:** `READY_FOR_ARCHITECTURE`; scope approval is commit-bound and evidenced below.
 
 ## Ordered slices
 
@@ -76,6 +80,19 @@ Dependencies: Slices 2 and 3; approved frontend component/E2E/accessibility appr
 3. Q-02/PRB approval is required before this ordering is represented as a funded delivery commitment or release baseline. No date, budget or production commitment is made here.
 4. Wider Q-01 technology, production tenancy, Q-06/DPIA, deployed identity/Q-09, Service Transition and production release approvals remain mandatory for their production/external scopes; they do not block restricted local/non-production architecture planning and do not become part of these slices.
 
+### Approval evidence reconciled on 15 September 2026
+
+The supplied JSON is syntactically valid, identifies Pull Request 6, and binds every record to the exact architecture-package commit `7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`. That commit contains both this plan and `PH3_SQL_Remaining_Phase_Architecture.md`. The records authorize restricted local/non-production development and testing only; none authorizes production, customer data, external identity, migration execution, deployment, merge, release or PRB commitments.
+
+| Role | Reviewer name (GitHub login) | Decision and date | Approved scope | Durable permalink |
+|---|---|---|---|---|
+| Product Owner | `onkarpathre` | Exact-commit decision recorded as `COMMENTED`, 2026-09-15T12:08:46Z | Approves ordered Slices 2-4, scope, priorities, acceptance criteria, controlled-value ownership and phase approach for restricted local/non-production development and testing. The `COMMENTED` state is accepted because GitHub does not permit the PR author to formally approve their own PR and the review body says “Approved as Product Owner.” | [PR 6 review 5209736362](https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209736362) |
+| Architect / TDA | `opathre` | Formal exact-commit `APPROVED`, 2026-09-15T12:09:43Z | Approves the consolidated remaining-phase architecture for ordered Slices 2-4 within the documented restricted local/non-production boundaries. | [PR 6 review 5209749102](https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209749102) |
+| Information Security | `ashish50thbirthday-ship-it` | Formal exact-commit `APPROVED`, 2026-09-15T12:11:06Z | ADR-008 permission extension, deny-by-default authorization, tenant/project isolation, raw-row controls, audit, safe errors and synthetic-data restrictions. | [PR 6 review 5209763769](https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209763769) |
+| DBA / Discovery SME | `nextgenexamprep-crypto` | Formal exact-commit `APPROVED`, 2026-09-15T12:13:03Z | CSV v1 schemas and values, fixtures, staging/reconciliation, idempotency/history, SQL constraints, additive migrations and data-preserving rollback. | [PR 6 review 5209781297](https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209781297) |
+
+All four decisions are bound to approved architecture commit [`7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`](https://github.com/onkarpathre/lgr-transformation-migration/commit/7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a). The Product Owner, Architect/TDA, DBA/Discovery SME and Information Security gates are satisfied for the unchanged restricted package, so sequential Slices 2-4 are `READY_FOR_DEVELOPMENT`. Test Authority approval remains required before formal independent implementation evidence is accepted; all production/external gates remain unchanged.
+
 ## Material risks
 
 | Risk | Treatment / owner |
@@ -87,16 +104,18 @@ Dependencies: Slices 2 and 3; approved frontend component/E2E/accessibility appr
 | R-09 / I-06: SQLite or static UI checks miss SQL Server, concurrency or browser defects. | Mandatory approved SQL Server and frontend/E2E lanes before acceptance. |
 | R-11 / I-08: dependency or framework drift breaks the accepted baseline. | Same-commit restore/build/test and dependency/security evidence for each slice. |
 
-## Hand-off
+## Commit-bound Architecture hand-off
 
 ```yaml
 handoff:
-  from_agent: "product-owner"
-  to_agent: "architect"
-  state: "READY_FOR_ARCHITECTURE"
+  from_agent: "architect"
+  to_agent: "developer"
+  state: "READY_FOR_DEVELOPMENT"
   work_item: "PH3-SQL-001-REMAINING"
   branch: "feature/ph3-remaining-plan"
-  commit: "284c5b2"
+  commit: "7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a"
+  approved_architecture_commit: "7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a"
+  delivery_slices: ["Slice 2", "Slice 3", "Slice 4"]
   traceability:
     product_version: "0.1"
     phase: "Phase 1 - MVP"
@@ -108,7 +127,11 @@ handoff:
     dependencies: ["D-01", "D-07", "D-08", "D-11", "D-13"]
     issues: ["I-03", "I-04", "I-06", "I-08"]
     open_questions: ["Q-01", "Q-02", "Q-06", "Q-09"]
-    approvals: []
+    approvals:
+      - "Product Owner scope decision: onkarpathre, 2026-09-15T12:08:46Z, commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a, https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209736362"
+      - "Architect/TDA formal approval: opathre, 2026-09-15T12:09:43Z, commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a, https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209749102"
+      - "Information Security: ashish50thbirthday-ship-it, 2026-09-15T12:11:06Z, commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a, https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209763769"
+      - "DBA/Discovery SME: nextgenexamprep-crypto, 2026-09-15T12:13:03Z, commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a, https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209781297"
   artefacts: ["docs/product/PH3_SQL_Remaining_Phase_Plan.md"]
   evidence:
     - "docs/product/PRODUCT_GAP_ANALYSIS_AND_ROADMAP.md"
@@ -124,6 +147,8 @@ handoff:
   risks: ["R-01", "R-02", "R-03", "R-06", "R-09", "R-11"]
   defects: []
   blockers: []
-  approvals: []
-  requested_action: "Validate the three-slice sequence against the accepted architecture, define only the necessary per-slice architecture deltas and record which named contract, SME and test approvals block READY_FOR_DEVELOPMENT."
+  approvals:
+    - "Product Owner scope is approved for restricted local/non-production Slices 2-4 at exact package commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a."
+    - "Architect/TDA, Information Security and DBA/Discovery SME formal approvals are recorded for their stated restricted scopes at the same commit."
+  requested_action: "Implement sequential Slices 2-4 against approved architecture commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a within the documented restricted local/non-production scope. Obtain named Test Authority approval before formal independent implementation evidence is accepted; no merge, deployment, production migration, customer-data use or production action follows."
 ```

@@ -15,18 +15,19 @@ traceability:
   approvals:
     - "Existing ADR-006, ADR-007 and ADR-008 approvals apply only within their recorded restricted local/non-production boundaries."
     - "PH3-SQL-001 Slice 1 was quality-recommended at 5d5f7d9 for restricted local/non-production use; that recommendation does not approve this remaining-phase package."
+    - "Product Owner decision plus Architect/TDA, Information Security and DBA/Discovery SME formal approvals are recorded against exact package commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a."
 ```
 
 ## Package control and outcome
 
 - **Architecture package:** `PH3-SQL-ARCH-REMAINING-001`
 - **Incoming work item:** `PH3-SQL-001-REMAINING`
-- **Architecture baseline:** `feature/ph3-remaining-plan` at `7e74f86a77df3d7e806694208784ab6238613715`
+- **Architecture baseline:** approved package candidate `feature/ph3-remaining-plan` at `7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`; its incoming Product Plan baseline is `7e74f86a77df3d7e806694208784ab6238613715`.
 - **Implementation baseline:** Slice 1 merged to `main` at `284c5b2`; its exact Quality Record remains authoritative for what is already accepted.
 - **Product phase:** Product Specification Phase 1 MVP. “Phase 3” in this package means repository Roadmap Phase 3, not Product Specification Phase 3 AI scope.
 - **Package scope:** all remaining ordered Slices 2-4 as one approval unit: SQL CSV discovery/reconciliation/history, human SQL assessment/planning records, and browser journeys/phase evidence closure.
-- **Architecture state:** `READY_FOR_ARCHITECTURE_APPROVAL`.
-- **Reason:** the package makes material, previously unapproved decisions for the CSV contracts, assessment vocabulary, ADR-008 permission extension, remaining schema/migration boundaries, browser test stack and synthetic fixture contract. Named human approvals are absent at this baseline.
+- **Architecture state:** `READY_FOR_DEVELOPMENT` for sequential Slices 2-4 at approved architecture commit `7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`.
+- **Reason:** the Product Owner decision and the three required formal Architect/TDA, DBA/Discovery SME and Information Security approvals are all evidenced against the unchanged exact package commit. This state authorizes only the documented restricted local/non-production development scope.
 
 This document is the implementation contract for the remaining phase after approval. It refines and supersedes the corresponding proposed future sections of `Phase3_SQL_Discovery_Assessment_Architecture.md`; it does not alter the accepted Slice 1 inventory implementation or replace ADR-006, ADR-007 or ADR-008.
 
@@ -429,21 +430,36 @@ Existing Slice 1 approvals and Quality recommendation are reused only for the un
 
 No separate Information Security approval is needed for `ServiceAccountName` because it remains protected and excluded. Adding it to either CSV or changing the raw-row boundary reopens Information Security and package approval.
 
+### Commit-bound approval reconciliation
+
+`docs/approvals/PH3_SQL_PR6_Approvals.json` was parsed successfully and reconciled to Pull Request 6. All four records target `7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`, which is the current branch `HEAD` and contains this complete architecture package plus the remaining-phase plan. The scope and restrictions in each review are consistent with this package's restricted local/non-production boundary.
+
+| Gate role | Reviewer name (GitHub login) | Decision/date | Scope and conditions | Permalink | Status |
+|---|---|---|---|---|---|
+| Product Owner | `onkarpathre` | Exact-commit `COMMENTED`, 2026-09-15T12:08:46Z | Approves ordered Slices 2-4, priorities, acceptance criteria, controlled-value ownership and phase approach; restricted local/non-production only. | [Review 5209736362](https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209736362) | Satisfies the Product Owner decision: the body says “Approved as Product Owner,” and GitHub does not permit the PR author to formally approve their own PR. It is not PRB approval. |
+| Architect / TDA | `opathre` | Formal exact-commit `APPROVED`, 2026-09-15T12:09:43Z | Approves the consolidated remaining-phase architecture for ordered Slices 2-4 within ADR-006/007/008 and the documented restricted local/non-production conditions. | [Review 5209749102](https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209749102) | Architecture gate satisfied for the unchanged approved package commit. |
+| Information Security | `ashish50thbirthday-ship-it` | Formal exact-commit `APPROVED`, 2026-09-15T12:11:06Z | Approves the ADR-008 permission extension, deny-by-default isolation, raw-row boundary, audit, safe errors and synthetic-data constraints; excludes production identity, customer data, external access, deployment and release. | [Review 5209763769](https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209763769) | Gate 4 satisfied for the unchanged approved package commit. |
+| DBA / Discovery SME | `nextgenexamprep-crypto` | Formal exact-commit `APPROVED`, 2026-09-15T12:13:03Z | Approves CSV v1 contracts/values/fixtures, staging/reconciliation, idempotency/history, SQL constraints, additive migrations and data-preserving rollback; excludes production schema/data and destructive operations. | [Review 5209781297](https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209781297) | Gate 3 satisfied for the unchanged approved package commit. |
+
+The approved architecture commit is [`7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`](https://github.com/onkarpathre/lgr-transformation-migration/commit/7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a). The four commit-bound decisions satisfy the approval gates for restricted local/non-production development of sequential Slices 2-4. Any material package change requires proportionate reapproval. Named Test Authority approval remains required before formal independent implementation evidence is accepted, and all production/external gates remain unchanged.
+
 ## Architecture audit summary
 
-Material actions were read-only inspection of `AGENTS.md`, the remaining Product Plan, existing Markdown architecture/ADRs, Slice 1 Quality Record, Git baseline metadata and current source contract shapes, followed by creation of this architecture document. No DOCX was reread. No application code, test, SQL, migration, database, environment, Git history or remote state was changed. No commit or push was performed.
+The original package was created after read-only inspection of `AGENTS.md`, the remaining Product Plan, existing Markdown architecture/ADRs, Slice 1 Quality Record, Git baseline metadata and current source contract shapes. On 15 September 2026 the approval JSON was parsed, its four roles/bodies, timestamps, commit IDs, scope restrictions and permalinks were reconciled to current `HEAD`, and documentation metadata was updated. No DOCX was reread. No application code, test, SQL, migration, database, environment, Git history or remote state was changed. No commit or push was performed.
 
 ## Hand-off
 
 ```yaml
 handoff:
   from_agent: "architect"
-  to_agent: "human-architecture-reviewers"
-  state: "READY_FOR_ARCHITECTURE_APPROVAL"
+  to_agent: "developer"
+  state: "READY_FOR_DEVELOPMENT"
   work_item: "PH3-SQL-001-REMAINING"
   branch: "feature/ph3-remaining-plan"
-  commit: null
-  baseline_commit: "7e74f86a77df3d7e806694208784ab6238613715"
+  commit: "7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a"
+  approved_architecture_commit: "7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a"
+  incoming_plan_commit: "7e74f86a77df3d7e806694208784ab6238613715"
+  delivery_slices: ["Slice 2", "Slice 3", "Slice 4"]
   traceability:
     product_version: "0.1"
     phase: "Phase 1 - MVP"
@@ -455,7 +471,11 @@ handoff:
     dependencies: ["D-01", "D-03", "D-04", "D-05", "D-07", "D-08", "D-10", "D-11", "D-13"]
     issues: ["I-01", "I-02", "I-03", "I-04", "I-06", "I-08"]
     open_questions: ["Q-01", "Q-02", "Q-06", "Q-09"]
-    approvals: []
+    approvals:
+      - "Product Owner scope decision: onkarpathre, 2026-09-15T12:08:46Z, commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a, https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209736362"
+      - "Architect/TDA formal approval: opathre, 2026-09-15T12:09:43Z, commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a, https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209749102"
+      - "Information Security: ashish50thbirthday-ship-it, 2026-09-15T12:11:06Z, commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a, https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209763769"
+      - "DBA/Discovery SME: nextgenexamprep-crypto, 2026-09-15T12:13:03Z, commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a, https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209781297"
   artefacts:
     - "docs/product/PH3_SQL_Remaining_Phase_Plan.md"
     - "docs/architecture/PH3_SQL_Remaining_Phase_Architecture.md"
@@ -464,12 +484,14 @@ handoff:
     - "docs/architecture/ADR-007-phase3-tenancy-alignment.md"
     - "docs/architecture/ADR-008-internal-authentication-project-rbac.md"
     - "docs/quality/PH3_SQL_Slice1_Quality_Gate_Record.md"
+    - "docs/approvals/PH3_SQL_PR6_Approvals.json"
   evidence:
-    - "Repository was clean on the requested branch and exact baseline 7e74f86 before this documentation change."
+    - "All supplied approval records target exact package commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a, which equals current branch HEAD and contains the plan and architecture package."
+    - "The supplied records evidence the Product Owner decision and formal Architect/TDA, Information Security and DBA/Discovery SME approvals at the exact approved architecture commit."
     - "Slice 1 Quality Record recommends only the restricted inventory increment and preserves the remaining contract/SME approvals."
     - "The consolidated package defines all Slices 2-4 without rereading DOCX sources or changing implementation artefacts."
   decisions:
-    - "Approve the remaining phase as one contract: two CSV imports/history, one human assessment model, browser journeys and a same-commit phase evidence contract."
+    - "Retain the remaining phase as one contract: two CSV imports/history, one human assessment model, browser journeys and a same-commit phase evidence contract."
     - "Reuse ADR-006/007/008; extend only named discovery/assessment permissions and preserve every local/non-production condition."
     - "Use two sequential expand-only migrations and default-off child flags with data-preserving rollback."
   assumptions:
@@ -478,17 +500,12 @@ handoff:
   risks:
     - "R-01/I-03 source ambiguity remains controlled by explicit contract, parent match and preview."
     - "R-02 remains release-blocking until every API/browser path passes independent isolation and permission tests."
-    - "R-03/I-04 assessment quality remains human-owned and depends on DBA/Discovery SME approval."
+    - "R-03/I-04 assessment quality remains human-owned; DBA/Discovery SME contract approval is recorded, while implementation must still produce independent evidence."
     - "R-09/R-11 remain controlled by same-commit SQL Server/browser/dependency evidence."
   defects: []
-  blockers:
-    - "Product Owner approval of consolidated scope, role/action mapping, assessment values/workflow and fixtures is not evidenced."
-    - "Named human Solution Architect/TDA approval of this exact architecture package is not evidenced."
-    - "DBA/Discovery SME approval of CSV contracts, controlled values and fixture manifest is not evidenced."
-    - "Information Security approval of the ADR-008 permission/raw-row extension is not evidenced."
-    - "Named Test Authority approval remains required before formal independent implementation evidence can be accepted."
-    - "Production/external blockers remain wider Q-01, Q-02 commitment, Q-06/DPO, production tenancy, deployed Identity Platform/Q-09, Service Transition and human release authority."
+  blockers: []
   approvals:
-    - "Existing ADR-006/007/008 and Slice 1 approvals are inherited only for unchanged restricted controls; no approval of this remaining package is inferred."
-  requested_action: "Product Owner, named Solution Architect/TDA, DBA/Discovery SME and Information Security review and record one commit-bound phase-level decision on this package. After those approvals the Architect may issue a commit-bound READY_FOR_DEVELOPMENT hand-off for sequential Slices 2-4; the named Test Authority must approve the test contract before formal independent evidence is accepted. No merge, deployment, production migration, customer-data use or production action follows."
+    - "Existing ADR-006/007/008 and Slice 1 approvals are inherited only for unchanged restricted controls."
+    - "Product Owner, Architect/TDA, Information Security and DBA/Discovery SME decisions are satisfied only for unchanged package commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a and their recorded restricted scopes."
+  requested_action: "Implement sequential Slices 2-4 against approved architecture commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a within the documented restricted local/non-production scope. Obtain named Test Authority approval before formal independent implementation evidence is accepted. Production/external blockers remain wider Q-01, Q-02 commitment, Q-06/DPO, production tenancy, deployed Identity Platform/Q-09, Service Transition and human release authority; no merge, deployment, production migration, customer-data use or production action follows."
 ```
