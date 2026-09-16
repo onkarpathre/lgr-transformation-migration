@@ -1,0 +1,5 @@
+Server,Instance Name,SQL Version,Edition,Port,Service Status,Discovery Source,Last Discovered At,Service Account Name
+DC-HOU-SQL01,SYNTH\COMBINED,SQL Server 2022,Standard,70000,Running,=unsafe,,synthetic-credential-negative
+SYNTH-MISSING,SYNTH-MISSING,SQL Server 2022,Standard,1433,Running,Synthetic discovery,,
+DC-HOU-SQL01,SYNTH-DUP,SQL Server 2022,Standard,1433,Running,Synthetic discovery,,
+DC-HOU-SQL01,synth-dup,SQL Server 2022,Standard,1433,Running,Synthetic discovery,,

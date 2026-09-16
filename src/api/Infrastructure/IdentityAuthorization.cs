@@ -32,6 +32,39 @@ public static class SqlInventoryAuthorizationPolicies
     public const string Delete = "SqlInventoryDelete";
 }
 
+public static class SqlDiscoveryAuthorizationPolicies
+{
+    public const string Read = "SqlDiscoveryRead";
+    public const string Prepare = "SqlDiscoveryPrepare";
+    public const string Commit = "SqlDiscoveryCommit";
+    public const string Cancel = "SqlDiscoveryCancel";
+}
+
+public static class SqlDiscoveryPermissions
+{
+    public const string Read = "sql.discovery.read";
+    public const string Prepare = "sql.discovery.prepare";
+    public const string Commit = "sql.discovery.commit";
+    public const string Cancel = "sql.discovery.cancel";
+
+    public static IReadOnlySet<string> ForRoles(IEnumerable<string> roles)
+    {
+        var normalized = roles.ToHashSet(StringComparer.Ordinal);
+        var permissions = new HashSet<string>(StringComparer.Ordinal);
+        if (normalized.Overlaps(["DatabaseSme", "MigrationArchitect", "ProjectManager", "DiscoveryAnalyst", "ReviewerAuditor"]))
+        {
+            permissions.Add(Read);
+        }
+
+        if (normalized.Contains("DiscoveryAnalyst"))
+        {
+            permissions.UnionWith([Prepare, Commit, Cancel]);
+        }
+
+        return permissions.ToFrozenSet(StringComparer.Ordinal);
+    }
+}
+
 public static class SqlInventoryPermissions
 {
     public const string Read = "sql.inventory.read";
@@ -57,6 +90,14 @@ public static class SqlInventoryPermissions
             ? ReadOnly
             : Empty;
     }
+}
+
+public static class ProjectPermissions
+{
+    public static IReadOnlySet<string> ForRoles(IEnumerable<string> roles) =>
+        SqlInventoryPermissions.ForRoles(roles)
+            .Concat(SqlDiscoveryPermissions.ForRoles(roles))
+            .ToFrozenSet(StringComparer.Ordinal);
 }
 
 public enum InternalPrincipalType
@@ -634,7 +675,7 @@ public sealed class ProjectAuthorizationResolver(
             resolution.CustomerId,
             resolution.ProjectId,
             resolution.Roles.ToFrozenSet(StringComparer.Ordinal),
-            SqlInventoryPermissions.ForRoles(resolution.Roles),
+            ProjectPermissions.ForRoles(resolution.Roles),
             resolution.MembershipVersion));
         return null;
     }
@@ -771,7 +812,63 @@ public sealed class ApiAuthorizationMiddlewareResultHandler(
             context.Request.Method,
             context.GetEndpoint()?.DisplayName ?? "unmatched",
             context.TraceIdentifier);
+        await AuditDeniedSqlDiscoveryAsync(context, code);
         await WriteAsync(context, response.Item1, response.Item2, response.Item3, code);
+    }
+
+    private async Task AuditDeniedSqlDiscoveryAsync(HttpContext context, string errorCode)
+    {
+        if (errorCode != AuthorizationFailureCodes.PermissionDenied
+            || !HttpMethods.IsPost(context.Request.Method)
+            || !context.Request.Path.StartsWithSegments("/api/v1/discovery/imports", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var authorization = context.RequestServices
+            .GetRequiredService<IProjectAuthorizationContextAccessor>()
+            .AuthorizationContext;
+        if (authorization is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var action = context.Request.Path.Value switch
+            {
+                { } path when path.EndsWith("/upload", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryUploadDenied",
+                { } path when path.EndsWith("/preview", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryPreviewDenied",
+                { } path when path.EndsWith("/commit", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryCommitDenied",
+                { } path when path.EndsWith("/cancel", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryCancelDenied",
+                _ => "SqlDiscoveryMutationDenied"
+            };
+            var entityId = Guid.TryParse(context.Request.RouteValues.GetValueOrDefault("id")?.ToString(), out var parsed)
+                ? parsed
+                : Guid.Empty;
+            var db = context.RequestServices.GetRequiredService<AppDbContext>();
+            db.AuditEvents.Add(new Domain.AuditEvent
+            {
+                Id = Guid.NewGuid(),
+                CustomerId = authorization.CustomerId,
+                ProjectId = authorization.ProjectId,
+                EntityType = "ImportBatch",
+                EntityId = entityId,
+                Action = action,
+                ChangedBy = authorization.Principal.AuditActor,
+                ActorPrincipalType = authorization.Principal.PrincipalType.ToString(),
+                ChangedAt = context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow(),
+                CorrelationId = context.TraceIdentifier
+            });
+            await db.SaveChangesAsync(context.RequestAborted);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(
+                "Denied SQL discovery audit failed closed with {ExceptionType} and correlation {CorrelationId}.",
+                exception.GetType().Name,
+                context.TraceIdentifier);
+        }
     }
 
     private async Task WriteAsync(HttpContext context, int status, string title, string detail, string errorCode)

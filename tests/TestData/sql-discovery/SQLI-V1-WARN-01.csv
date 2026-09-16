@@ -1,0 +1,2 @@
+Server,Instance Name,SQL Version,Edition,Port,Service Status,Discovery Source,Last Discovered At,Extra Evidence
+DC-HOU-SQL01,SYNTH-WARN,SQL Server 2022,Standard,,Starting,Synthetic discovery,,synthetic-only

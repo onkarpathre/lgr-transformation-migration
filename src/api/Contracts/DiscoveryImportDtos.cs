@@ -16,7 +16,7 @@ public sealed record DiscoveryImportBatchDto(
     string FileHash, long FileSizeBytes, string Status, string UploadedBy, DateTimeOffset UploadedAt,
     DateTimeOffset? PreviewedAt, DateTimeOffset? CommittedAt, int TotalRows, int ValidRows,
     int CreateCount, int UpdateCount, int UnchangedCount, int WarningCount, int RejectCount,
-    string? Notes, string? DuplicateWarning);
+    string? Notes, string? DuplicateWarning, string Version);
 
 public sealed record DiscoveryImportRowDto(
     Guid Id, int RowNumber, string? SourceRecordId, string? Hostname, string? Environment,
@@ -44,3 +44,61 @@ public sealed record ServerDiscoverySnapshotDto(
     string? PowerStatus, string? HypervisorType, string? DiscoveryMethod,
     string? ConnectedAppliance, DateTimeOffset? FirstDiscoveredAt,
     DateTimeOffset? LastUpdatedAt, DateTimeOffset ImportedAt);
+
+public sealed record SqlDiscoveryImportRowDto(
+    Guid Id,
+    int RowNumber,
+    string SourceType,
+    string? Server,
+    string? InstanceName,
+    string? DatabaseName,
+    string Classification,
+    string? ProposedAction,
+    string ValidationStatus,
+    NamedReferenceDto? MatchedServer,
+    NamedReferenceDto? MatchedSqlInstance,
+    NamedReferenceDto? MatchedSqlDatabase);
+
+public sealed record SqlDiscoveryImportRowDetailDto(
+    Guid Id,
+    int RowNumber,
+    string SourceType,
+    IReadOnlyDictionary<string, string> RawData,
+    string? NormalizedHostname,
+    string? NormalizedInstanceName,
+    string? NormalizedDatabaseName,
+    string Classification,
+    string? ProposedAction,
+    string ValidationStatus,
+    IReadOnlyList<DiscoveryValidationMessageDto> ValidationMessages,
+    NamedReferenceDto? MatchedServer,
+    NamedReferenceDto? MatchedSqlInstance,
+    NamedReferenceDto? MatchedSqlDatabase,
+    IReadOnlyList<DiscoveryFieldChangeDto> ProposedChanges);
+
+public sealed record SqlInstanceDiscoverySnapshotDto(
+    Guid Id,
+    Guid ImportBatchId,
+    string SourceType,
+    Guid ServerId,
+    string InstanceName,
+    string SqlVersion,
+    string Edition,
+    int? Port,
+    string ServiceStatus,
+    string DiscoverySource,
+    DateTimeOffset? LastDiscoveredAt,
+    DateTimeOffset ImportedAt);
+
+public sealed record SqlDatabaseDiscoverySnapshotDto(
+    Guid Id,
+    Guid ImportBatchId,
+    string SourceType,
+    Guid SqlInstanceId,
+    string Name,
+    long SizeMb,
+    int CompatibilityLevel,
+    string RecoveryModel,
+    string? Collation,
+    string Status,
+    DateTimeOffset ImportedAt);

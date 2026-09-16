@@ -46,8 +46,15 @@ public static class DiscoverySourceTypes
 {
     public const string AzureMigrateServerReport = nameof(AzureMigrateServerReport);
     public const string AzureMigrateAllInventoryReport = nameof(AzureMigrateAllInventoryReport);
+    public const string SqlInstanceCsvV1 = "SqlInstanceCsv/v1";
+    public const string SqlDatabaseCsvV1 = "SqlDatabaseCsv/v1";
 
-    public static readonly string[] All = [AzureMigrateServerReport, AzureMigrateAllInventoryReport];
+    public static readonly string[] All =
+        [AzureMigrateServerReport, AzureMigrateAllInventoryReport, SqlInstanceCsvV1, SqlDatabaseCsvV1];
+
+    public static bool IsSql(string sourceType) =>
+        sourceType.Equals(SqlInstanceCsvV1, StringComparison.OrdinalIgnoreCase)
+        || sourceType.Equals(SqlDatabaseCsvV1, StringComparison.OrdinalIgnoreCase);
 }
 
 public static class ImportBatchStatuses
@@ -59,10 +66,13 @@ public static class ImportBatchStatuses
     public const string Importing = nameof(Importing);
     public const string Completed = nameof(Completed);
     public const string CompletedWithWarnings = nameof(CompletedWithWarnings);
+    public const string Committing = nameof(Committing);
+    public const string Committed = nameof(Committed);
+    public const string Rejected = nameof(Rejected);
     public const string Failed = nameof(Failed);
     public const string Cancelled = nameof(Cancelled);
 
-    public static readonly string[] Committed = [Completed, CompletedWithWarnings];
+    public static readonly string[] TerminalCommitted = [Completed, CompletedWithWarnings, Committed];
 }
 
 public static class ImportClassifications
@@ -122,3 +132,7 @@ public static class SeedIds
 }
 
 public sealed class DomainValidationException(string message) : Exception(message);
+public sealed class PayloadTooLargeException(string message) : Exception(message);
+public sealed class UnsupportedMediaTypeException(string message) : Exception(message);
+public sealed class UnsupportedSourceContractException(string message) : Exception(message);
+public sealed class DomainForbiddenException(string message) : Exception(message);

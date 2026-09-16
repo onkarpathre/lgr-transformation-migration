@@ -116,9 +116,14 @@ public sealed class ImportBatch : IProjectOwned
     public int WarningCount { get; set; }
     public int RejectCount { get; set; }
     public string? Notes { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+    public string? CommitIdempotencyKeyHash { get; set; }
+    public string? CommitResultJson { get; set; }
     public Project Project { get; set; } = null!;
     public ICollection<DiscoveryImportRow> Rows { get; set; } = [];
     public ICollection<ServerDiscoverySnapshot> ServerSnapshots { get; set; } = [];
+    public ICollection<SqlInstanceDiscoverySnapshot> SqlInstanceSnapshots { get; set; } = [];
+    public ICollection<SqlDatabaseDiscoverySnapshot> SqlDatabaseSnapshots { get; set; } = [];
 }
 
 public sealed class DiscoveryImportRow : IProjectOwned
@@ -132,14 +137,61 @@ public sealed class DiscoveryImportRow : IProjectOwned
     public string SourceType { get; set; } = string.Empty;
     public string RawDataJson { get; set; } = string.Empty;
     public string? NormalizedHostname { get; set; }
+    public string? NormalizedInstanceName { get; set; }
+    public string? NormalizedDatabaseName { get; set; }
     public string Classification { get; set; } = string.Empty;
+    public string? ProposedAction { get; set; }
     public string ValidationStatus { get; set; } = string.Empty;
     public string? ValidationMessagesJson { get; set; }
     public Guid? MatchedEntityId { get; set; }
+    public Guid? MatchedSqlInstanceId { get; set; }
+    public Guid? MatchedSqlDatabaseId { get; set; }
+    public string? ReconciliationFingerprint { get; set; }
     public string? ProposedChangesJson { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public ImportBatch ImportBatch { get; set; } = null!;
     public Server? MatchedServer { get; set; }
+    public SqlInstance? MatchedSqlInstance { get; set; }
+    public SqlDatabase? MatchedSqlDatabase { get; set; }
+}
+
+public sealed class SqlInstanceDiscoverySnapshot : IProjectOwned
+{
+    public Guid Id { get; set; }
+    public Guid CustomerId { get; set; }
+    public Guid ProjectId { get; set; }
+    public Guid SqlInstanceId { get; set; }
+    public Guid ImportBatchId { get; set; }
+    public Guid ServerId { get; set; }
+    public string InstanceName { get; set; } = string.Empty;
+    public string SqlVersion { get; set; } = string.Empty;
+    public string Edition { get; set; } = string.Empty;
+    public int? Port { get; set; }
+    public string ServiceStatus { get; set; } = string.Empty;
+    public string DiscoverySource { get; set; } = string.Empty;
+    public DateTimeOffset? LastDiscoveredAt { get; set; }
+    public DateTimeOffset ImportedAt { get; set; }
+    public SqlInstance SqlInstance { get; set; } = null!;
+    public ImportBatch ImportBatch { get; set; } = null!;
+}
+
+public sealed class SqlDatabaseDiscoverySnapshot : IProjectOwned
+{
+    public Guid Id { get; set; }
+    public Guid CustomerId { get; set; }
+    public Guid ProjectId { get; set; }
+    public Guid SqlDatabaseId { get; set; }
+    public Guid ImportBatchId { get; set; }
+    public Guid SqlInstanceId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public long SizeMb { get; set; }
+    public int CompatibilityLevel { get; set; }
+    public string RecoveryModel { get; set; } = string.Empty;
+    public string? Collation { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTimeOffset ImportedAt { get; set; }
+    public SqlDatabase SqlDatabase { get; set; } = null!;
+    public ImportBatch ImportBatch { get; set; } = null!;
 }
 
 public sealed class ServerDiscoverySnapshot : IProjectOwned

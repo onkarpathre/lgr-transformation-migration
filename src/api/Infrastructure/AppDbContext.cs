@@ -28,6 +28,22 @@ public sealed class AppDbContext(
     public DbSet<ServerDiscoverySnapshot> ServerDiscoverySnapshots => Set<ServerDiscoverySnapshot>();
     public DbSet<SqlInstance> SqlInstances => Set<SqlInstance>();
     public DbSet<SqlDatabase> SqlDatabases => Set<SqlDatabase>();
+    public DbSet<SqlInstanceDiscoverySnapshot> SqlInstanceDiscoverySnapshots => Set<SqlInstanceDiscoverySnapshot>();
+    public DbSet<SqlDatabaseDiscoverySnapshot> SqlDatabaseDiscoverySnapshots => Set<SqlDatabaseDiscoverySnapshot>();
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        EnforceAppendOnlyDiscoveryHistory();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        EnforceAppendOnlyDiscoveryHistory();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -223,11 +239,17 @@ public sealed class AppDbContext(
             entity.Property(x => x.Status).HasMaxLength(50).IsRequired();
             entity.Property(x => x.UploadedBy).HasMaxLength(200).IsRequired();
             entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.Property(x => x.CommitIdempotencyKeyHash).HasMaxLength(64).IsFixedLength();
+            entity.Property(x => x.CommitResultJson).HasMaxLength(2000);
+            ConfigureRowVersion(entity.Property(x => x.RowVersion));
             entity.HasIndex(x => x.CustomerId);
             entity.HasIndex(x => x.ProjectId);
             entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.UploadedAt });
             entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.Status });
             entity.HasIndex(x => new { x.CustomerId, x.FileHash });
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.CommitIdempotencyKeyHash })
+                .HasDatabaseName("IX_ImportBatches_Owner_CommitIdempotencyKeyHash")
+                .HasFilter("[CommitIdempotencyKeyHash] IS NOT NULL");
             entity.HasOne(x => x.Project).WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
         });
@@ -239,17 +261,35 @@ public sealed class AppDbContext(
             entity.Property(x => x.SourceType).HasMaxLength(80).IsRequired();
             entity.Property(x => x.RawDataJson).IsRequired();
             entity.Property(x => x.NormalizedHostname).HasMaxLength(253);
+            entity.Property(x => x.NormalizedInstanceName).HasMaxLength(128);
+            entity.Property(x => x.NormalizedDatabaseName).HasMaxLength(128);
             entity.Property(x => x.Classification).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.ProposedAction).HasMaxLength(20);
             entity.Property(x => x.ValidationStatus).HasMaxLength(50).IsRequired();
             entity.Property(x => x.ValidationMessagesJson);
             entity.Property(x => x.ProposedChangesJson);
+            entity.Property(x => x.ReconciliationFingerprint).HasMaxLength(64).IsFixedLength();
             entity.HasIndex(x => x.CustomerId);
             entity.HasIndex(x => x.ProjectId);
             entity.HasIndex(x => x.ImportBatchId);
             entity.HasIndex(x => new { x.ImportBatchId, x.RowNumber }).IsUnique();
             entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.Classification });
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.NormalizedHostname, x.NormalizedInstanceName })
+                .HasDatabaseName("IX_DiscoveryImportRows_Owner_InstanceMatch");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.MatchedSqlInstanceId, x.NormalizedDatabaseName })
+                .HasDatabaseName("IX_DiscoveryImportRows_Owner_DatabaseMatch");
             entity.HasOne(x => x.ImportBatch).WithMany(x => x.Rows).HasForeignKey(x => x.ImportBatchId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(x => x.MatchedServer).WithMany().HasForeignKey(x => x.MatchedEntityId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.MatchedSqlInstance)
+                .WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.MatchedSqlInstanceId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.MatchedSqlDatabase)
+                .WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.MatchedSqlDatabaseId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
         });
 
@@ -364,6 +404,63 @@ public sealed class AppDbContext(
             entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId && !x.IsDeleted);
         });
 
+        modelBuilder.Entity<SqlInstanceDiscoverySnapshot>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.InstanceName).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.SqlVersion).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.Edition).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.ServiceStatus).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.DiscoverySource).HasMaxLength(100).IsRequired();
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_SqlInstanceDiscoverySnapshots_Port",
+                "[Port] IS NULL OR ([Port] >= 1 AND [Port] <= 65535)"));
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.SqlInstanceId, x.ImportedAt, x.Id })
+                .HasDatabaseName("IX_SqlInstanceDiscoverySnapshots_Owner_History")
+                .IsDescending(false, false, false, true, false);
+            entity.HasOne(x => x.SqlInstance)
+                .WithMany(x => x.DiscoverySnapshots)
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.SqlInstanceId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ImportBatch)
+                .WithMany(x => x.SqlInstanceSnapshots)
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.ImportBatchId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
+        });
+
+        modelBuilder.Entity<SqlDatabaseDiscoverySnapshot>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.RecoveryModel).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.Collation).HasMaxLength(128);
+            entity.Property(x => x.Status).HasMaxLength(50).IsRequired();
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint("CK_SqlDatabaseDiscoverySnapshots_SizeMb", "[SizeMb] >= 0");
+                table.HasCheckConstraint(
+                    "CK_SqlDatabaseDiscoverySnapshots_CompatibilityLevel",
+                    "[CompatibilityLevel] >= 80 AND [CompatibilityLevel] <= 200");
+            });
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.SqlDatabaseId, x.ImportedAt, x.Id })
+                .HasDatabaseName("IX_SqlDatabaseDiscoverySnapshots_Owner_History")
+                .IsDescending(false, false, false, true, false);
+            entity.HasOne(x => x.SqlDatabase)
+                .WithMany(x => x.DiscoverySnapshots)
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.SqlDatabaseId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ImportBatch)
+                .WithMany(x => x.SqlDatabaseSnapshots)
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.ImportBatchId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
+        });
+
         SeedData.Configure(modelBuilder);
     }
 
@@ -378,6 +475,18 @@ public sealed class AppDbContext(
         else
         {
             property.ValueGeneratedNever();
+        }
+    }
+
+    private void EnforceAppendOnlyDiscoveryHistory()
+    {
+        var mutableInstanceHistory = ChangeTracker.Entries<SqlInstanceDiscoverySnapshot>()
+            .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted);
+        var mutableDatabaseHistory = ChangeTracker.Entries<SqlDatabaseDiscoverySnapshot>()
+            .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted);
+        if (mutableInstanceHistory || mutableDatabaseHistory)
+        {
+            throw new InvalidOperationException("SQL discovery history is append-only.");
         }
     }
 

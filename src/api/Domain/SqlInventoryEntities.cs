@@ -29,6 +29,7 @@ public sealed class SqlInstance : IProjectOwned
     public Server Server { get; set; } = null!;
     public ImportBatch? LastImportBatch { get; set; }
     public ICollection<SqlDatabase> Databases { get; set; } = [];
+    public ICollection<SqlInstanceDiscoverySnapshot> DiscoverySnapshots { get; set; } = [];
 }
 
 public sealed class SqlDatabase : IProjectOwned
@@ -57,4 +58,5 @@ public sealed class SqlDatabase : IProjectOwned
     public Project Project { get; set; } = null!;
     public SqlInstance SqlInstance { get; set; } = null!;
     public ImportBatch? LastImportBatch { get; set; }
+    public ICollection<SqlDatabaseDiscoverySnapshot> DiscoverySnapshots { get; set; } = [];
 }

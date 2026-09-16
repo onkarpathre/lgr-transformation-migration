@@ -10,6 +10,9 @@ public interface IDiscoveryFileReader
 
 public sealed class CsvDiscoveryFileReader : IDiscoveryFileReader
 {
+    public const int MaximumDataRows = 50_000;
+    public const int MaximumColumns = 64;
+
     public async Task<DiscoveryFileDocument> ReadAsync(Stream stream, CancellationToken cancellationToken)
     {
         try
@@ -27,6 +30,8 @@ public sealed class CsvDiscoveryFileReader : IDiscoveryFileReader
     public DiscoveryFileDocument Parse(string content)
     {
         if (string.IsNullOrWhiteSpace(content)) throw new DomainValidationException("The discovery file is empty.");
+        if (content.Contains('\0', StringComparison.Ordinal))
+            throw new DomainValidationException("The discovery file contains an unsupported NUL character.");
 
         var rows = ParseRows(content);
         if (rows.Count == 0) throw new DomainValidationException("The discovery file does not contain a header row.");
@@ -37,6 +42,12 @@ public sealed class CsvDiscoveryFileReader : IDiscoveryFileReader
             if (string.IsNullOrWhiteSpace(header)) throw new DomainValidationException($"Header column {index + 1} is blank.");
             return header;
         }).ToArray();
+        if (headers.Length > MaximumColumns)
+            throw new DomainValidationException($"The discovery file exceeds the {MaximumColumns} column limit.");
+        var duplicateHeader = headers.GroupBy(DiscoveryColumnName.Normalize, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateHeader is not null)
+            throw new DomainValidationException("The discovery file contains duplicate columns after normalisation.");
 
         var mappedRows = new List<CsvDataRow>();
         for (var index = 1; index < rows.Count; index++)
@@ -48,8 +59,10 @@ public sealed class CsvDiscoveryFileReader : IDiscoveryFileReader
 
             var raw = new Dictionary<string, string>(StringComparer.Ordinal);
             for (var column = 0; column < headers.Length; column++)
-                raw[headers[column]] = column < values.Count ? values[column].Trim() : string.Empty;
+                raw[headers[column]] = column < values.Count ? values[column] : string.Empty;
             mappedRows.Add(new CsvDataRow(index + 1, raw));
+            if (mappedRows.Count > MaximumDataRows)
+                throw new DomainValidationException($"The discovery file exceeds the {MaximumDataRows} data-row limit.");
         }
 
         return new DiscoveryFileDocument(headers, mappedRows);
