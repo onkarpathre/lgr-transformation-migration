@@ -271,14 +271,17 @@ public sealed class AppDbContext(
             entity.Property(x => x.ReconciliationFingerprint).HasMaxLength(64).IsFixedLength();
             entity.HasIndex(x => x.CustomerId);
             entity.HasIndex(x => x.ProjectId);
-            entity.HasIndex(x => x.ImportBatchId);
-            entity.HasIndex(x => new { x.ImportBatchId, x.RowNumber }).IsUnique();
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.ImportBatchId, x.RowNumber }).IsUnique();
             entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.Classification });
             entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.NormalizedHostname, x.NormalizedInstanceName })
                 .HasDatabaseName("IX_DiscoveryImportRows_Owner_InstanceMatch");
             entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.MatchedSqlInstanceId, x.NormalizedDatabaseName })
                 .HasDatabaseName("IX_DiscoveryImportRows_Owner_DatabaseMatch");
-            entity.HasOne(x => x.ImportBatch).WithMany(x => x.Rows).HasForeignKey(x => x.ImportBatchId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.ImportBatch)
+                .WithMany(x => x.Rows)
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.ImportBatchId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(x => x.MatchedServer).WithMany().HasForeignKey(x => x.MatchedEntityId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.MatchedSqlInstance)
                 .WithMany()

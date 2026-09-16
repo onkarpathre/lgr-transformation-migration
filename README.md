@@ -109,7 +109,7 @@ $env:ASPNETCORE_ENVIRONMENT='Development'
 dotnet run --project .\src\api\LgrTransformationMigration.Api.csproj --urls 'http://localhost:5000'
 ```
 
-Open Swagger at `http://localhost:5000/swagger`. Development requests default to Demo Council and its demo project. To select another context, send `X-Customer-Id` and `X-Project-Id`; these headers are the local replacement point for future Microsoft Entra ID claims.
+Open Swagger at `http://localhost:5000/swagger`. Development requests require an allow-listed synthetic LocalTest principal. The selected principal's server-side membership determines the customer and permitted projects; `X-Project-Id` can select only one of those projects and is not authentication evidence.
 
 ## Run the frontend
 
@@ -118,10 +118,13 @@ In a second PowerShell window:
 ```powershell
 Set-Location C:\Projects\lgr-transformation-migration\src\web
 $env:NEXT_PUBLIC_API_BASE_URL='http://localhost:5000'
+$env:NEXT_PUBLIC_LGR_TEST_PRINCIPAL='analyst-project-a'
 npm.cmd run dev
 ```
 
 Open `http://localhost:3000`.
+
+`NEXT_PUBLIC_LGR_TEST_PRINCIPAL` is required for local frontend development and must be set explicitly to an allow-listed synthetic alias from `src/api/appsettings.LocalTest.json`. The example above selects the synthetic Discovery Analyst for the Demo Council project; choose another configured alias when testing a different role or project. There is no default identity. The frontend adds `X-Lgr-Test-Principal` only while running `next dev`, fails with a configuration error when the variable is missing or blank, and removes the header from production requests even if a caller supplies it. Because `NEXT_PUBLIC_` values are exposed to the browser, never put credentials, tokens, secrets, personal data or real user identities in this variable. Restart the frontend after changing it.
 
 ## Build and test
 
@@ -199,7 +202,7 @@ Local imports are written beneath `src\api\runtime\imports` by default and are e
 
 ## Development context
 
-`CurrentCustomerContext` reads the customer, project and user headers for every request, falling back to the safe fictional development IDs in `appsettings.json`. EF Core global query filters enforce the customer boundary; project-aware services additionally constrain project-owned operations. The mechanism can later read Entra ID claims without changing domain or service contracts.
+In local Development, the API authenticates only an allow-listed synthetic `X-Lgr-Test-Principal` alias and derives customer/role membership from server-side LocalTest configuration. `X-Project-Id` remains an untrusted selector and must match that membership; caller-supplied customer, username, role and permission headers are not identity evidence. EF Core global query filters enforce the customer boundary, and project-aware services additionally constrain project-owned operations. Production does not enable or trust LocalTest identity headers.
 
 See [POC architecture](docs/architecture/POC_Architecture.md), [data model](docs/architecture/Data_Model.md), [Discovery Import architecture](docs/architecture/Discovery_Import_Architecture.md), [Discovery Import functional scope](docs/functional/Discovery_Import_Functional_Scope.md), [ADR-004](docs/architecture/ADR-004-discovery-staging-and-reconciliation.md) and [ADR-005](docs/architecture/ADR-005-discovery-managed-fields.md).
 
