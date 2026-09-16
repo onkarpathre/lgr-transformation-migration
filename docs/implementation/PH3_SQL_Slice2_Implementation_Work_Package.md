@@ -26,7 +26,7 @@ traceability:
 - **Requested branch:** `feature/ph3-sql-remaining-implementation`.
 - **Exact clean starting baseline:** `a53cf3fd9f49a0f4ee1d9705aa8aca0b16279fd6`.
 - **Approved architecture package:** `PH3-SQL-ARCH-REMAINING-001` at `7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`, confirmed as an ancestor of the starting baseline.
-- **Implementation status:** complete in the working tree and intentionally uncommitted/unpushed.
+- **Implementation status:** original Slice 2 implementation is bound to commit `32310275b9486be3a93eb3b826021958c10b1d50`; the PH3SQL-S2-TST-001/002 repair is committed and pushed at `d0495dc0984b128abe23b3825f10fb1b3206625d`.
 - **Developer exit state:** `READY_FOR_TEST` for restricted local/non-production independent verification.
 
 The implementation uses only synthetic fixtures and the existing internal LocalTest identities. It adds no migration execution, Azure provisioning, DMS orchestration, AI, remediation, direct discovery API, multi-cloud, production identity, customer-data access or production-deployment path.
@@ -64,7 +64,7 @@ The implementation uses only synthetic fixtures and the existing internal LocalT
 
 ## Database migration assessment
 
-Migration `20260915171019_AddSqlDiscoveryImportHistory` is the single Slice 2 expand-only EF Core migration after the accepted Slice 1 migrations.
+Migration `20260915171019_AddSqlDiscoveryImportHistory` is the original Slice 2 expand-only EF Core migration after the accepted Slice 1 migrations. Corrective migration `20260916121802_EnforceDiscoveryImportRowTenantBatchOwnership` now follows it to repair the independently reported tenant-integrity defect without rewriting committed migration history.
 
 `Up` contains:
 
@@ -77,6 +77,13 @@ Migration `20260915171019_AddSqlDiscoveryImportHistory` is the single Slice 2 ex
 Static inspection found no `Drop*`, rename, `AlterColumn`, `DeleteData` or `UpdateData` operation in `Up`. `Down` removes only the additive Slice 2 objects, but the approved operational rollback is data-preserving: disable `SqlDiscoveryImport`, use the preceding compatible application and forward-fix while leaving schema/history intact. No migration was applied and no database was accessed or changed.
 
 The generated 1,905-line idempotent SQL script was inspected in memory and contains the Slice 2 history guard, both snapshot tables, batch rowversion, composite snapshot foreign keys and owner/idempotency indexes. The script was not written or executed.
+
+### Slice 2 Tester defect repair - 16 September 2026
+
+- `PH3SQL-S2-TST-001`: the `DiscoveryImportRow` to `ImportBatch` relationship now uses the approved tenant-leading composite foreign key `(CustomerId, ProjectId, ImportBatchId)` to `(CustomerId, ProjectId, Id)` while retaining the approved cascade for uncommitted batch-owned staging.
+- The staging row uniqueness/index path is now owner-leading: `(CustomerId, ProjectId, ImportBatchId, RowNumber)`. The former single-column batch FK and non-owner-leading batch indexes are replaced by corrective migration `20260916121802_EnforceDiscoveryImportRowTenantBatchOwnership`; no data repair or SQL Server access is attempted.
+- The consistency review confirmed the related Slice 2 SQL staging matches and typed snapshot relationships already use tenant-leading composite foreign keys to their canonical records and import batch, with `Restrict` retained for committed evidence.
+- `PH3SQL-S2-TST-002`: the original implementation remains identified by exact commit `32310275b9486be3a93eb3b826021958c10b1d50`, and the repaired candidate is bound to committed and pushed repair commit `d0495dc0984b128abe23b3825f10fb1b3206625d`.
 
 ## Synthetic fixtures and automated coverage
 
@@ -130,11 +137,29 @@ The interrupted Developer session was resumed on the unchanged baseline and exis
 
 No SQL Server connection was opened, no migration was applied, and no commit, push, merge or deployment was performed.
 
+### PH3SQL-S2-TST-001/002 repair verification - 16 September 2026
+
+- restore: PASS for all three projects; the unavailable NuGet advisory service emitted two `NU1900` warnings;
+- Release build: PASS with 0 errors and 2 `NU1900` warnings;
+- retained Tester integrity regression: 1/1 PASS;
+- focused SQL CSV/ADR-008 unit lane: 60/60 PASS;
+- focused SQL discovery/import, inventory, authorisation, existing discovery and integrity integration lane: 91/91 PASS;
+- complete solution suite: 110 unit + 99 integration = 209/209 PASS, 0 failed, 0 skipped;
+- EF pending-model validation: PASS via pinned `dotnet-ef` 10.0.11; no pending model changes;
+- idempotent corrective SQL generation/inspection: PASS; the migration guard, tenant-leading composite FK and unique owner-leading row index are present; SQL was generated in memory only and not executed;
+- frontend lint: PASS;
+- frontend Next.js 16.3.4 production build using the supported webpack builder: PASS with 16 routes; the pre-existing `next-env.d.ts` working-tree change was restored exactly after the build;
+- local-development browser authentication smoke: PASS;
+- scoped whitespace verification: PASS;
+- `git diff --check`: PASS; repository line-ending conversion notices only.
+
+No SQL Server connection was opened, no migration was applied, and no Tester-owned evidence or harness file was changed. The repair was committed and pushed as `d0495dc0984b128abe23b3825f10fb1b3206625d`; no merge, deployment or Slice 3 work was performed.
+
 ## Environment, compatibility and residual evidence
 
 - Tests use SQLite only as a supplementary isolated integration provider plus SQL Server model/generated-DDL assertions. The requested no-apply control means no SQL Server migration, transaction, rowversion or query-plan runtime evidence was produced by the Developer.
 - The named Test Authority and authorised isolated SQL Server lane remain required for formal independent provider execution, including empty/prior-migration `Up`, concurrency/rollback, constraint/index inspection, plans and any separately authorised disposable `Down`/reapply.
-- The worktree is deliberately uncommitted, so Tester evidence cannot yet bind to a candidate commit. A permitted repository owner must create that binding without altering the implementation before independent test.
+- The original Slice 2 implementation remains bound to `32310275b9486be3a93eb3b826021958c10b1d50`; the PH3SQL-S2-TST-001/002 repair is bound to committed and pushed candidate `d0495dc0984b128abe23b3825f10fb1b3206625d` for independent retest.
 - Connected NuGet/npm vulnerability evidence remains unavailable. This is retained as an assurance limitation, not an accepted risk.
 - Q-02, Q-06, Q-09, production tenancy, external identity, Service Transition, PRB and human release authority remain outside this restricted implementation and are not claimed.
 
@@ -147,7 +172,8 @@ handoff:
   state: "READY_FOR_TEST"
   work_item: "PH3-SQL-001-REMAINING-SLICE-2"
   branch: "feature/ph3-sql-remaining-implementation"
-  commit: null
+  commit: "d0495dc0984b128abe23b3825f10fb1b3206625d"
+  original_implementation_commit: "32310275b9486be3a93eb3b826021958c10b1d50"
   baseline_commit: "a53cf3fd9f49a0f4ee1d9705aa8aca0b16279fd6"
   approved_architecture_commit: "7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a"
   traceability:
@@ -164,23 +190,26 @@ handoff:
   artefacts:
     - "docs/implementation/PH3_SQL_Slice2_Implementation_Work_Package.md"
     - "src/api/Infrastructure/Migrations/20260915171019_AddSqlDiscoveryImportHistory.cs"
+    - "src/api/Infrastructure/Migrations/20260916121802_EnforceDiscoveryImportRowTenantBatchOwnership.cs"
     - "tests/TestData/sql-discovery/fixture-manifest.json"
     - "tests/api.unit/SqlDiscoveryCsvContractTests.cs"
     - "tests/api.integration/SqlDiscoveryImportApiTests.cs"
   evidence:
     - "Release build completed with zero errors."
-    - "Complete automated suite: 208 passed, zero failed/skipped."
-    - "Focused lanes: 60 unit and 73 integration passed; post-audit Slice 2 rerun 11/11 passed."
-    - "EF pending-model validation passed and idempotent SQL was generated/inspected without execution."
-    - "Frontend lint and isolated production build passed; source/config restored exactly."
-    - "Additive migration, forbidden-capability, credential-pattern and diff checks passed."
+    - "Complete automated suite after the repair: 110 unit + 99 integration = 209 passed, zero failed/skipped."
+    - "Focused lanes after the repair: 60 unit and 91 integration passed; the retained integrity regression passed 1/1."
+    - "EF pending-model validation passed and corrective idempotent SQL was generated/inspected without execution."
+    - "Frontend lint and 16-route webpack production build passed; the pre-existing next-env.d.ts change was restored exactly."
+    - "Local-development browser authentication smoke passed."
+    - "Scoped whitespace and git diff checks passed."
   decisions:
     - "Reuse the accepted Slice 1 tenancy, ETag, audit, safe-error and feature-filter patterns."
     - "Keep canonical SQL import routes versioned; legacy Phase 2 routes cannot enumerate or mutate SQL batches."
     - "Enforce append-only typed history in both schema relationships and AppDbContext mutation checks."
+    - "PH3SQL-S2-TST-001 and PH3SQL-S2-TST-002 were addressed in committed and pushed repair candidate d0495dc0984b128abe23b3825f10fb1b3206625d."
   assumptions:
     - "Only repository synthetic identities and approved synthetic fixtures were used."
-    - "The no-commit instruction means this working tree is not commit-bound independent evidence."
+    - "Commit 32310275b9486be3a93eb3b826021958c10b1d50 binds the original implementation; committed and pushed repair commit d0495dc0984b128abe23b3825f10fb1b3206625d binds the PH3SQL-S2-TST-001/002 repair candidate."
   risks:
     - "R-02 requires independent tenant/project/permission abuse testing against the eventual candidate commit."
     - "R-09/I-06 SQL Server runtime migration/transaction/concurrency evidence remains for the authorised Tester lane."
@@ -191,5 +220,5 @@ handoff:
     - "Commit-bound Product Owner, Architect/TDA, Information Security and DBA/Discovery SME package approvals are evidenced."
     - "Named Test Authority approval is still required before formal independent implementation evidence is accepted."
     - "No production, external identity, customer-data, deployment, merge or release approval is claimed."
-  requested_action: "A permitted owner should bind the unchanged working tree to a candidate commit, then the independent Tester should execute the approved Slice 2 matrix and authorised SQL Server provider lane. No merge, deployment, production migration or customer-data action follows."
+  requested_action: "The independent Tester should execute the approved Slice 2 matrix and authorised SQL Server provider lane against repair commit d0495dc0984b128abe23b3825f10fb1b3206625d. No merge, deployment, production migration or customer-data action follows."
 ```
