@@ -30,6 +30,7 @@ public sealed class SqlInstance : IProjectOwned
     public ImportBatch? LastImportBatch { get; set; }
     public ICollection<SqlDatabase> Databases { get; set; } = [];
     public ICollection<SqlInstanceDiscoverySnapshot> DiscoverySnapshots { get; set; } = [];
+    public ICollection<SqlAssessment> Assessments { get; set; } = [];
 }
 
 public sealed class SqlDatabase : IProjectOwned
@@ -59,4 +60,34 @@ public sealed class SqlDatabase : IProjectOwned
     public SqlInstance SqlInstance { get; set; } = null!;
     public ImportBatch? LastImportBatch { get; set; }
     public ICollection<SqlDatabaseDiscoverySnapshot> DiscoverySnapshots { get; set; } = [];
+    public ICollection<SqlAssessment> Assessments { get; set; } = [];
+}
+
+public sealed class SqlAssessment : IProjectOwned
+{
+    public Guid Id { get; set; }
+    public Guid CustomerId { get; set; }
+    public Guid ProjectId { get; set; }
+    public Guid? SqlInstanceId { get; set; }
+    public Guid? SqlDatabaseId { get; set; }
+    public string AssessmentStatus { get; set; } = SqlAssessmentStatuses.NotStarted;
+    public string ReadinessStatus { get; set; } = SqlReadinessStatuses.NotAssessed;
+    public string? TargetPlatform { get; set; }
+    public string? TargetSqlVersion { get; set; }
+    public string? MigrationApproach { get; set; }
+    public string Blockers { get; set; } = string.Empty;
+    public string Findings { get; set; } = string.Empty;
+    public string Notes { get; set; } = string.Empty;
+    public DateTimeOffset? AssessedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; }
+    public string UpdatedBy { get; set; } = string.Empty;
+    public bool IsDeleted { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+    public string? DeletedBy { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+    public Project Project { get; set; } = null!;
+    public SqlInstance? SqlInstance { get; set; }
+    public SqlDatabase? SqlDatabase { get; set; }
 }

@@ -72,12 +72,16 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy(SqlDiscoveryAuthorizationPolicies.Read, ProjectPolicy(SqlDiscoveryPermissions.Read))
     .AddPolicy(SqlDiscoveryAuthorizationPolicies.Prepare, ProjectPolicy(SqlDiscoveryPermissions.Prepare))
     .AddPolicy(SqlDiscoveryAuthorizationPolicies.Commit, ProjectPolicy(SqlDiscoveryPermissions.Commit))
-    .AddPolicy(SqlDiscoveryAuthorizationPolicies.Cancel, ProjectPolicy(SqlDiscoveryPermissions.Cancel));
+    .AddPolicy(SqlDiscoveryAuthorizationPolicies.Cancel, ProjectPolicy(SqlDiscoveryPermissions.Cancel))
+    .AddPolicy(SqlAssessmentAuthorizationPolicies.Read, ProjectPolicy(SqlAssessmentPermissions.Read))
+    .AddPolicy(SqlAssessmentAuthorizationPolicies.Manage, ProjectPolicy(SqlAssessmentPermissions.Manage))
+    .AddPolicy(SqlAssessmentAuthorizationPolicies.Plan, ProjectPolicy(SqlAssessmentPermissions.Plan));
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(
     builder.Configuration.GetConnectionString("LgrDatabase")
     ?? throw new InvalidOperationException("ConnectionStrings:LgrDatabase is required.")));
 builder.Services.AddScoped<ProgrammeService>();
 builder.Services.AddScoped<SqlInventoryService>();
+builder.Services.AddScoped<SqlAssessmentService>();
 builder.Services.AddScoped<IpAllocationService>();
 builder.Services.AddScoped<RunbookService>();
 builder.Services.Configure<DiscoveryImportOptions>(builder.Configuration.GetSection(DiscoveryImportOptions.SectionName));
@@ -101,6 +105,7 @@ builder.Services.AddProblemDetails();
 builder.Services.Configure<FeatureOptions>(builder.Configuration.GetSection(FeatureOptions.SectionName));
 builder.Services.AddScoped<SqlDiscoveryAssessmentFeatureFilter>();
 builder.Services.AddScoped<SqlDiscoveryImportFeatureFilter>();
+builder.Services.AddScoped<SqlAssessmentFeatureFilter>();
 builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
 {
     options.InvalidModelStateResponseFactory = context =>

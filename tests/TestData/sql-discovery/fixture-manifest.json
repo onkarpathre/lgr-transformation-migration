@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "PH3-SQL-SLICE2/v1",
+  "schemaVersion": "PH3-SQL/v1",
   "dataClassification": "Synthetic test data only",
   "fixtures": [
     { "id": "SQLI-V1-POS-01", "file": "SQLI-V1-POS-01.csv", "expected": { "create": 1, "update": 1, "unchanged": 1, "warning": 0, "reject": 0 } },
@@ -12,6 +12,8 @@
     { "id": "SQLD-V1-BOUND-01", "file": "SQLD-V1-BOUND-01.csv", "expected": { "safe": 1 } },
     { "id": "SQL-RECON-01", "implementedBy": "SqlDiscoveryImportApiTests", "expected": "preview, protected fields, stale ETag, idempotency, rollback and retry" },
     { "id": "SQL-HISTORY-01", "implementedBy": "SqlDiscoveryImportApiTests", "expected": "one immutable typed snapshot for every committed safe row" },
-    { "id": "SQL-RBAC-01", "implementedBy": "SqlDiscoveryImportApiTests and IdentityAuthorizationTests", "expected": "exact ADR-008 role/action and raw-row boundaries" }
+    { "id": "SQL-ASSESS-01", "implementedBy": "SqlAssessmentApiTests", "expected": "controlled transitions, instance/database XOR, split field permissions, ETag, archive and audit" },
+    { "id": "SQL-ASSESS-NEG-01", "implementedBy": "SqlAssessmentRulesTests and SqlAssessmentApiTests", "expected": "invalid values and workflows, duplicate active target, cross-scope IDs, stale ETag and narrative boundaries reject without unsafe mutation" },
+    { "id": "SQL-RBAC-01", "implementedBy": "SqlDiscoveryImportApiTests, SqlAssessmentApiTests and IdentityAuthorizationTests", "expected": "exact ADR-008 role/action, field-command and raw-row boundaries" }
   ]
 }

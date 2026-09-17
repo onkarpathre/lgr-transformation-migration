@@ -33,6 +33,22 @@ public sealed class SqlDiscoveryImportApiTests
             1500,
             SqlInstanceServiceStatuses.Stopped,
             "SYNTHETIC\\protected-service");
+        using var assessmentResponse = await dba.PostAsJsonAsync(
+            "/api/v1/sql-assessments",
+            new SqlAssessmentCreateV1(
+                updated.Dto.Id,
+                null,
+                SqlAssessmentStatuses.InProgress,
+                SqlReadinessStatuses.AtRisk,
+                SqlAssessmentTargetPlatforms.AzureSqlManagedInstance,
+                null,
+                SqlMigrationApproaches.ToBeDetermined,
+                "Synthetic assessment blocker",
+                "Synthetic protected finding",
+                "Synthetic protected planning note",
+                null));
+        Assert.Equal(HttpStatusCode.Created, assessmentResponse.StatusCode);
+        var protectedAssessment = (await assessmentResponse.Content.ReadFromJsonAsync<SqlAssessmentDto>(JsonOptions))!;
         await CreateInstanceAsync(
             dba,
             ServerId(servers, "DC-FIN-SQL01"),
@@ -84,6 +100,17 @@ public sealed class SqlDiscoveryImportApiTests
         Assert.Equal("Enterprise", updatedAfter.Edition);
         Assert.Equal(1500, updatedAfter.Port);
         Assert.Equal("SYNTHETIC\\protected-service", updatedAfter.ServiceAccountName);
+        var assessmentAfter = await dba.GetFromJsonAsync<SqlAssessmentDto>(
+            $"/api/v1/sql-assessments/{protectedAssessment.Id}",
+            JsonOptions);
+        Assert.Equal(protectedAssessment.AssessmentStatus, assessmentAfter!.AssessmentStatus);
+        Assert.Equal(protectedAssessment.ReadinessStatus, assessmentAfter.ReadinessStatus);
+        Assert.Equal(protectedAssessment.TargetPlatform, assessmentAfter.TargetPlatform);
+        Assert.Equal(protectedAssessment.MigrationApproach, assessmentAfter.MigrationApproach);
+        Assert.Equal(protectedAssessment.Blockers, assessmentAfter.Blockers);
+        Assert.Equal(protectedAssessment.Findings, assessmentAfter.Findings);
+        Assert.Equal(protectedAssessment.Notes, assessmentAfter.Notes);
+        Assert.Equal(protectedAssessment.Version, assessmentAfter.Version);
         var created = inventory.Items.Single(instance => instance.InstanceName == "SYNTH-CREATE");
 
         var history = await dba.GetFromJsonAsync<PagedResult<SqlInstanceDiscoverySnapshotDto>>(

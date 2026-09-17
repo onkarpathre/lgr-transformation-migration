@@ -30,6 +30,7 @@ public sealed class AppDbContext(
     public DbSet<SqlDatabase> SqlDatabases => Set<SqlDatabase>();
     public DbSet<SqlInstanceDiscoverySnapshot> SqlInstanceDiscoverySnapshots => Set<SqlInstanceDiscoverySnapshot>();
     public DbSet<SqlDatabaseDiscoverySnapshot> SqlDatabaseDiscoverySnapshots => Set<SqlDatabaseDiscoverySnapshot>();
+    public DbSet<SqlAssessment> SqlAssessments => Set<SqlAssessment>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -462,6 +463,69 @@ public sealed class AppDbContext(
                 .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
+        });
+
+        modelBuilder.Entity<SqlAssessment>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .HasName("AK_SqlAssessments_CustomerId_ProjectId_Id");
+            entity.Property(x => x.AssessmentStatus).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.ReadinessStatus).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.TargetPlatform).HasMaxLength(80);
+            entity.Property(x => x.TargetSqlVersion).HasMaxLength(100);
+            entity.Property(x => x.MigrationApproach).HasMaxLength(50);
+            entity.Property(x => x.Blockers).HasMaxLength(4000).IsRequired();
+            entity.Property(x => x.Findings).HasMaxLength(8000).IsRequired();
+            entity.Property(x => x.Notes).HasMaxLength(4000).IsRequired();
+            entity.Property(x => x.CreatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.UpdatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.DeletedBy).HasMaxLength(200);
+            ConfigureRowVersion(entity.Property(x => x.RowVersion));
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_SqlAssessments_ExactlyOneTarget",
+                    "(CASE WHEN [SqlInstanceId] IS NULL THEN 0 ELSE 1 END + CASE WHEN [SqlDatabaseId] IS NULL THEN 0 ELSE 1 END) = 1");
+                table.HasCheckConstraint(
+                    "CK_SqlAssessments_AssessmentStatus",
+                    "[AssessmentStatus] IN ('NotStarted', 'InProgress', 'Complete', 'Blocked')");
+                table.HasCheckConstraint(
+                    "CK_SqlAssessments_ReadinessStatus",
+                    "[ReadinessStatus] IN ('NotAssessed', 'NotReady', 'AtRisk', 'ReadyWithConditions', 'Ready', 'Blocked')");
+                table.HasCheckConstraint(
+                    "CK_SqlAssessments_TargetPlatform",
+                    "[TargetPlatform] IS NULL OR [TargetPlatform] IN ('AzureSqlDatabase', 'AzureSqlManagedInstance', 'SqlServerOnAzureVm', 'Retain', 'Retire', 'Investigate')");
+                table.HasCheckConstraint(
+                    "CK_SqlAssessments_MigrationApproach",
+                    "[MigrationApproach] IS NULL OR [MigrationApproach] IN ('Offline', 'Online', 'ToBeDetermined', 'NotApplicable')");
+            });
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.SqlInstanceId })
+                .IsUnique()
+                .HasDatabaseName("UX_SqlAssessments_Owner_Active_Instance")
+                .HasFilter("[IsDeleted] = 0 AND [SqlInstanceId] IS NOT NULL");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.SqlDatabaseId })
+                .IsUnique()
+                .HasDatabaseName("UX_SqlAssessments_Owner_Active_Database")
+                .HasFilter("[IsDeleted] = 0 AND [SqlDatabaseId] IS NOT NULL");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.IsDeleted, x.AssessmentStatus, x.ReadinessStatus, x.Id })
+                .HasDatabaseName("IX_SqlAssessments_Owner_Filter");
+            entity.HasOne(x => x.Project)
+                .WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.SqlInstance)
+                .WithMany(x => x.Assessments)
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.SqlInstanceId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.SqlDatabase)
+                .WithMany(x => x.Assessments)
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.SqlDatabaseId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId && !x.IsDeleted);
         });
 
         SeedData.Configure(modelBuilder);

@@ -40,6 +40,41 @@ public static class SqlDiscoveryAuthorizationPolicies
     public const string Cancel = "SqlDiscoveryCancel";
 }
 
+public static class SqlAssessmentAuthorizationPolicies
+{
+    public const string Read = "SqlAssessmentRead";
+    public const string Manage = "SqlAssessmentManage";
+    public const string Plan = "SqlAssessmentPlan";
+}
+
+public static class SqlAssessmentPermissions
+{
+    public const string Read = "sql.assessment.read";
+    public const string Manage = "sql.assessment.manage";
+    public const string Plan = "sql.assessment.plan";
+
+    public static IReadOnlySet<string> ForRoles(IEnumerable<string> roles)
+    {
+        var normalized = roles.ToHashSet(StringComparer.Ordinal);
+        var permissions = new HashSet<string>(StringComparer.Ordinal);
+        if (normalized.Overlaps(["DatabaseSme", "MigrationArchitect", "ProjectManager", "DiscoveryAnalyst", "ReviewerAuditor"]))
+        {
+            permissions.Add(Read);
+        }
+
+        if (normalized.Contains("DatabaseSme"))
+        {
+            permissions.UnionWith([Manage, Plan]);
+        }
+        else if (normalized.Contains("MigrationArchitect"))
+        {
+            permissions.Add(Plan);
+        }
+
+        return permissions.ToFrozenSet(StringComparer.Ordinal);
+    }
+}
+
 public static class SqlDiscoveryPermissions
 {
     public const string Read = "sql.discovery.read";
@@ -97,6 +132,7 @@ public static class ProjectPermissions
     public static IReadOnlySet<string> ForRoles(IEnumerable<string> roles) =>
         SqlInventoryPermissions.ForRoles(roles)
             .Concat(SqlDiscoveryPermissions.ForRoles(roles))
+            .Concat(SqlAssessmentPermissions.ForRoles(roles))
             .ToFrozenSet(StringComparer.Ordinal);
 }
 
@@ -812,15 +848,27 @@ public sealed class ApiAuthorizationMiddlewareResultHandler(
             context.Request.Method,
             context.GetEndpoint()?.DisplayName ?? "unmatched",
             context.TraceIdentifier);
-        await AuditDeniedSqlDiscoveryAsync(context, code);
+        await AuditDeniedSqlMutationAsync(context, code);
         await WriteAsync(context, response.Item1, response.Item2, response.Item3, code);
     }
 
-    private async Task AuditDeniedSqlDiscoveryAsync(HttpContext context, string errorCode)
+    private async Task AuditDeniedSqlMutationAsync(HttpContext context, string errorCode)
     {
         if (errorCode != AuthorizationFailureCodes.PermissionDenied
-            || !HttpMethods.IsPost(context.Request.Method)
-            || !context.Request.Path.StartsWithSegments("/api/v1/discovery/imports", StringComparison.OrdinalIgnoreCase))
+            || !(HttpMethods.IsPost(context.Request.Method)
+                 || HttpMethods.IsPut(context.Request.Method)
+                 || HttpMethods.IsDelete(context.Request.Method)))
+        {
+            return;
+        }
+
+        var isDiscovery = context.Request.Path.StartsWithSegments(
+            "/api/v1/discovery/imports",
+            StringComparison.OrdinalIgnoreCase);
+        var isAssessment = context.Request.Path.StartsWithSegments(
+            "/api/v1/sql-assessments",
+            StringComparison.OrdinalIgnoreCase);
+        if (!isDiscovery && !isAssessment)
         {
             return;
         }
@@ -835,14 +883,22 @@ public sealed class ApiAuthorizationMiddlewareResultHandler(
 
         try
         {
-            var action = context.Request.Path.Value switch
-            {
-                { } path when path.EndsWith("/upload", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryUploadDenied",
-                { } path when path.EndsWith("/preview", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryPreviewDenied",
-                { } path when path.EndsWith("/commit", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryCommitDenied",
-                { } path when path.EndsWith("/cancel", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryCancelDenied",
-                _ => "SqlDiscoveryMutationDenied"
-            };
+            var action = isAssessment
+                ? context.Request.Path.Value switch
+                {
+                    { } path when path.EndsWith("/evidence", StringComparison.OrdinalIgnoreCase) => "SqlAssessmentEvidenceChangeDenied",
+                    { } path when path.EndsWith("/planning", StringComparison.OrdinalIgnoreCase) => "SqlAssessmentPlanningChangeDenied",
+                    _ when HttpMethods.IsDelete(context.Request.Method) => "SqlAssessmentArchiveDenied",
+                    _ => "SqlAssessmentCreateDenied"
+                }
+                : context.Request.Path.Value switch
+                {
+                    { } path when path.EndsWith("/upload", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryUploadDenied",
+                    { } path when path.EndsWith("/preview", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryPreviewDenied",
+                    { } path when path.EndsWith("/commit", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryCommitDenied",
+                    { } path when path.EndsWith("/cancel", StringComparison.OrdinalIgnoreCase) => "SqlDiscoveryCancelDenied",
+                    _ => "SqlDiscoveryMutationDenied"
+                };
             var entityId = Guid.TryParse(context.Request.RouteValues.GetValueOrDefault("id")?.ToString(), out var parsed)
                 ? parsed
                 : Guid.Empty;
@@ -852,7 +908,7 @@ public sealed class ApiAuthorizationMiddlewareResultHandler(
                 Id = Guid.NewGuid(),
                 CustomerId = authorization.CustomerId,
                 ProjectId = authorization.ProjectId,
-                EntityType = "ImportBatch",
+                EntityType = isAssessment ? "SqlAssessment" : "ImportBatch",
                 EntityId = entityId,
                 Action = action,
                 ChangedBy = authorization.Principal.AuditActor,
@@ -865,7 +921,7 @@ public sealed class ApiAuthorizationMiddlewareResultHandler(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             logger.LogError(
-                "Denied SQL discovery audit failed closed with {ExceptionType} and correlation {CorrelationId}.",
+                "Denied SQL mutation audit failed closed with {ExceptionType} and correlation {CorrelationId}.",
                 exception.GetType().Name,
                 context.TraceIdentifier);
         }

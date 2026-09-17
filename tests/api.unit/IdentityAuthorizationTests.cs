@@ -82,7 +82,7 @@ public sealed class IdentityAuthorizationTests
     }
 
     [Fact]
-    public void Project_permission_union_preserves_inventory_and_discovery_boundaries()
+    public void Project_permission_union_preserves_inventory_discovery_and_assessment_boundaries()
     {
         var permissions = ProjectPermissions.ForRoles(["DatabaseSme", "DiscoveryAnalyst", "UnexpectedRole"]);
 
@@ -95,8 +95,33 @@ public sealed class IdentityAuthorizationTests
             SqlDiscoveryPermissions.Read,
             SqlDiscoveryPermissions.Prepare,
             SqlDiscoveryPermissions.Commit,
-            SqlDiscoveryPermissions.Cancel
+            SqlDiscoveryPermissions.Cancel,
+            SqlAssessmentPermissions.Read,
+            SqlAssessmentPermissions.Manage,
+            SqlAssessmentPermissions.Plan
         ]));
+    }
+
+    [Theory]
+    [InlineData("DatabaseSme", true, true, true)]
+    [InlineData("MigrationArchitect", true, false, true)]
+    [InlineData("ProjectManager", true, false, false)]
+    [InlineData("DiscoveryAnalyst", true, false, false)]
+    [InlineData("ReviewerAuditor", true, false, false)]
+    [InlineData("CustomerAdministrator", false, false, false)]
+    [InlineData("PlatformAdministrator", false, false, false)]
+    [InlineData("UnexpectedRole", false, false, false)]
+    public void Sql_assessment_role_mapping_is_exact_and_deny_by_default(
+        string role,
+        bool read,
+        bool manage,
+        bool plan)
+    {
+        var permissions = SqlAssessmentPermissions.ForRoles([role]);
+
+        Assert.Equal(read, permissions.Contains(SqlAssessmentPermissions.Read));
+        Assert.Equal(manage, permissions.Contains(SqlAssessmentPermissions.Manage));
+        Assert.Equal(plan, permissions.Contains(SqlAssessmentPermissions.Plan));
     }
 
     [Fact]
