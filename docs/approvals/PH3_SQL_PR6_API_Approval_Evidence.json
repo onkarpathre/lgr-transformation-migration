@@ -1,0 +1,266 @@
+﻿{
+    "pullRequest":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6",
+    "fetchedAtUtc":  "2026-09-16T23:55:19.6698283+00:00",
+    "reviews":  {
+                    "value":  [
+                                  {
+                                      "id":  5209736362,
+                                      "node_id":  "PRR_kwDOULVWC88AAAABNoZEqg",
+                                      "user":  {
+                                                   "login":  "onkarpathre",
+                                                   "id":  4620259,
+                                                   "node_id":  "MDQ6VXNlcjQ2MjAyNTk=",
+                                                   "avatar_url":  "https://avatars.githubusercontent.com/u/4620259?v=4",
+                                                   "gravatar_id":  "",
+                                                   "url":  "https://api.github.com/users/onkarpathre",
+                                                   "html_url":  "https://github.com/onkarpathre",
+                                                   "followers_url":  "https://api.github.com/users/onkarpathre/followers",
+                                                   "following_url":  "https://api.github.com/users/onkarpathre/following{/other_user}",
+                                                   "gists_url":  "https://api.github.com/users/onkarpathre/gists{/gist_id}",
+                                                   "starred_url":  "https://api.github.com/users/onkarpathre/starred{/owner}{/repo}",
+                                                   "subscriptions_url":  "https://api.github.com/users/onkarpathre/subscriptions",
+                                                   "organizations_url":  "https://api.github.com/users/onkarpathre/orgs",
+                                                   "repos_url":  "https://api.github.com/users/onkarpathre/repos",
+                                                   "events_url":  "https://api.github.com/users/onkarpathre/events{/privacy}",
+                                                   "received_events_url":  "https://api.github.com/users/onkarpathre/received_events",
+                                                   "type":  "User",
+                                                   "user_view_type":  "public",
+                                                   "site_admin":  false
+                                               },
+                                      "body":  "Approved as Product Owner on 15 September 2026 for the consolidated remaining Phase 3 scope at commit `7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`.\n\nI approve the three ordered delivery slices, scope, priorities, acceptance criteria, controlled-value ownership and phase-level delivery approach documented in `PH3_SQL_Remaining_Phase_Plan.md` and `PH3_SQL_Remaining_Phase_Architecture.md`.\n\nThis approval permits restricted local/non-production development and testing. It does not authorise production deployment, real customer data, migration execution, external identity, complete MVP release or Phase 3 exit.\n\nOP\nProduct Owner\n",
+                                      "state":  "COMMENTED",
+                                      "html_url":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209736362",
+                                      "pull_request_url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/pulls/6",
+                                      "author_association":  "OWNER",
+                                      "_links":  {
+                                                     "html":  {
+                                                                  "href":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209736362"
+                                                              },
+                                                     "pull_request":  {
+                                                                          "href":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/pulls/6"
+                                                                      }
+                                                 },
+                                      "submitted_at":  "2026-09-15T12:08:46Z",
+                                      "commit_id":  "7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a"
+                                  },
+                                  {
+                                      "id":  5209749102,
+                                      "node_id":  "PRR_kwDOULVWC88AAAABNoZ2bg",
+                                      "user":  {
+                                                   "login":  "opathre",
+                                                   "id":  171468828,
+                                                   "node_id":  "U_kgDOCjhoHA",
+                                                   "avatar_url":  "https://avatars.githubusercontent.com/u/171468828?v=4",
+                                                   "gravatar_id":  "",
+                                                   "url":  "https://api.github.com/users/opathre",
+                                                   "html_url":  "https://github.com/opathre",
+                                                   "followers_url":  "https://api.github.com/users/opathre/followers",
+                                                   "following_url":  "https://api.github.com/users/opathre/following{/other_user}",
+                                                   "gists_url":  "https://api.github.com/users/opathre/gists{/gist_id}",
+                                                   "starred_url":  "https://api.github.com/users/opathre/starred{/owner}{/repo}",
+                                                   "subscriptions_url":  "https://api.github.com/users/opathre/subscriptions",
+                                                   "organizations_url":  "https://api.github.com/users/opathre/orgs",
+                                                   "repos_url":  "https://api.github.com/users/opathre/repos",
+                                                   "events_url":  "https://api.github.com/users/opathre/events{/privacy}",
+                                                   "received_events_url":  "https://api.github.com/users/opathre/received_events",
+                                                   "type":  "User",
+                                                   "user_view_type":  "public",
+                                                   "site_admin":  false
+                                               },
+                                      "body":  "Approved as Product Owner on 15 September 2026 for the consolidated remaining Phase 3 scope at commit 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a.\r\n\r\nI approve the three ordered delivery slices, scope, priorities, acceptance criteria, controlled-value ownership and phase-level delivery approach documented in PH3_SQL_Remaining_Phase_Plan.md and PH3_SQL_Remaining_Phase_Architecture.md.\r\n\r\nThis approval permits restricted local/non-production development and testing. It does not authorise production deployment, real customer data, migration execution, external identity, complete MVP release or Phase 3 exit.\r\n\r\n\r\nProduct Owner\r\n\r\n\r\n",
+                                      "state":  "APPROVED",
+                                      "html_url":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209749102",
+                                      "pull_request_url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/pulls/6",
+                                      "author_association":  "COLLABORATOR",
+                                      "_links":  {
+                                                     "html":  {
+                                                                  "href":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209749102"
+                                                              },
+                                                     "pull_request":  {
+                                                                          "href":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/pulls/6"
+                                                                      }
+                                                 },
+                                      "submitted_at":  "2026-09-15T12:09:43Z",
+                                      "commit_id":  "7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a"
+                                  },
+                                  {
+                                      "id":  5209763769,
+                                      "node_id":  "PRR_kwDOULVWC88AAAABNoavuQ",
+                                      "user":  {
+                                                   "login":  "ashish50thbirthday-ship-it",
+                                                   "id":  328125210,
+                                                   "node_id":  "U_kgDOE47LGg",
+                                                   "avatar_url":  "https://avatars.githubusercontent.com/u/328125210?v=4",
+                                                   "gravatar_id":  "",
+                                                   "url":  "https://api.github.com/users/ashish50thbirthday-ship-it",
+                                                   "html_url":  "https://github.com/ashish50thbirthday-ship-it",
+                                                   "followers_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/followers",
+                                                   "following_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/following{/other_user}",
+                                                   "gists_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/gists{/gist_id}",
+                                                   "starred_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/starred{/owner}{/repo}",
+                                                   "subscriptions_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/subscriptions",
+                                                   "organizations_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/orgs",
+                                                   "repos_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/repos",
+                                                   "events_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/events{/privacy}",
+                                                   "received_events_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/received_events",
+                                                   "type":  "User",
+                                                   "user_view_type":  "public",
+                                                   "site_admin":  false
+                                               },
+                                      "body":  "Approved as Information Security reviewer on 15 September 2026 at commit `7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`.\n\nI approve the documented ADR-008 permission extensions, deny-by-default authorisation, tenant and project isolation, raw-row access controls, audit requirements, safe error handling and synthetic-data restrictions for the consolidated remaining Phase 3 architecture.\n\nThis approval applies only to restricted local/non-production development and testing. It does not approve production identity configuration, customer data, external access, production tenancy, deployment or release.\n\nAG\nInformation Security\n",
+                                      "state":  "APPROVED",
+                                      "html_url":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209763769",
+                                      "pull_request_url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/pulls/6",
+                                      "author_association":  "COLLABORATOR",
+                                      "_links":  {
+                                                     "html":  {
+                                                                  "href":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209763769"
+                                                              },
+                                                     "pull_request":  {
+                                                                          "href":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/pulls/6"
+                                                                      }
+                                                 },
+                                      "submitted_at":  "2026-09-15T12:11:06Z",
+                                      "commit_id":  "7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a"
+                                  },
+                                  {
+                                      "id":  5209781297,
+                                      "node_id":  "PRR_kwDOULVWC88AAAABNob0MQ",
+                                      "user":  {
+                                                   "login":  "nextgenexamprep-crypto",
+                                                   "id":  326715450,
+                                                   "node_id":  "U_kgDOE3lIOg",
+                                                   "avatar_url":  "https://avatars.githubusercontent.com/u/326715450?v=4",
+                                                   "gravatar_id":  "",
+                                                   "url":  "https://api.github.com/users/nextgenexamprep-crypto",
+                                                   "html_url":  "https://github.com/nextgenexamprep-crypto",
+                                                   "followers_url":  "https://api.github.com/users/nextgenexamprep-crypto/followers",
+                                                   "following_url":  "https://api.github.com/users/nextgenexamprep-crypto/following{/other_user}",
+                                                   "gists_url":  "https://api.github.com/users/nextgenexamprep-crypto/gists{/gist_id}",
+                                                   "starred_url":  "https://api.github.com/users/nextgenexamprep-crypto/starred{/owner}{/repo}",
+                                                   "subscriptions_url":  "https://api.github.com/users/nextgenexamprep-crypto/subscriptions",
+                                                   "organizations_url":  "https://api.github.com/users/nextgenexamprep-crypto/orgs",
+                                                   "repos_url":  "https://api.github.com/users/nextgenexamprep-crypto/repos",
+                                                   "events_url":  "https://api.github.com/users/nextgenexamprep-crypto/events{/privacy}",
+                                                   "received_events_url":  "https://api.github.com/users/nextgenexamprep-crypto/received_events",
+                                                   "type":  "User",
+                                                   "user_view_type":  "public",
+                                                   "site_admin":  false
+                                               },
+                                      "body":  "Approved as DBA/Discovery SME on 15 September 2026 at commit `7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`.\n\nI approve the CSV v1 schemas, controlled values, synthetic fixtures, staging and reconciliation rules, idempotency and history requirements, SQL persistence constraints, additive migration approach and data-preserving rollback contract for the three remaining Phase 3 slices.\n\nThis approval covers synthetic-data development and testing only. It does not authorise production schema changes, real customer imports, destructive database operations or migration execution against customer environments.\n\nDBA/Discovery SME\n",
+                                      "state":  "APPROVED",
+                                      "html_url":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209781297",
+                                      "pull_request_url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/pulls/6",
+                                      "author_association":  "COLLABORATOR",
+                                      "_links":  {
+                                                     "html":  {
+                                                                  "href":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6#pullrequestreview-5209781297"
+                                                              },
+                                                     "pull_request":  {
+                                                                          "href":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/pulls/6"
+                                                                      }
+                                                 },
+                                      "submitted_at":  "2026-09-15T12:13:03Z",
+                                      "commit_id":  "7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a"
+                                  }
+                              ],
+                    "Count":  4
+                },
+    "comments":  {
+                     "value":  [
+                                   {
+                                       "url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/issues/comments/5680327861",
+                                       "html_url":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6#issuecomment-5680327861",
+                                       "issue_url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/issues/6",
+                                       "id":  5680327861,
+                                       "node_id":  "IC_kwDOULVWC88AAAABUpLstQ",
+                                       "user":  {
+                                                    "login":  "PTArchitect",
+                                                    "id":  326713713,
+                                                    "node_id":  "U_kgDOE3lBcQ",
+                                                    "avatar_url":  "https://avatars.githubusercontent.com/u/326713713?v=4",
+                                                    "gravatar_id":  "",
+                                                    "url":  "https://api.github.com/users/PTArchitect",
+                                                    "html_url":  "https://github.com/PTArchitect",
+                                                    "followers_url":  "https://api.github.com/users/PTArchitect/followers",
+                                                    "following_url":  "https://api.github.com/users/PTArchitect/following{/other_user}",
+                                                    "gists_url":  "https://api.github.com/users/PTArchitect/gists{/gist_id}",
+                                                    "starred_url":  "https://api.github.com/users/PTArchitect/starred{/owner}{/repo}",
+                                                    "subscriptions_url":  "https://api.github.com/users/PTArchitect/subscriptions",
+                                                    "organizations_url":  "https://api.github.com/users/PTArchitect/orgs",
+                                                    "repos_url":  "https://api.github.com/users/PTArchitect/repos",
+                                                    "events_url":  "https://api.github.com/users/PTArchitect/events{/privacy}",
+                                                    "received_events_url":  "https://api.github.com/users/PTArchitect/received_events",
+                                                    "type":  "User",
+                                                    "user_view_type":  "public",
+                                                    "site_admin":  false
+                                                },
+                                       "created_at":  "2026-09-15T12:41:34Z",
+                                       "updated_at":  "2026-09-15T12:42:32Z",
+                                       "body":  "Approved as Solution Architect/TDA on 15 September 2026 at commit `7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`.\r\n\r\nI approve the consolidated architecture for CSV discovery, staging, reconciliation and history; human assessment and planning records; browser journeys; API, data, security, audit, migration, rollback and testing contracts. The design appropriately reuses the approved Slice 1 and ADR-008 controls.\r\n\r\nThis approval permits implementation and testing within the documented restricted local/non-production scope only. Material architecture changes require further review.\r\n\r\nJP\r\nSolution Architect/TDA",
+                                       "author_association":  "COLLABORATOR",
+                                       "reactions":  {
+                                                         "url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/issues/comments/5680327861/reactions",
+                                                         "total_count":  0,
+                                                         "+1":  0,
+                                                         "-1":  0,
+                                                         "laugh":  0,
+                                                         "hooray":  0,
+                                                         "confused":  0,
+                                                         "heart":  0,
+                                                         "rocket":  0,
+                                                         "eyes":  0
+                                                     },
+                                       "performed_via_github_app":  null,
+                                       "minimized":  null
+                                   },
+                                   {
+                                       "url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/issues/comments/5684180374",
+                                       "html_url":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/6#issuecomment-5684180374",
+                                       "issue_url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/issues/6",
+                                       "id":  5684180374,
+                                       "node_id":  "IC_kwDOULVWC88AAAABUs21lg",
+                                       "user":  {
+                                                    "login":  "PTArchitect",
+                                                    "id":  326713713,
+                                                    "node_id":  "U_kgDOE3lBcQ",
+                                                    "avatar_url":  "https://avatars.githubusercontent.com/u/326713713?v=4",
+                                                    "gravatar_id":  "",
+                                                    "url":  "https://api.github.com/users/PTArchitect",
+                                                    "html_url":  "https://github.com/PTArchitect",
+                                                    "followers_url":  "https://api.github.com/users/PTArchitect/followers",
+                                                    "following_url":  "https://api.github.com/users/PTArchitect/following{/other_user}",
+                                                    "gists_url":  "https://api.github.com/users/PTArchitect/gists{/gist_id}",
+                                                    "starred_url":  "https://api.github.com/users/PTArchitect/starred{/owner}{/repo}",
+                                                    "subscriptions_url":  "https://api.github.com/users/PTArchitect/subscriptions",
+                                                    "organizations_url":  "https://api.github.com/users/PTArchitect/orgs",
+                                                    "repos_url":  "https://api.github.com/users/PTArchitect/repos",
+                                                    "events_url":  "https://api.github.com/users/PTArchitect/events{/privacy}",
+                                                    "received_events_url":  "https://api.github.com/users/PTArchitect/received_events",
+                                                    "type":  "User",
+                                                    "user_view_type":  "public",
+                                                    "site_admin":  false
+                                                },
+                                       "created_at":  "2026-09-15T16:39:44Z",
+                                       "updated_at":  "2026-09-15T16:39:44Z",
+                                       "body":  "Approved for merge at commit 6e089ddfac6d41724f615df87dfe5948578ae14a. This commit only records the four existing phase-level decisions and issues the READY_FOR_DEVELOPMENT hand-off. The approved architecture content at 7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a remains unchanged.\r\n\r\nJP\r\nSolution Architect/TDA",
+                                       "author_association":  "COLLABORATOR",
+                                       "reactions":  {
+                                                         "url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/issues/comments/5684180374/reactions",
+                                                         "total_count":  0,
+                                                         "+1":  0,
+                                                         "-1":  0,
+                                                         "laugh":  0,
+                                                         "hooray":  0,
+                                                         "confused":  0,
+                                                         "heart":  0,
+                                                         "rocket":  0,
+                                                         "eyes":  0
+                                                     },
+                                       "performed_via_github_app":  null,
+                                       "minimized":  null
+                                   }
+                               ],
+                     "Count":  2
+                 }
+}

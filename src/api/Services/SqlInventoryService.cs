@@ -164,6 +164,13 @@ public sealed class SqlInventoryService(
             throw new DomainConflictException("The SQL instance cannot be archived while it has active databases.");
         }
 
+        if (await db.SqlAssessments.AnyAsync(
+                x => x.SqlInstanceId == id && x.ProjectId == context.ProjectId,
+                cancellationToken))
+        {
+            throw new DomainConflictException("The SQL instance cannot be archived while it has an active assessment.");
+        }
+
         var originalVersion = entity.RowVersion.ToArray();
         entity.IsDeleted = true;
         entity.DeletedAt = Now;
@@ -321,6 +328,13 @@ public sealed class SqlInventoryService(
         await EnsureCurrentProjectAsync(cancellationToken);
         var entity = await FindDatabaseAsync(id, tracking: true, cancellationToken);
         EnsureIfMatch(ifMatch, entity.RowVersion);
+        if (await db.SqlAssessments.AnyAsync(
+                x => x.SqlDatabaseId == id && x.ProjectId == context.ProjectId,
+                cancellationToken))
+        {
+            throw new DomainConflictException("The SQL database cannot be archived while it has an active assessment.");
+        }
+
         var originalVersion = entity.RowVersion.ToArray();
         entity.IsDeleted = true;
         entity.DeletedAt = Now;

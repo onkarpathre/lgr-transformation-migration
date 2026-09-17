@@ -5,6 +5,22 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 const DEMO_CUSTOMER = "11111111-1111-1111-1111-111111111111";
 const DEMO_PROJECT = "22222222-2222-2222-2222-222222222222";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
+const TEST_PRINCIPAL_HEADER = "X-Lgr-Test-Principal";
+
+function getDevelopmentTestPrincipal(): string | null {
+  if (process.env.NODE_ENV !== "development") return null;
+
+  const principal = process.env.NEXT_PUBLIC_LGR_TEST_PRINCIPAL?.trim();
+  if (!principal) {
+    throw new Error(
+      "Local development authentication is not configured. Set NEXT_PUBLIC_LGR_TEST_PRINCIPAL to an allow-listed synthetic alias and restart the frontend."
+    );
+  }
+
+  return principal;
+}
+
+const DEVELOPMENT_TEST_PRINCIPAL = getDevelopmentTestPrincipal();
 
 type Named = { id: string; name: string };
 type ApiContextValue = {
@@ -32,6 +48,10 @@ export function ApiProvider({ children }: { children: React.ReactNode }) {
 
   const api = useCallback(async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
     const headers = new Headers(init.headers);
+    headers.delete(TEST_PRINCIPAL_HEADER);
+    if (DEVELOPMENT_TEST_PRINCIPAL) {
+      headers.set(TEST_PRINCIPAL_HEADER, DEVELOPMENT_TEST_PRINCIPAL);
+    }
     headers.set("X-Customer-Id", customerId);
     headers.set("X-Project-Id", projectId);
     headers.set("X-User-Name", "poc.web@demo-council.example");

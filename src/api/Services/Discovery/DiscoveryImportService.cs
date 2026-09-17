@@ -62,10 +62,18 @@ public sealed class DiscoveryImportService(
 
         var batch = new ImportBatch
         {
-            Id = Guid.NewGuid(), CustomerId = context.CustomerId, ProjectId = context.ProjectId,
-            SourceType = mapper.SourceType, OriginalFileName = originalFileName,
-            StoredFileName = stored.StoredFileName, FileHash = stored.FileHash, FileSizeBytes = stored.FileSizeBytes,
-            Status = ImportBatchStatuses.Uploaded, UploadedBy = context.UserName, UploadedAt = Now, Notes = duplicateWarning
+            Id = Guid.NewGuid(),
+            CustomerId = context.CustomerId,
+            ProjectId = context.ProjectId,
+            SourceType = mapper.SourceType,
+            OriginalFileName = originalFileName,
+            StoredFileName = stored.StoredFileName,
+            FileHash = stored.FileHash,
+            FileSizeBytes = stored.FileSizeBytes,
+            Status = ImportBatchStatuses.Uploaded,
+            UploadedBy = context.UserName,
+            UploadedAt = Now,
+            Notes = duplicateWarning
         };
         db.ImportBatches.Add(batch);
         await db.SaveChangesAsync(cancellationToken);
@@ -73,7 +81,10 @@ public sealed class DiscoveryImportService(
     }
 
     public async Task<IReadOnlyList<DiscoveryImportBatchDto>> ListAsync(CancellationToken cancellationToken) =>
-        (await db.ImportBatches.Where(x => x.ProjectId == context.ProjectId).ToListAsync(cancellationToken))
+        (await db.ImportBatches.Where(x => x.ProjectId == context.ProjectId
+                                           && x.SourceType != DiscoverySourceTypes.SqlInstanceCsvV1
+                                           && x.SourceType != DiscoverySourceTypes.SqlDatabaseCsvV1)
+            .ToListAsync(cancellationToken))
             .OrderByDescending(x => x.UploadedAt).Select(Map).ToList();
 
     public async Task<DiscoveryImportBatchDto> GetAsync(Guid id, CancellationToken cancellationToken) =>
@@ -128,10 +139,16 @@ public sealed class DiscoveryImportService(
 
                 staged.Add(new DiscoveryImportRow
                 {
-                    Id = Guid.NewGuid(), CustomerId = batch.CustomerId, ProjectId = batch.ProjectId,
-                    ImportBatchId = batch.Id, RowNumber = item.Row.RowNumber, SourceRecordId = item.Record.SourceRecordId,
-                    SourceType = batch.SourceType, RawDataJson = JsonSerializer.Serialize(item.Row.Values, JsonOptions),
-                    NormalizedHostname = validated.NormalizedHostname, Classification = result.Classification,
+                    Id = Guid.NewGuid(),
+                    CustomerId = batch.CustomerId,
+                    ProjectId = batch.ProjectId,
+                    ImportBatchId = batch.Id,
+                    RowNumber = item.Row.RowNumber,
+                    SourceRecordId = item.Record.SourceRecordId,
+                    SourceType = batch.SourceType,
+                    RawDataJson = JsonSerializer.Serialize(item.Row.Values, JsonOptions),
+                    NormalizedHostname = validated.NormalizedHostname,
+                    Classification = result.Classification,
                     ValidationStatus = validationStatus,
                     ValidationMessagesJson = messages.Count == 0 ? null : JsonSerializer.Serialize(messages, JsonOptions),
                     MatchedEntityId = matched?.Id,
@@ -271,7 +288,7 @@ public sealed class DiscoveryImportService(
     public async Task<DiscoveryImportBatchDto> CancelAsync(Guid id, CancellationToken cancellationToken)
     {
         var batch = await FindBatchAsync(id, cancellationToken);
-        if (ImportBatchStatuses.Committed.Contains(batch.Status) || batch.Status is ImportBatchStatuses.Failed or ImportBatchStatuses.Cancelled or ImportBatchStatuses.Importing)
+        if (ImportBatchStatuses.TerminalCommitted.Contains(batch.Status) || batch.Status is ImportBatchStatuses.Failed or ImportBatchStatuses.Cancelled or ImportBatchStatuses.Importing)
             throw new DomainValidationException($"A batch in status '{batch.Status}' cannot be cancelled.");
         batch.Status = ImportBatchStatuses.Cancelled;
         await db.SaveChangesAsync(cancellationToken);
@@ -297,7 +314,11 @@ public sealed class DiscoveryImportService(
     }
 
     private async Task<ImportBatch> FindBatchAsync(Guid id, CancellationToken cancellationToken) =>
-        await db.ImportBatches.SingleOrDefaultAsync(x => x.Id == id && x.ProjectId == context.ProjectId, cancellationToken)
+        await db.ImportBatches.SingleOrDefaultAsync(
+            x => x.Id == id && x.ProjectId == context.ProjectId
+                 && x.SourceType != DiscoverySourceTypes.SqlInstanceCsvV1
+                 && x.SourceType != DiscoverySourceTypes.SqlDatabaseCsvV1,
+            cancellationToken)
         ?? throw new KeyNotFoundException("Discovery import batch not found.");
 
     private DiscoveryImportRowDto MapRow(DiscoveryImportRow row)
@@ -315,17 +336,25 @@ public sealed class DiscoveryImportService(
             batch.OriginalFileName, batch.FileHash, batch.FileSizeBytes, batch.Status, batch.UploadedBy,
             batch.UploadedAt, batch.PreviewedAt, batch.CommittedAt, batch.TotalRows, batch.ValidRows,
             batch.CreateCount, batch.UpdateCount, batch.UnchangedCount, batch.WarningCount, batch.RejectCount,
-            batch.Notes, duplicate);
+            batch.Notes, duplicate, Convert.ToBase64String(batch.RowVersion));
     }
 
     private void AddAudit(string entityType, Guid entityId, string action, Guid? projectId,
         string? propertyName, string? oldValue, string? newValue, DateTimeOffset changedAt) =>
         db.AuditEvents.Add(new AuditEvent
         {
-            Id = Guid.NewGuid(), CustomerId = context.CustomerId, ProjectId = projectId,
-            EntityType = entityType, EntityId = entityId, Action = action, PropertyName = propertyName,
-            OldValue = oldValue, NewValue = newValue, ChangedBy = context.UserName,
-            ActorPrincipalType = context.Principal.PrincipalType.ToString(), ChangedAt = changedAt,
+            Id = Guid.NewGuid(),
+            CustomerId = context.CustomerId,
+            ProjectId = projectId,
+            EntityType = entityType,
+            EntityId = entityId,
+            Action = action,
+            PropertyName = propertyName,
+            OldValue = oldValue,
+            NewValue = newValue,
+            ChangedBy = context.UserName,
+            ActorPrincipalType = context.Principal.PrincipalType.ToString(),
+            ChangedAt = changedAt,
             CorrelationId = context.CorrelationId
         });
 

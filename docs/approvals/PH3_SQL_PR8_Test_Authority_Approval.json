@@ -1,0 +1,44 @@
+﻿{
+    "pullRequest":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/8",
+    "fetchedAtUtc":  "2026-09-16T23:52:10.2369196+00:00",
+    "testAuthorityApproval":  {
+                                  "id":  5221828015,
+                                  "node_id":  "PRR_kwDOULVWC88AAAABNz7Frw",
+                                  "user":  {
+                                               "login":  "ashish50thbirthday-ship-it",
+                                               "id":  328125210,
+                                               "node_id":  "U_kgDOE47LGg",
+                                               "avatar_url":  "https://avatars.githubusercontent.com/u/328125210?v=4",
+                                               "gravatar_id":  "",
+                                               "url":  "https://api.github.com/users/ashish50thbirthday-ship-it",
+                                               "html_url":  "https://github.com/ashish50thbirthday-ship-it",
+                                               "followers_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/followers",
+                                               "following_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/following{/other_user}",
+                                               "gists_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/gists{/gist_id}",
+                                               "starred_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/starred{/owner}{/repo}",
+                                               "subscriptions_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/subscriptions",
+                                               "organizations_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/orgs",
+                                               "repos_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/repos",
+                                               "events_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/events{/privacy}",
+                                               "received_events_url":  "https://api.github.com/users/ashish50thbirthday-ship-it/received_events",
+                                               "type":  "User",
+                                               "user_view_type":  "public",
+                                               "site_admin":  false
+                                           },
+                                  "body":  "Authorised Test Authority approval\n\nName: Ashish\nGitHub account: `ashish50thbirthday-ship-it`\nRole: Authorised Test Authority\nDate: 16 September 2026\n\nI approve independent testing of the remaining Phase 3 SQL Slices 2–4 on branch `feature/ph3-sql-remaining-implementation`, beginning with Slice 2 commit `32310275b9486be3a93eb3b826021958c10b1d50`.\n\nThis phase-level approval covers:\n\n* Synthetic-data testing of Slices 2–4 within the approved architecture.\n* Tester-authored and strengthened unit, integration, API, security and browser tests.\n* Tenant/project isolation and ADR-008 permission testing.\n* Additive migration inspection and EF model validation.\n* Migration apply, rollback and reapply testing against fresh, previously nonexistent isolated local SQL Server databases.\n* CSV validation, staging, reconciliation, idempotency and immutable-history assurance.\n* Dependency vulnerability checks.\n* Tester-only test, evidence and assurance-harness corrections.\n* Repeated assurance runs where necessary, provided each run uses a fresh isolated database and retains all evidence.\n\nThis approval does not authorise production or shared database access, customer data, destructive cleanup, SQL Server security/configuration changes, deployment, merge, production migration or release.\n\nFuture Slice 3 and Slice 4 commits on this branch are covered only where they remain within the approved `PH3_SQL_Remaining_Phase_Architecture.md`. A material change to architecture, production scope, customer-data use, SQL instance, security boundaries or exclusions requires renewed approval.\n\nAshish\nAuthorised Test Authority\n",
+                                  "state":  "APPROVED",
+                                  "html_url":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/8#pullrequestreview-5221828015",
+                                  "pull_request_url":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/pulls/8",
+                                  "author_association":  "COLLABORATOR",
+                                  "_links":  {
+                                                 "html":  {
+                                                              "href":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/8#pullrequestreview-5221828015"
+                                                          },
+                                                 "pull_request":  {
+                                                                      "href":  "https://api.github.com/repos/onkarpathre/lgr-transformation-migration/pulls/8"
+                                                                  }
+                                             },
+                                  "submitted_at":  "2026-09-16T11:05:31Z",
+                                  "commit_id":  "32310275b9486be3a93eb3b826021958c10b1d50"
+                              }
+}

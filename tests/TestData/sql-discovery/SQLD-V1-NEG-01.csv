@@ -1,0 +1,5 @@
+Server,Instance Name,Database Name,Size MB,Compatibility Level,Recovery Model,Collation,Status
+DC-HOU-SQL01,SYNTH-MISSING,MissingParent,100,160,Full,,Online
+DC-HOU-SQL01,SYNTH-PARENT,SyntheticDuplicate,100,160,Full,,Online
+DC-HOU-SQL01,SYNTH-PARENT,syntheticduplicate,100,160,Full,,Online
+DC-HOU-SQL01,SYNTH-PARENT,InvalidValues,-1,201,Unsupported,,Online

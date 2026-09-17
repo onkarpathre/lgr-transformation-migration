@@ -1,0 +1,4 @@
+Server,Instance Name,Database Name,Size MB,Compatibility Level,Recovery Model,Collation,Status
+DC-HOU-SQL01,SYNTH-PARENT,SyntheticCreate,2048,160,Bulk Logged,,Online
+DC-HOU-SQL01,SYNTH-PARENT,SyntheticUpdate,4096,150,Full,,Recovery_Pending
+DC-HOU-SQL01,SYNTH-PARENT,SyntheticUnchanged,1024,160,Full,Latin1_General_100_CI_AS,Online

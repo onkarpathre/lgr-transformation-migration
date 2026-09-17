@@ -4,6 +4,7 @@ using LgrTransformationMigration.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace LgrTransformationMigration.Api.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260916121802_EnforceDiscoveryImportRowTenantBatchOwnership")]
+    partial class EnforceDiscoveryImportRowTenantBatchOwnership
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2991,128 +2994,6 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.ToTable("ServerDiscoverySnapshots");
                 });
 
-            modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlAssessment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset?>("AssessedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("AssessmentStatus")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("Blockers")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<Guid>("CustomerId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset?>("DeletedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("DeletedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Findings")
-                        .IsRequired()
-                        .HasMaxLength(8000)
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("MigrationApproach")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("Notes")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ReadinessStatus")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
-
-                    b.Property<Guid?>("SqlDatabaseId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("SqlInstanceId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("TargetPlatform")
-                        .HasMaxLength(80)
-                        .HasColumnType("nvarchar(80)");
-
-                    b.Property<string>("TargetSqlVersion")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("UpdatedBy")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.HasKey("Id");
-
-                    b.HasAlternateKey("CustomerId", "ProjectId", "Id")
-                        .HasName("AK_SqlAssessments_CustomerId_ProjectId_Id");
-
-                    b.HasIndex("CustomerId", "ProjectId", "SqlDatabaseId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_SqlAssessments_Owner_Active_Database")
-                        .HasFilter("[IsDeleted] = 0 AND [SqlDatabaseId] IS NOT NULL");
-
-                    b.HasIndex("CustomerId", "ProjectId", "SqlInstanceId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_SqlAssessments_Owner_Active_Instance")
-                        .HasFilter("[IsDeleted] = 0 AND [SqlInstanceId] IS NOT NULL");
-
-                    b.HasIndex("CustomerId", "ProjectId", "IsDeleted", "AssessmentStatus", "ReadinessStatus", "Id")
-                        .HasDatabaseName("IX_SqlAssessments_Owner_Filter");
-
-                    b.ToTable("SqlAssessments", t =>
-                        {
-                            t.HasCheckConstraint("CK_SqlAssessments_AssessmentStatus", "[AssessmentStatus] IN ('NotStarted', 'InProgress', 'Complete', 'Blocked')");
-
-                            t.HasCheckConstraint("CK_SqlAssessments_ExactlyOneTarget", "(CASE WHEN [SqlInstanceId] IS NULL THEN 0 ELSE 1 END + CASE WHEN [SqlDatabaseId] IS NULL THEN 0 ELSE 1 END) = 1");
-
-                            t.HasCheckConstraint("CK_SqlAssessments_MigrationApproach", "[MigrationApproach] IS NULL OR [MigrationApproach] IN ('Offline', 'Online', 'ToBeDetermined', 'NotApplicable')");
-
-                            t.HasCheckConstraint("CK_SqlAssessments_ReadinessStatus", "[ReadinessStatus] IN ('NotAssessed', 'NotReady', 'AtRisk', 'ReadyWithConditions', 'Ready', 'Blocked')");
-
-                            t.HasCheckConstraint("CK_SqlAssessments_TargetPlatform", "[TargetPlatform] IS NULL OR [TargetPlatform] IN ('AzureSqlDatabase', 'AzureSqlManagedInstance', 'SqlServerOnAzureVm', 'Retain', 'Retire', 'Investigate')");
-                        });
-                });
-
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlDatabase", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3900,34 +3781,6 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.Navigation("Server");
                 });
 
-            modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlAssessment", b =>
-                {
-                    b.HasOne("LgrTransformationMigration.Api.Domain.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("CustomerId", "ProjectId")
-                        .HasPrincipalKey("CustomerId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("LgrTransformationMigration.Api.Domain.SqlDatabase", "SqlDatabase")
-                        .WithMany("Assessments")
-                        .HasForeignKey("CustomerId", "ProjectId", "SqlDatabaseId")
-                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("LgrTransformationMigration.Api.Domain.SqlInstance", "SqlInstance")
-                        .WithMany("Assessments")
-                        .HasForeignKey("CustomerId", "ProjectId", "SqlInstanceId")
-                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Project");
-
-                    b.Navigation("SqlDatabase");
-
-                    b.Navigation("SqlInstance");
-                });
-
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlDatabase", b =>
                 {
                     b.HasOne("LgrTransformationMigration.Api.Domain.Project", "Project")
@@ -4097,15 +3950,11 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
 
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlDatabase", b =>
                 {
-                    b.Navigation("Assessments");
-
                     b.Navigation("DiscoverySnapshots");
                 });
 
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlInstance", b =>
                 {
-                    b.Navigation("Assessments");
-
                     b.Navigation("Databases");
 
                     b.Navigation("DiscoverySnapshots");

@@ -68,12 +68,20 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy(SqlInventoryAuthorizationPolicies.Read, ProjectPolicy(SqlInventoryPermissions.Read))
     .AddPolicy(SqlInventoryAuthorizationPolicies.Create, ProjectPolicy(SqlInventoryPermissions.Create))
     .AddPolicy(SqlInventoryAuthorizationPolicies.Update, ProjectPolicy(SqlInventoryPermissions.Update))
-    .AddPolicy(SqlInventoryAuthorizationPolicies.Delete, ProjectPolicy(SqlInventoryPermissions.Delete));
+    .AddPolicy(SqlInventoryAuthorizationPolicies.Delete, ProjectPolicy(SqlInventoryPermissions.Delete))
+    .AddPolicy(SqlDiscoveryAuthorizationPolicies.Read, ProjectPolicy(SqlDiscoveryPermissions.Read))
+    .AddPolicy(SqlDiscoveryAuthorizationPolicies.Prepare, ProjectPolicy(SqlDiscoveryPermissions.Prepare))
+    .AddPolicy(SqlDiscoveryAuthorizationPolicies.Commit, ProjectPolicy(SqlDiscoveryPermissions.Commit))
+    .AddPolicy(SqlDiscoveryAuthorizationPolicies.Cancel, ProjectPolicy(SqlDiscoveryPermissions.Cancel))
+    .AddPolicy(SqlAssessmentAuthorizationPolicies.Read, ProjectPolicy(SqlAssessmentPermissions.Read))
+    .AddPolicy(SqlAssessmentAuthorizationPolicies.Manage, ProjectPolicy(SqlAssessmentPermissions.Manage))
+    .AddPolicy(SqlAssessmentAuthorizationPolicies.Plan, ProjectPolicy(SqlAssessmentPermissions.Plan));
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(
     builder.Configuration.GetConnectionString("LgrDatabase")
     ?? throw new InvalidOperationException("ConnectionStrings:LgrDatabase is required.")));
 builder.Services.AddScoped<ProgrammeService>();
 builder.Services.AddScoped<SqlInventoryService>();
+builder.Services.AddScoped<SqlAssessmentService>();
 builder.Services.AddScoped<IpAllocationService>();
 builder.Services.AddScoped<RunbookService>();
 builder.Services.Configure<DiscoveryImportOptions>(builder.Configuration.GetSection(DiscoveryImportOptions.SectionName));
@@ -87,6 +95,8 @@ builder.Services.AddSingleton<DiscoverySourceMapperResolver>();
 builder.Services.AddSingleton<DiscoveryRecordValidator>();
 builder.Services.AddSingleton<DiscoveryReconciler>();
 builder.Services.AddScoped<DiscoveryImportService>();
+builder.Services.AddSingleton<SqlDiscoveryCsvContract>();
+builder.Services.AddScoped<SqlDiscoveryImportService>();
 builder.Services.AddSingleton<ReadinessCalculator>();
 builder.Services.AddSingleton<IpTransitionPolicy>();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -94,6 +104,8 @@ builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.Configure<FeatureOptions>(builder.Configuration.GetSection(FeatureOptions.SectionName));
 builder.Services.AddScoped<SqlDiscoveryAssessmentFeatureFilter>();
+builder.Services.AddScoped<SqlDiscoveryImportFeatureFilter>();
+builder.Services.AddScoped<SqlAssessmentFeatureFilter>();
 builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
