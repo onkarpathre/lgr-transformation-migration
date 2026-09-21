@@ -65,6 +65,7 @@ static AuthorizationPolicy ProjectPolicy(string? permission = null)
 
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(ProjectPolicy())
+    .AddPolicy(ProjectAuthorizationPolicies.ActiveMembership, ProjectPolicy())
     .AddPolicy(SqlInventoryAuthorizationPolicies.Read, ProjectPolicy(SqlInventoryPermissions.Read))
     .AddPolicy(SqlInventoryAuthorizationPolicies.Create, ProjectPolicy(SqlInventoryPermissions.Create))
     .AddPolicy(SqlInventoryAuthorizationPolicies.Update, ProjectPolicy(SqlInventoryPermissions.Update))
@@ -106,6 +107,7 @@ builder.Services.Configure<FeatureOptions>(builder.Configuration.GetSection(Feat
 builder.Services.AddScoped<SqlDiscoveryAssessmentFeatureFilter>();
 builder.Services.AddScoped<SqlDiscoveryImportFeatureFilter>();
 builder.Services.AddScoped<SqlAssessmentFeatureFilter>();
+builder.Services.AddScoped<SqlBrowserJourneysFeatureFilter>();
 builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
 {
     options.InvalidModelStateResponseFactory = context =>

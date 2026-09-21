@@ -14,8 +14,11 @@ const navigation = [
   { section: "Inventory" },
   { label: "Applications", href: "/inventory/applications", icon: "AP" },
   { label: "Servers", href: "/inventory/servers", icon: "SV" },
+  { label: "SQL instances", href: "/inventory/sql-instances", icon: "SI", permission: "sql.inventory.read" },
+  { label: "SQL databases", href: "/inventory/sql-databases", icon: "SD", permission: "sql.inventory.read" },
   { section: "Assessment" },
   { label: "Migration Decisions", href: "/assessment/migration-decisions", icon: "MD" },
+  { label: "SQL assessments", href: "/assessment/sql", icon: "SA", permission: "sql.assessment.read" },
   { section: "Azure Design" },
   { label: "Target Builds", href: "/azure/target-builds", icon: "AZ" },
   { label: "IP Management", href: "/azure/ip-management", icon: "IP" },
@@ -29,7 +32,7 @@ const navigation = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
-  const { customerId, projectId, customers, projects, setCustomerId, setProjectId } = useApi();
+  const { customerId, projectId, customers, projects, setCustomerId, setProjectId, hasPermission } = useApi();
   const [open, setOpen] = useState(false);
   return (
     <div className="shell">
@@ -38,7 +41,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav aria-label="Primary navigation">
           {navigation.map((item, index) => "section" in item
             ? <p className="nav-section" key={`${item.section}-${index}`}>{item.section}</p>
-            : <Link onClick={() => setOpen(false)} className={path === item.href ? "nav-link active" : "nav-link"} href={item.href} key={item.href}><span>{item.icon}</span>{item.label}</Link>)}
+            : ("permission" in item && !hasPermission(item.permission)) ? null
+            : <Link onClick={() => setOpen(false)} aria-current={path === item.href || path.startsWith(`${item.href}/`) ? "page" : undefined} className={path === item.href || path.startsWith(`${item.href}/`) ? "nav-link active" : "nav-link"} href={item.href} key={item.href}><span aria-hidden="true">{item.icon}</span>{item.label}</Link>)}
         </nav>
         <div className="sidebar-footer"><span className="status-dot" />Development context</div>
       </aside>

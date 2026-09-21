@@ -32,6 +32,11 @@ public static class SqlInventoryAuthorizationPolicies
     public const string Delete = "SqlInventoryDelete";
 }
 
+public static class ProjectAuthorizationPolicies
+{
+    public const string ActiveMembership = "ActiveProjectMembership";
+}
+
 public static class SqlDiscoveryAuthorizationPolicies
 {
     public const string Read = "SqlDiscoveryRead";

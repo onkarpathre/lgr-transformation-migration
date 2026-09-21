@@ -1,0 +1,31 @@
+"use client";
+
+import Link from "next/link";
+import { FormEvent, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useApi } from "@/components/ApiContext";
+import { Badge, Empty, Field, LoadState, Modal, PageHeader, Pagination, StatusMessage, useData } from "@/components/ui";
+import { Paged, SqlAssessment, SqlDatabase, SqlInstance } from "@/types/api";
+
+const assessmentStatuses = ["NotStarted", "InProgress", "Complete", "Blocked"];
+const readinessStatuses = ["NotAssessed", "NotReady", "AtRisk", "ReadyWithConditions", "Ready", "Blocked"];
+
+export default function SqlAssessmentsPage() {
+  const router = useRouter();
+  const { api, hasPermission } = useApi(); const canManage = hasPermission("sql.assessment.manage");
+  const [assessmentStatus, setAssessmentStatus] = useState(""); const [readinessStatus, setReadinessStatus] = useState(""); const [page, setPage] = useState(1); const [creating, setCreating] = useState(false); const [targetType, setTargetType] = useState<"Instance" | "Database">("Instance"); const [targetId, setTargetId] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false); const errorSummary = useRef<HTMLDivElement>(null);
+  const state = useData<Paged<SqlAssessment>>(`/api/v1/sql-assessments?page=${page}&pageSize=50&assessmentStatus=${encodeURIComponent(assessmentStatus)}&readinessStatus=${encodeURIComponent(readinessStatus)}`); const instances = useData<Paged<SqlInstance>>("/api/v1/sql-instances?pageSize=200"); const databases = useData<Paged<SqlDatabase>>("/api/v1/sql-databases?pageSize=200");
+  const items = state.data?.items ?? [];
+  const create = async (event: FormEvent) => {
+    event.preventDefault(); setError(""); if (!targetId) { setError("Select an instance or database to assess."); requestAnimationFrame(() => errorSummary.current?.focus()); return; } setSaving(true);
+    try { const result = await api<SqlAssessment>("/api/v1/sql-assessments", { method: "POST", body: JSON.stringify({ sqlInstanceId: targetType === "Instance" ? targetId : null, sqlDatabaseId: targetType === "Database" ? targetId : null, assessmentStatus: "NotStarted", readinessStatus: "NotAssessed", targetPlatform: null, targetSqlVersion: null, migrationApproach: null, blockers: "", findings: "", notes: "", assessedAt: null }) }); router.push(`/assessment/sql/${result.id}`); }
+    catch (exception) { setError(exception instanceof Error ? exception.message : "Unable to create the assessment."); requestAnimationFrame(() => errorSummary.current?.focus()); }
+    finally { setSaving(false); }
+  };
+  const targets = targetType === "Instance" ? (instances.data?.items ?? []).map(item => ({ id: item.id, name: `${item.server.name} / ${item.instanceName}` })) : (databases.data?.items ?? []).map(item => ({ id: item.id, name: `${item.sqlInstance.name} / ${item.name}` }));
+  return <><PageHeader eyebrow="Assessment / SQL" title="SQL assessments" description="Human-owned evidence, readiness and planning values. Nothing here executes a migration." action={canManage ? <button className="button primary" onClick={() => setCreating(true)}>Create assessment</button> : undefined} />
+    <div className="toolbar"><label className="compact-field">Assessment status<select value={assessmentStatus} onChange={event => { setAssessmentStatus(event.target.value); setPage(1); }}><option value="">All</option>{assessmentStatuses.map(value => <option key={value}>{value}</option>)}</select></label><label className="compact-field">Readiness<select value={readinessStatus} onChange={event => { setReadinessStatus(event.target.value); setPage(1); }}><option value="">All</option>{readinessStatuses.map(value => <option key={value}>{value}</option>)}</select></label><span>{state.data?.totalCount ?? 0} assessments</span></div>
+    <LoadState loading={state.loading} error={state.error} onRetry={state.reload}>{items.length ? <><div className="table-wrap"><table><caption>Active human SQL assessments</caption><thead><tr><th>Target</th><th>Type</th><th>Assessment</th><th>Readiness</th><th>Target platform</th><th>Approach</th><th>Updated</th><th /></tr></thead><tbody>{items.map(item => <tr key={item.id}><td><strong>{item.target.name}</strong></td><td>{item.targetType === "SqlInstance" ? "Instance" : "Database"}</td><td><Badge value={item.assessmentStatus} /></td><td><Badge value={item.readinessStatus} /></td><td>{item.targetPlatform ?? "—"}</td><td>{item.migrationApproach ?? "—"}</td><td>{new Date(item.updatedAt).toLocaleString("en-GB")}</td><td><Link className="text-button" href={`/assessment/sql/${item.id}`}>Review assessment</Link></td></tr>)}</tbody></table></div><Pagination page={state.data?.page ?? page} pageSize={state.data?.pageSize ?? 50} totalCount={state.data?.totalCount ?? 0} onPage={setPage} /></> : <Empty message="No active SQL assessments match this view." action={canManage ? <button className="button secondary" onClick={() => setCreating(true)}>Create the first assessment</button> : undefined} />}</LoadState>
+    {creating && <Modal title="Create SQL assessment" onClose={() => setCreating(false)}><form onSubmit={create} noValidate><div ref={errorSummary} tabIndex={-1}><StatusMessage message={error} error /></div><div className="form-grid"><Field label="Target type"><select value={targetType} onChange={event => { setTargetType(event.target.value as "Instance" | "Database"); setTargetId(""); }}><option>Instance</option><option>Database</option></select></Field><Field label={targetType}><select required aria-invalid={Boolean(error && !targetId)} value={targetId} onChange={event => setTargetId(event.target.value)}><option value="">Select a target</option>{targets.map(target => <option value={target.id} key={target.id}>{target.name}</option>)}</select></Field></div><p className="import-notice">The assessment starts as Not Started / Not Assessed. Evidence and planning are recorded on the next page by authorised human roles.</p><div className="form-actions"><button type="button" className="button secondary" onClick={() => setCreating(false)}>Cancel</button><button className="button primary" disabled={saving}>{saving ? "Creating…" : "Create assessment"}</button></div></form></Modal>}
+  </>;
+}

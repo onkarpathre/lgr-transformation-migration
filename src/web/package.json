@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:component": "vitest run"
   },
   "dependencies": {
     "next": "16.3.4",
@@ -14,11 +15,16 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "https://registry.npmjs.org/@testing-library/jest-dom/-/jest-dom-6.9.1.tgz",
+    "@testing-library/react": "https://registry.npmjs.org/@testing-library/react/-/react-16.3.2.tgz",
     "@types/node": "24.13.3",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
+    "axe-core": "https://registry.npmjs.org/axe-core/-/axe-core-4.12.1.tgz",
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.4",
-    "typescript": "5.9.3"
+    "jsdom": "https://registry.npmjs.org/jsdom/-/jsdom-27.4.0.tgz",
+    "typescript": "5.9.3",
+    "vitest": "https://registry.npmjs.org/vitest/-/vitest-4.1.10.tgz"
   }
 }
