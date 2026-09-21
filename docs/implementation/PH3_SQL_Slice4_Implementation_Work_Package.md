@@ -27,7 +27,8 @@ traceability:
 - **Branch:** `feature/ph3-sql-remaining-implementation`.
 - **Adopted baseline:** `93aada7b4b8fffcdb7bfefb2223d4974b6a9de4c`.
 - **Approved architecture:** `PH3-SQL-ARCH-REMAINING-001` at `7fab16fa653fbcbb47a50d2aaa5d25f7c1a47d3a`.
-- **State:** `READY_FOR_CONSOLIDATED_TEST` as an uncommitted authorised working tree. A candidate commit remains a human/Git workflow action and is required before formal same-commit independent evidence.
+- **Implementation commit:** `a1df3449d3f06bdff513437e88ca5209a30a426b`.
+- **State:** `READY_FOR_CONSOLIDATED_TEST` at the clean implementation commit above, ready for formal same-commit independent evidence.
 
 The interrupted 17 modified and 15 untracked files present at hand-off were inspected individually before further edits. They contained only Slice 4 application code, generated dependency metadata and developer-owned automated tests. No unrelated feature, Tester evidence pack, Tester-only assurance harness, deployment change, customer data or production configuration was present. No file was reset, restored, cleaned or discarded.
 
@@ -155,7 +156,7 @@ handoff:
   state: "READY_FOR_CONSOLIDATED_TEST"
   work_item: "PH3-SQL-001-REMAINING-SLICE-4"
   branch: "feature/ph3-sql-remaining-implementation"
-  commit: null
+  commit: "a1df3449d3f06bdff513437e88ca5209a30a426b"
   traceability:
     product_version: "0.1"
     phase: "Phase 1 - MVP"
@@ -172,15 +173,18 @@ handoff:
     - "docs/architecture/PH3_SQL_Remaining_Phase_Architecture.md"
     - "docs/approvals/PH3_SQL_PR8_Test_Authority_Approval.json"
   evidence:
-    - "274 .NET tests and 15 frontend tests passed."
-    - "Release build, EF pending-model validation, lint and 19-route production build passed."
-    - "No SQL Server, production environment, customer data, commit, push, merge or deployment was used."
+    - "Release build passed."
+    - "Focused tests passed: 89 unit and 57 integration."
+    - "Full suite passed: 146 unit plus 128 integration equals 274 passed."
+    - "Frontend tests passed: 15 tests."
+    - "EF pending-model validation, frontend lint, frontend build with 19 routes and git diff check passed."
+    - "No SQL Server, production environment or customer data was used; no additional commit, push, merge or deployment was performed for this documentation update."
   decisions:
     - "Browser permissions are a server-derived presentation contract; API policies remain authoritative."
     - "All mutations remain explicit, ETag-aware and non-retrying."
     - "Planning remains human-authored, advisory record data with no execution mapping."
   assumptions:
-    - "The authorised working tree will be committed through the controlled Git workflow before formal exact-commit testing."
+    - "Formal independent testing will use the exact implementation commit recorded in this package."
   risks:
     - "R-02 remains release-blocking until exact-commit independent browser/API isolation evidence passes."
     - "R-09/R-11 remain open pending supported-browser, SQL Server and online dependency-advisory evidence."
@@ -188,5 +192,5 @@ handoff:
   blockers: []
   approvals:
     - "Named Test Authority approval: ashish50thbirthday-ship-it, 16 September 2026, PR #8 review 5221828015."
-  requested_action: "Create the controlled candidate commit, then independently execute the approved consolidated Slices 2-4 test matrix against that exact commit. Do not merge, deploy, access production/customer data or accept residual risk autonomously."
+  requested_action: "Independently execute the approved consolidated Slices 2-4 test matrix against the exact implementation commit. Do not merge, deploy, access production/customer data or accept residual risk autonomously."
 ```
