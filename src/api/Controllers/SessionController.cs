@@ -15,7 +15,8 @@ public sealed class SessionController(IProjectAuthorizationContextAccessor autho
     public ActionResult<BrowserCapabilitiesDto> Capabilities()
     {
         var permissions = authorization.AuthorizationContext?.Permissions
-            .Where(permission => permission.StartsWith("sql.", StringComparison.Ordinal))
+            .Where(permission => permission.StartsWith("sql.", StringComparison.Ordinal)
+                                 || permission.StartsWith("dependency.", StringComparison.Ordinal))
             .Order(StringComparer.Ordinal)
             .ToArray() ?? [];
         return Ok(new BrowserCapabilitiesDto(permissions));

@@ -19,6 +19,7 @@ describe("permission-aware application navigation", () => {
     render(<AppShell><p>Content</p></AppShell>);
     expect(screen.queryByRole("link", { name: "SQL instances" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "SQL assessments" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Dependencies" })).not.toBeInTheDocument();
   });
 
   it("exposes only granted SQL journeys and marks nested routes current", () => {
@@ -26,5 +27,11 @@ describe("permission-aware application navigation", () => {
     expect(screen.getByRole("link", { name: "SQL instances" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "SQL databases" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "SQL assessments" })).not.toBeInTheDocument();
+  });
+
+  it("exposes the dependency register only when the server grants dependency read", () => {
+    context.permissions = new Set(["dependency.read"]); render(<AppShell><p>Content</p></AppShell>);
+    expect(screen.getByRole("link", { name: "Dependencies" })).toHaveAttribute("href", "/planning/dependencies");
+    expect(screen.queryByRole("link", { name: "SQL instances" })).not.toBeInTheDocument();
   });
 });
