@@ -1,0 +1,85 @@
+﻿{
+    "pullRequest":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9",
+    "pullRequestNumber":  9,
+    "approvedPackageCommit":  "985099c2ec05e3307bdc770af4a97e6e28df8c6e",
+    "capturedAtUtc":  "2026-09-22T14:34:42.3663571Z",
+    "requiredChecks":  [
+                           {
+                               "RequiredDecision":  "ProductPRB",
+                               "Found":  true,
+                               "Accounts":  "opathre",
+                               "URLs":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5278929152"
+                           },
+                           {
+                               "RequiredDecision":  "IndependentTDA",
+                               "Found":  true,
+                               "Accounts":  "PTArchitect",
+                               "URLs":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5278940392"
+                           },
+                           {
+                               "RequiredDecision":  "InformationSecurity",
+                               "Found":  true,
+                               "Accounts":  "ashish50thbirthday-ship-it",
+                               "URLs":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5279192933"
+                           },
+                           {
+                               "RequiredDecision":  "DependencySME",
+                               "Found":  true,
+                               "Accounts":  "nextgenexamprep-crypto",
+                               "URLs":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9#issuecomment-5778418471"
+                           },
+                           {
+                               "RequiredDecision":  "TestServices",
+                               "Found":  true,
+                               "Accounts":  "nextgenexamprep-crypto",
+                               "URLs":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5279204369"
+                           }
+                       ],
+    "evidence":  [
+                     {
+                         "EvidenceType":  "review",
+                         "Account":  "opathre",
+                         "Decision":  "APPROVED",
+                         "Date":  "2026-09-22T13:45:22Z",
+                         "Commit":  "985099c2ec05e3307bdc770af4a97e6e28df8c6e",
+                         "URL":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5278929152",
+                         "Body":  "Approved as Product/PRB authority on 22 September 2026 at exact commit `985099c2ec05e3307bdc770af4a97e6e28df8c6e`.\r\n\r\nI approve the Phase 4 Dependency Register and Planning Validation business outcome, the three ordered delivery slices, acceptance criteria, priorities, exclusions and documented MVP alignment in `PH4_Product_Plan.md` and `PH4_Dependency_Register_Architecture.md`.\r\n\r\nThis approval permits architecture-controlled implementation and synthetic-data testing within the restricted local/non-production scope only. It does not authorise production deployment, customer-data use, production identity, automated migration or cutover, full MVP release, or Phase 4 production exit.\r\n\r\nOnkar Pathre\r\nProduct/PRB Authority\r\n"
+                     },
+                     {
+                         "EvidenceType":  "review",
+                         "Account":  "PTArchitect",
+                         "Decision":  "APPROVED",
+                         "Date":  "2026-09-22T13:46:21Z",
+                         "Commit":  "985099c2ec05e3307bdc770af4a97e6e28df8c6e",
+                         "URL":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5278940392",
+                         "Body":  "Approved as Independent TDA reviewer on 22 September 2026 at exact commit `985099c2ec05e3307bdc770af4a97e6e28df8c6e`.\r\n\r\nI approve the consolidated Phase 4 architecture for dependency capture, controlled semantics, planning validation, persistence, APIs, accessible journeys, tenant/project isolation, ADR-008 authorisation, concurrency, audit, migration, rollback, performance and independent testing.\r\n\r\nQ-01 disposition is approved for restricted Phase 4 development: retain .NET 10/EF Core 10, Next.js 16/React 19 and Node.js 24. This is continuity of the existing approved technology decision and does not authorise production deployment.\r\n\r\nMaterial changes to the technology stack, security boundary, persistence model, dependency semantics or production scope require renewed TDA review.\r\n\r\nJP\r\nIndependent TDA Reviewer\r\n"
+                     },
+                     {
+                         "EvidenceType":  "review",
+                         "Account":  "ashish50thbirthday-ship-it",
+                         "Decision":  "APPROVED",
+                         "Date":  "2026-09-22T14:04:59Z",
+                         "Commit":  "985099c2ec05e3307bdc770af4a97e6e28df8c6e",
+                         "URL":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5279192933",
+                         "Body":  "Approved as Information Security reviewer on 22 September 2026 at exact commit 985099c2ec05e3307bdc770af4a97e6e28df8c6e.\n\nI approve the documented ADR-008 permission extensions, deny-by-default controls, tenant/project isolation, dependency visibility rules, validation boundaries, safe error handling, audit requirements and synthetic-data restrictions for Phase 4.\n\nThis approval is limited to restricted local/non-production development and testing. It does not approve production identity configuration, external access, customer data, production tenancy, deployment or release.\n\nInformation Security"
+                     },
+                     {
+                         "EvidenceType":  "review",
+                         "Account":  "nextgenexamprep-crypto",
+                         "Decision":  "APPROVED",
+                         "Date":  "2026-09-22T14:05:56Z",
+                         "Commit":  "985099c2ec05e3307bdc770af4a97e6e28df8c6e",
+                         "URL":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5279204369",
+                         "Body":  "\n\nApproved as Test Services authority on 22 September 2026 at exact commit `985099c2ec05e3307bdc770af4a97e6e28df8c6e`.\n\nI approve independent testing of all three Phase 4 slices within the approved architecture, including unit, integration, API, security, tenant-isolation, concurrency, audit, migration, rollback, performance and accessible browser-journey testing.\n\nTester-authored regression tests, synthetic fixtures, assurance harnesses and repeated fresh isolated local SQL Server runs are authorised where evidence is retained and databases are never automatically deleted.\n\nThis approval does not authorise production or shared database access, customer data, destructive cleanup, deployment, merge or release.\n\nTest Services Authority\n"
+                     },
+                     {
+                         "EvidenceType":  "comment",
+                         "Account":  "nextgenexamprep-crypto",
+                         "Decision":  "RECORDED",
+                         "Date":  "2026-09-22T14:34:26Z",
+                         "Commit":  "985099c2ec05e3307bdc770af4a97e6e28df8c6e",
+                         "URL":  "https://github.com/onkarpathre/lgr-transformation-migration/pull/9#issuecomment-5778418471",
+                         "Body":  "Approved as Dependency-Semantics SME on 22 September 2026 at exact commit `985099c2ec05e3307bdc770af4a97e6e28df8c6e`.\r\n\r\nI approve the dependency ownership, direction, type and status semantics; controlled values; validation and duplicate handling; planning-impact rules; synthetic fixtures; API/UI contracts; and performance constraints documented in `PH4_Product_Plan.md` and `PH4_Dependency_Register_Architecture.md`.\r\n\r\nThis approval permits restricted local/non-production implementation and testing using synthetic data only. Material changes to dependency semantics, controlled values, validation rules or production scope require renewed SME review.\r\n\r\nDependency-Semantics SME"
+                     }
+                 ]
+}
