@@ -1,6 +1,6 @@
 # PH4 Product Plan - Dependency Register and Planning Validation
 
-Status: **DRAFT PRODUCT WORK PACKAGE - READY_FOR_ARCHITECTURE**
+Status: **APPROVED PRODUCT BASELINE - PHASE GATE SATISFIED FOR RESTRICTED DEVELOPMENT**
 
 Assessment date: 22 September 2026
 
@@ -26,7 +26,8 @@ traceability:
   dependencies: ["D-01", "D-04", "D-08", "D-11", "D-13"]
   issues: ["I-04", "I-06", "I-07", "I-08"]
   open_questions: ["Q-01", "Q-02", "Q-09"]
-  approvals: []
+  approvals:
+    - "Product/PRB, Independent TDA/Q-01, Information Security, Dependency-Semantics SME and Test Services decisions bound to 985099c2ec05e3307bdc770af4a97e6e28df8c6e; see section 13.1"
 ```
 
 ## 1. Product decision
@@ -41,7 +42,7 @@ The phase does not repeat:
 - Phase 2 server CSV staging, preview, reconciliation, explicit commit, snapshots and history;
 - Phase 3 SQL instance/database inventory, SQL CSV discovery, SQL assessment/planning records, session capabilities and SQL-specific RBAC.
 
-No schedule, budget, release baseline or approval is asserted. Q-02 remains open. The Product Owner recommends this phase for architecture; implementation must not start until the single phase-level approval gate in section 13 is satisfied.
+No schedule, cost or release baseline is asserted. The Product/PRB authority has approved investment in this bounded increment and the single phase-level approval gate in section 13 is satisfied at architecture-package commit `985099c2ec05e3307bdc770af4a97e6e28df8c6e`. This is sufficient to start the restricted local/non-production development described by the package; it is not a wider budget, timeline, production or release approval.
 
 ## 2. Business outcome
 
@@ -298,6 +299,20 @@ Approval authorises only the bounded local/non-production implementation and ind
 
 The ordered slices still require normal Developer hand-off, independent Tester evidence and Quality review. A material scope, security, tenancy, role, contract or acceptance change invalidates the phase approval and returns to the owning role. Non-material implementation sequencing does not require a new Product Owner approval.
 
+### 13.1 Verified commit-bound approval record
+
+Architect verification on 22 September 2026 confirmed that `docs/approvals/PH4_Architecture_Approval_Evidence.json` binds every required decision to the exact consolidated Product Plan and Architecture Work Package commit `985099c2ec05e3307bdc770af4a97e6e28df8c6e`. The evidence file is preserved unchanged.
+
+| Reviewer account | Role | Date (UTC) | Decision | Approved scope | Conditions and limits | Permalink |
+|---|---|---|---|---|---|---|
+| `opathre` | Product/PRB Authority | 2026-09-22 13:45:22 | `APPROVED` | PH4 business outcome, three ordered slices, acceptance criteria, priorities, exclusions and MVP alignment | Restricted local/non-production implementation and synthetic-data testing only; excludes production, customer data, production identity, automated migration/cutover, full MVP release and Phase 4 production exit | [Product/PRB review](https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5278929152) |
+| `PTArchitect` | Independent TDA Reviewer | 2026-09-22 13:46:21 | `APPROVED` | Consolidated PH4 architecture and Q-01 disposition: retain .NET 10/EF Core 10, Next.js 16/React 19 and Node.js 24 for restricted PH4 development | No production deployment; material stack, security-boundary, persistence, dependency-semantics or production-scope change requires renewed TDA review; wider MVP/production Q-01 remains open | [Independent TDA review](https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5278940392) |
+| `ashish50thbirthday-ship-it` | Information Security Reviewer | 2026-09-22 14:04:59 | `APPROVED` | ADR-008 permission extensions, deny-by-default controls, tenant/project isolation, dependency visibility, validation, safe errors, audit and synthetic-data restrictions | Restricted local/non-production development and test only; excludes production identity, external access, customer data, production tenancy, deployment and release | [Information Security review](https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5279192933) |
+| `nextgenexamprep-crypto` | Dependency-Semantics SME | 2026-09-22 14:34:26 | `APPROVED` (evidence object recorded as `RECORDED`) | Dependency ownership, direction, types, statuses, controlled values, validation/duplicates, planning-impact rules, fixtures, API/UI contracts and performance constraints | Restricted local/non-production implementation and synthetic-data testing only; material semantics, controlled-value, validation-rule or production-scope change requires renewed SME review | [Dependency-Semantics SME decision](https://github.com/onkarpathre/lgr-transformation-migration/pull/9#issuecomment-5778418471) |
+| `nextgenexamprep-crypto` | Test Services Authority | 2026-09-22 14:05:56 | `APPROVED` | Independent testing of all three slices, including unit, integration, API, security, isolation, concurrency, audit, migration, rollback, performance and accessible browser journeys | Synthetic fixtures and isolated local SQL Server only; databases are never automatically deleted; excludes production/shared databases, customer data, destructive cleanup, deployment, merge and release | [Test Services review](https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5279204369) |
+
+The five decisions contain no condition that changes the approved architecture contract. Q-01 is closed only for the bounded restricted PH4 scope; Q-09 and all wider production, customer-identity, service, privacy, commercial and release gates remain open where applicable.
+
 ## 14. Explicit exclusions
 
 - broader application/infrastructure assessment fields;
@@ -340,7 +355,7 @@ This is an outcome-weighted estimate against the 14 MVP completion outcomes alre
 
 The estimate recognises substantial Phase 1-3 foundations and evidence while avoiding the false conclusion that route count or passing local tests equal MVP completion. Production-readiness is materially lower because no production Azure environment, production identity/tenancy decision, DPIA, support model, live pilot or release evidence exists.
 
-## 16. Product Owner hand-off
+## 16. Original Product Owner hand-off (pre-approval record)
 
 ```yaml
 handoff:
@@ -390,3 +405,7 @@ handoff:
   approvals: []
   requested_action: "Architect to produce the PH4-DEP-001 Architecture Work Package, define the dependency trust/data/API/UI boundaries and test conditions, assess Q-01 and tenancy/RBAC impacts, and assemble the single phase-level approval pack. Do not begin implementation until the named human decisions are recorded."
 ```
+
+## 17. Architect gate verification
+
+The Architect has verified the exact-commit evidence above and issued the authoritative `READY_FOR_DEVELOPMENT` hand-off in `docs/architecture/PH4_Dependency_Register_Architecture.md`. That hand-off covers the three ordered slices in section 7 as one work package and does not authorise merge, deployment, production/customer data, destructive SQL, migration execution, Azure provisioning, risk acceptance or release.

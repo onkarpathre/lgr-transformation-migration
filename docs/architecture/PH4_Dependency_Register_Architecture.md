@@ -1,6 +1,6 @@
 # PH4 Dependency Register and Planning Validation - Architecture Work Package
 
-Status: **PROPOSED - READY_FOR_ARCHITECTURE_APPROVAL**
+Status: **APPROVED - READY_FOR_DEVELOPMENT (RESTRICTED LOCAL/NON-PRODUCTION)**
 
 Architecture date: 22 September 2026
 
@@ -10,7 +10,7 @@ Branch: `feature/ph4-planning`
 
 Architecture baseline: `d714c10dbe682f23f66ddb5a1ad8063a2b3c16c6`
 
-Product baseline: `docs/product/PH4_Product_Plan.md` at the architecture baseline. It is treated as the supplied approved planning baseline for this design; its empty approval list is preserved and no Product Owner, PRB or other human approval is inferred.
+Product baseline: `docs/product/PH4_Product_Plan.md` at the architecture-package commit. The five required human decisions are recorded in section 20.1 and are explicitly bound to commit `985099c2ec05e3307bdc770af4a97e6e28df8c6e`.
 
 ```yaml
 traceability:
@@ -24,7 +24,8 @@ traceability:
   dependencies: ["D-01", "D-04", "D-08", "D-11", "D-13"]
   issues: ["I-04", "I-06", "I-07", "I-08"]
   open_questions: ["Q-01", "Q-02", "Q-09"]
-  approvals: []
+  approvals:
+    - "Product/PRB, Independent TDA/Q-01, Information Security, Dependency-Semantics SME and Test Services decisions bound to 985099c2ec05e3307bdc770af4a97e6e28df8c6e; see section 20.1"
 ```
 
 ## 1. Architecture outcome and approval state
@@ -37,7 +38,7 @@ This package defines all three focused Phase 4 slices as one bounded dependency 
 
 It does not repeat or replace the completed customer/project foundation, application/server inventory, server discovery, SQL inventory/discovery/assessment, internal authentication, ADR-008 membership/RBAC foundation or Phase 3 browser work. It extends those contracts only where this phase requires a dependency permission family, inventory endpoint references, navigation and planning-risk projections.
 
-No code, test, database, migration, deployment, commit or approval is created by this document. The exit state is `READY_FOR_ARCHITECTURE_APPROVAL`, not `READY_FOR_DEVELOPMENT`. Development remains blocked until the single phase-level gate in section 20 is recorded against the exact planning/architecture commit.
+No code, test, database, migration, deployment or commit is created by this document update. The single phase-level gate in section 20 has been satisfied against exact architecture-package commit `985099c2ec05e3307bdc770af4a97e6e28df8c6e`; the resulting exit state is `READY_FOR_DEVELOPMENT` for the three bounded slices only.
 
 ## 2. Baseline findings and boundaries
 
@@ -633,20 +634,34 @@ No separate DPO, Identity Platform, Service Transition, Commercial, Azure platfo
 
 Approval authorises bounded development/testing only. It is not merge, deployment, customer-data, production-tenancy, risk acceptance, MVP exit or release approval. Any material change to scope, vocabulary/matrix, policy severity, tenant boundary, permission mapping, API/persistence contract, performance envelope or acceptance criteria invalidates the approval and returns to the owning role.
 
+### 20.1 Verified commit-bound decisions
+
+Architect verification on 22 September 2026 confirmed that `docs/approvals/PH4_Architecture_Approval_Evidence.json` binds every required decision to exact consolidated architecture-package commit `985099c2ec05e3307bdc770af4a97e6e28df8c6e`. The evidence file is preserved unchanged.
+
+| Reviewer account | Role | Date (UTC) | Decision | Approved scope | Conditions and limits | Permalink |
+|---|---|---|---|---|---|---|
+| `opathre` | Product/PRB Authority | 2026-09-22 13:45:22 | `APPROVED` | PH4 business outcome, three ordered slices, acceptance criteria, priorities, exclusions and MVP alignment | Restricted local/non-production implementation and synthetic-data testing only; excludes production, customer data, production identity, automated migration/cutover, full MVP release and Phase 4 production exit | [Product/PRB review](https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5278929152) |
+| `PTArchitect` | Independent TDA Reviewer | 2026-09-22 13:46:21 | `APPROVED` | Consolidated PH4 architecture and Q-01 disposition: retain .NET 10/EF Core 10, Next.js 16/React 19 and Node.js 24 for restricted PH4 development | No production deployment; material stack, security-boundary, persistence, dependency-semantics or production-scope change requires renewed TDA review; wider MVP/production Q-01 remains open | [Independent TDA review](https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5278940392) |
+| `ashish50thbirthday-ship-it` | Information Security Reviewer | 2026-09-22 14:04:59 | `APPROVED` | ADR-008 permission extensions, deny-by-default controls, tenant/project isolation, dependency visibility, validation, safe errors, audit and synthetic-data restrictions | Restricted local/non-production development and test only; excludes production identity, external access, customer data, production tenancy, deployment and release | [Information Security review](https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5279192933) |
+| `nextgenexamprep-crypto` | Dependency-Semantics SME | 2026-09-22 14:34:26 | `APPROVED` (evidence object recorded as `RECORDED`) | Dependency ownership, direction, types, statuses, controlled values, validation/duplicates, planning-impact rules, fixtures, API/UI contracts and performance constraints | Restricted local/non-production implementation and synthetic-data testing only; material semantics, controlled-value, validation-rule or production-scope change requires renewed SME review | [Dependency-Semantics SME decision](https://github.com/onkarpathre/lgr-transformation-migration/pull/9#issuecomment-5778418471) |
+| `nextgenexamprep-crypto` | Test Services Authority | 2026-09-22 14:05:56 | `APPROVED` | Independent testing of all three slices, including unit, integration, API, security, isolation, concurrency, audit, migration, rollback, performance and accessible browser journeys | Synthetic fixtures and isolated local SQL Server only; databases are never automatically deleted; excludes production/shared databases, customer data, destructive cleanup, deployment, merge and release | [Test Services review](https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5279204369) |
+
+The decisions contain no condition that changes the architecture contract. For this bounded hand-off, Q-01 and the Q-02 increment decision are satisfied. Q-01 remains open for wider MVP/production scope, and Q-09 remains open but is not a blocker because external customer identity is excluded.
+
 ## 21. Architecture audit summary
 
 Read-only inspection covered `AGENTS.md`, the PH4 Product Plan, the 14-outcome MVP definition, ADR-001/002/003/006/007/008, prior architecture packages, the final Phase 3 Quality record, current project manifests/locks, domain entities, EF model, identity/permission implementation, programme/wave/readiness services/contracts/controllers and representative Next.js inventory/wave/readiness routes. The requested branch/HEAD and clean worktree were verified before editing. The Product Plan's inspected baseline `70e0774...` was reconciled to `d714c10...`; the sole intervening commit adds that plan. No DOCX was extracted, no SQL/database was accessed, and no code/test/ADR/remote state was changed.
 
-## 22. Hand-off
+## 22. Commit-bound hand-off
 
 ```yaml
 handoff:
   from_agent: "architect"
-  to_agent: "human-architecture-approval-gate"
-  state: "READY_FOR_ARCHITECTURE_APPROVAL"
+  to_agent: "developer"
+  state: "READY_FOR_DEVELOPMENT"
   work_item: "PH4-DEP-001"
   branch: "feature/ph4-planning"
-  commit: null
+  commit: "985099c2ec05e3307bdc770af4a97e6e28df8c6e"
   baseline_commit: "d714c10dbe682f23f66ddb5a1ad8063a2b3c16c6"
   traceability:
     product_version: "0.1"
@@ -659,7 +674,12 @@ handoff:
     dependencies: ["D-01", "D-04", "D-08", "D-11", "D-13"]
     issues: ["I-04", "I-06", "I-07", "I-08"]
     open_questions: ["Q-01", "Q-02", "Q-09"]
-    approvals: []
+    approvals:
+      - "Product/PRB Authority: opathre; APPROVED 2026-09-22T13:45:22Z; https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5278929152"
+      - "Independent TDA Reviewer: PTArchitect; APPROVED 2026-09-22T13:46:21Z, including restricted PH4 Q-01 disposition; https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5278940392"
+      - "Information Security Reviewer: ashish50thbirthday-ship-it; APPROVED 2026-09-22T14:04:59Z; https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5279192933"
+      - "Dependency-Semantics SME: nextgenexamprep-crypto; APPROVED in evidence text and RECORDED as evidence-object status 2026-09-22T14:34:26Z; https://github.com/onkarpathre/lgr-transformation-migration/pull/9#issuecomment-5778418471"
+      - "Test Services Authority: nextgenexamprep-crypto; APPROVED 2026-09-22T14:05:56Z; https://github.com/onkarpathre/lgr-transformation-migration/pull/9#pullrequestreview-5279204369"
   artefacts:
     - "docs/product/PH4_Product_Plan.md"
     - "docs/architecture/PH4_Dependency_Register_Architecture.md"
@@ -667,26 +687,26 @@ handoff:
     - "docs/architecture/ADR-007-phase3-tenancy-alignment.md"
     - "docs/architecture/ADR-008-internal-authentication-project-rbac.md"
   evidence:
-    - "Clean feature/ph4-planning baseline verified at d714c10dbe682f23f66ddb5a1ad8063a2b3c16c6 before documentation change."
+    - "Architecture package and current HEAD verified at 985099c2ec05e3307bdc770af4a97e6e28df8c6e before this uncommitted documentation-only gate record."
+    - "docs/approvals/PH4_Architecture_Approval_Evidence.json records all five required decisions against that exact commit and is preserved unchanged."
     - "Current .NET 10/EF Core 10 and Next.js 16/React 19 implementation, permissions, persistence and wave/readiness contracts inspected read-only."
     - "All three focused slices have exact domain, API, browser, persistence, security, performance, migration, fixture and independent-test contracts."
   decisions:
     - "Use a directed source-requires-target dependency aggregate with canonical composite FKs and inert named targets."
     - "Use persisted versioned validation evidence and a data-driven policy; project readiness consumes a non-mutating projection."
-    - "Reuse ADR-006/007/008 patterns; no new ADR is justified, and Q-01 remains pending exact-commit TDA approval for PH4."
+    - "Reuse ADR-006/007/008 patterns; no new ADR is justified. Independent TDA approval closes Q-01 for restricted PH4 development only."
     - "Use one phase-level approval gate, not slice approvals."
+    - "Authorise ordered Slice 1 dependency capture, Slice 2 validation and Slice 3 planning impact for Developer implementation under this package."
   assumptions:
-    - "The supplied PH4 Product Plan is the planning baseline, but no human approval is inferred."
+    - "The PH4 Product Plan is the Product/PRB-approved planning baseline at the exact package commit."
     - "Only internal synthetic identities and synthetic/anonymised data are used."
   risks:
     - "R-02 remains release-blocking until independent isolation evidence exists."
     - "Synthetic graph validation does not replace later representative/pilot evidence."
     - "Live browser and connected advisory evidence must be produced rather than inherited from Phase 3 limitations."
   defects: []
-  blockers:
-    - "Development blocker: no exact-commit consolidated PH4 approval record exists."
-    - "Development blocker: Q-01 is not yet closed for PH4; independent TDA approval of the stated disposition is required."
-    - "Development blocker: Q-02 investment authority, dependency-semantics SME and Test Services decisions are not evidenced."
-  approvals: []
-  requested_action: "Obtain the single exact-commit approval record from the minimum named reviewer functions in section 20. After all decisions are evidenced without conditions that change this contract, Architect may issue READY_FOR_DEVELOPMENT. No implementation, merge, deployment, SQL/customer-data or production action follows from this package alone."
+  blockers: []
+  approvals:
+    - "Five required commit-bound decisions verified in section 20.1."
+  requested_action: "Developer to implement the three ordered PH4 slices against commit 985099c2ec05e3307bdc770af4a97e6e28df8c6e, within the restricted local/non-production synthetic-data scope and all architecture, security, testing and product-boundary conditions. Return any material scope, semantics, security, tenancy, permission, API, persistence, performance or acceptance change for renewed approval. Do not merge, deploy, use production/customer data, execute migration, provision Azure, enable AI or claim release readiness."
 ```
