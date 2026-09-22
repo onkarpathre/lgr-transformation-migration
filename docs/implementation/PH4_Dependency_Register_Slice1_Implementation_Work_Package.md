@@ -27,9 +27,10 @@ traceability:
 - **Branch:** `feature/ph4-dependency-register-implementation`.
 - **Exact adopted baseline:** `bb2e0f741d913fb1c5b7740171a14dcfe7e2e0fc`.
 - **Approved architecture evidence:** `docs/approvals/PH4_Architecture_Approval_Evidence.json`, five required decisions bound to `985099c2ec05e3307bdc770af4a97e6e28df8c6e`.
-- **Implementation commit:** `null`; the user expressly prohibited commit, push and merge. Formal Tester evidence must bind this working tree to a later human-created candidate commit before quality review.
+- **Repair baseline:** committed candidate `ae71b3a76801cf5982d9acd339486413249a653a` on `feature/ph4-dependency-register-implementation`.
+- **Implementation commit:** `null`; the user expressly prohibited commit, push and merge. The repaired working tree remains uncommitted and formal Tester evidence must bind it to a later human-created candidate commit before quality review.
 - **Scope:** restricted local/non-production development using synthetic data only.
-- **Developer state:** `READY_FOR_TEST` subject to the independent evidence boundaries below.
+- **Developer state:** `READY_FOR_RETEST` subject to the independent evidence boundaries below.
 
 Q-01 and Q-02 are closed only for the approved restricted Phase 4 scope. Q-09 remains open and production/external customer identity is not used. No other open gate affects this local synthetic implementation.
 
@@ -96,17 +97,34 @@ The Slice 2 validation route and all Slice 3 wave/readiness projections, panels 
 - Integration tests cover feature fail-closed behaviour, canonical/reference lifecycle, both directions, audit redaction, ETags, reference state, missing/self/duplicate/cross-scope rejection, pagination/filter validation, unknown query rejection, role enforcement, capability response, graph increments and new-project policy/state creation.
 - The versioned Slice 1 fixture manifest records positive, reference, negative, isolation, concurrency and RBAC scenarios and explicitly excludes later-slice cycle, validation, wave/readiness and timing outcomes.
 
+## Tester-return repair
+
+The three Slice 1 defects in the Tester evidence pack were reproduced against committed candidate `ae71b3a76801cf5982d9acd339486413249a653a` before implementation changes:
+
+- `PH4-S1-DEF-01`: the strengthened domain test accepted `https://example.test/dependency`, and the integration path returned `201 Created` rather than `400 validation_failed`.
+- `PH4-S1-DEF-02`: the disabled dependency route returned the approved non-enumerating `404 feature_disabled`, but the authenticated session response still contained the server-derived `dependency.*` permission family.
+- `PH4-S1-DEF-03`: the Tester-owned browser contract found no permission-aware dependency entry link on the approved application, server, SQL instance or SQL database surfaces.
+
+The bounded repair:
+
+- rejects case-insensitive `http://` and `https://` schemes in every dependency narrative processed by `DependencyText` before persistence; the existing exception handler retains the approved `400 validation_failed` contract and the strengthened API test proves no partial dependency write;
+- retains ADR-008 role-to-permission derivation and all route authorization policies, but omits every `dependency.*` permission from `/api/v1/session/capabilities` whenever `Features:DependencyRegister` is not enabled in the allowed Development/Testing environments;
+- adds `dependency.read`-guarded links from application and server inventory rows and SQL instance/database detail actions to the existing bounded both-direction asset dependency route. Because the capability response removes dependency permissions when the feature is off, the same guard hides these links for both permission denial and feature disablement; and
+- changes no persistence model, migration, permission matrix, route authorization, dependency semantics, later-slice validation/wave behaviour, package manifest or test artefact.
+
+Before repair, the six uncommitted Tester-owned artefacts were inventoried and SHA-256 hashed. They were used as acceptance coverage but were not modified, deleted, staged or renamed. Their exact hashes are included in the hand-off evidence below.
+
 ## Developer verification
 
 | Check | Result |
 |---|---|
-| Release solution build | PASS: 0 errors; 3 `NU1900` warnings because the NuGet advisory service was unreachable. |
-| Focused dependency/authorization unit tests | PASS: 80 passed, 0 failed/skipped. |
-| Focused dependency API integration tests | PASS: 16 passed, 0 failed/skipped. |
-| Complete .NET regression | PASS: 177 unit + 144 integration = 321 passed, 0 failed/skipped. |
-| EF pending-model validation | PASS using cached `dotnet-ef` 10.0.11: no changes since the last migration. No migration was applied. |
+| Release solution build after repair | PASS: 0 errors; 3 `NU1900` warnings because the NuGet advisory service was unreachable. |
+| Focused dependency unit tests after repair | PASS: 33 passed, 0 failed/skipped, including all strengthened URL cases. |
+| Focused dependency API integration tests after repair | PASS: 17 passed, 0 failed/skipped, including feature-off capability filtering and URL rejection without partial persistence. |
+| Complete original plus strengthened .NET regression after repair | PASS: 178 unit + 145 integration = 323 passed, 0 failed/skipped. |
+| EF pending-model validation after repair | PASS using pinned global `dotnet-ef` 10.0.11: no changes since the last migration. No migration was applied and no database was accessed. |
 | Frontend lint | PASS. |
-| Frontend component tests | PASS: 5 files, 19 tests, 0 failed/skipped. The jsdom canvas notice is retained from `axe-core`; the application does not require canvas. |
+| Frontend component and Tester contract tests after repair | PASS: 6 files, 22 tests, 0 failed/skipped. The jsdom canvas notice is retained from `axe-core`; the application does not require canvas. |
 | Next.js 16.3.4 production build | PASS: 21 generated pages and all four Slice 1 dependency routes. |
 | Node runtime/pinning | PASS: local `v24.18.0`, `.nvmrc` `24.18.0`, CI `24.x`. |
 | Targeted whitespace format verification | PASS for all new backend and test source files. |
@@ -114,7 +132,8 @@ The Slice 2 validation route and all Slice 3 wave/readiness projections, panels 
 | NuGet vulnerability report | NOT AVAILABLE: `api.nuget.org` was unreachable under network policy; no clean-vulnerability claim is made. |
 | npm high-severity audit | NOT AVAILABLE: the npm advisory endpoint was unreachable; no clean-vulnerability claim is made. |
 | Dedicated secret scanner | NOT AVAILABLE: neither `gitleaks` nor `trufflehog` is installed. Repository/diff pattern and product-boundary checks were used only as developer diagnostics, not as replacement release evidence. |
-| `git diff --check` | PASS; line-ending conversion notices only. |
+| Final Git controls | PASS: branch and `HEAD` remain at the requested candidate; no staged changes; `git diff --check` reports no whitespace errors; changed-path review is confined to six repaired source files, this Developer-owned work package and the six preserved Tester-owned artefacts. |
+| Tester artefact preservation | PASS: all six final SHA-256 hashes exactly match the hashes recorded before repair; no Tester-owned artefact is staged. |
 
 ## Compatibility, deployment and rollback
 
@@ -137,7 +156,7 @@ The Slice 2 validation route and all Slice 3 wave/readiness projections, panels 
 handoff:
   from_agent: "developer"
   to_agent: "tester"
-  state: "READY_FOR_TEST"
+  state: "READY_FOR_RETEST"
   work_item: "PH4-DEP-001-SLICE-1"
   branch: "feature/ph4-dependency-register-implementation"
   commit: null
@@ -154,28 +173,35 @@ handoff:
     open_questions: ["Q-01", "Q-02", "Q-09"]
   artefacts:
     - "docs/implementation/PH4_Dependency_Register_Slice1_Implementation_Work_Package.md"
-    - "src/api/Infrastructure/Migrations/20260922151243_AddDependencyRegister.cs"
-    - "tests/TestData/dependencies/slice1-fixture-manifest.json"
-    - "tests/api.unit/DependencyRulesTests.cs"
-    - "tests/api.integration/DependencyRegisterApiTests.cs"
+    - "src/api/Controllers/SessionController.cs"
+    - "src/api/Domain/DependencyRules.cs"
+    - "src/web/app/inventory/applications/page.tsx"
+    - "src/web/app/inventory/servers/page.tsx"
+    - "src/web/app/inventory/sql-instances/[id]/page.tsx"
+    - "src/web/app/inventory/sql-databases/[id]/page.tsx"
   evidence:
-    - "Release build passed with 0 errors."
-    - "Focused tests passed: 80 unit and 16 integration."
-    - "Full .NET suite passed: 321 tests."
-    - "EF pending-model check, frontend lint, 19 component tests, frontend production build and git diff check passed."
-    - "Vulnerability feeds and disposable SQL Server runtime evidence were unavailable and are explicitly not claimed as passing."
+    - "Release build passed with 0 errors and 3 NU1900 advisory-feed warnings."
+    - "Focused dependency lanes passed: 33 unit and 17 integration."
+    - "Full original plus strengthened .NET suites passed: 178 unit and 145 integration, 323 total."
+    - "Pinned EF 10.0.11 pending-model check, frontend lint, 22 frontend tests, 21-page frontend production build and final Git checks passed."
+    - "Tester SHA-256 preservation: evidence pack 5a9fd04fcbf3763a4775d7daeb590402baac3e80519082575522ff70d72e9902; browser contract ae82d914f9601b54642fb6fa0de3764699bffc948cba184a7671f3a36303232b; integration tests 5b733c260764696e902683027cd65b36f1fbb08240cc02a9e12fa85f0fb4a567; unit tests 8b53cf65ebb26fcf44528b1d310c78fefa8f02b3df0ab005c9b69d248dc5c0c0; SQL harness b1192179014a1afa719e1ca86e1f6aedf40489230b41aa01b0fa2e1f45631831; fixture manifest 9d4eb2d96b027b4af54c3ecde7d320976ed55dc42ad9f93396145e0959211186."
+    - "SQL Server was not accessed and the Tester SQL assurance harness was not run; vulnerability feeds and disposable SQL Server runtime evidence remain unavailable and are not claimed as passing."
   decisions:
     - "Only ordered Slice 1 dependency capture is implemented; later-slice validation and planning projections are absent."
     - "Named references remain inert human planning records."
     - "Feature gating is not authorization; ADR-008 server policies remain authoritative."
+    - "Session capability filtering and UI hiding do not widen authorization or alter the approved dependency role matrix."
   assumptions:
     - "A human will create the candidate commit before formal same-commit Tester evidence is recorded."
   risks:
     - "R-02 and R-09 remain subject to independent exact-commit tenant/concurrency and SQL Server provider evidence."
     - "Dependency vulnerability and dedicated secret-scan status remain unknown until approved connected checks run."
-  defects: []
+  defects:
+    - "PH4-S1-DEF-01 corrected; pending independent retest."
+    - "PH4-S1-DEF-02 corrected; pending independent retest."
+    - "PH4-S1-DEF-03 corrected; pending independent retest."
   blockers: []
   approvals:
     - "Five retained Phase 4 approvals in docs/approvals/PH4_Architecture_Approval_Evidence.json, bound to 985099c2ec05e3307bdc770af4a97e6e28df8c6e."
-  requested_action: "Create an exact candidate commit under human control, then independently execute the approved Slice 1 test contract. Do not test later slices, merge, deploy, use customer/production data or accept residual risk autonomously."
+  requested_action: "Create an exact repaired candidate commit under human control, then independently rerun the approved Slice 1 test contract, including the preserved strengthened tests and a fresh authorised SQL Server assurance run when available. Do not test later slices, merge, deploy, use customer/production data or accept residual risk autonomously."
 ```

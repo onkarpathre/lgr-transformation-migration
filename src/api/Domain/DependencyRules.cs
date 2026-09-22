@@ -145,13 +145,14 @@ public static partial class DependencyText
         }
 
         if (HtmlPattern().IsMatch(normalized)
+            || UrlPattern().IsMatch(normalized)
             || PrivateKeyPattern().IsMatch(normalized)
             || ConnectionSecretPattern().IsMatch(normalized)
             || BearerPattern().IsMatch(normalized)
             || JwtPattern().IsMatch(normalized)
             || SasPattern().IsMatch(normalized))
         {
-            throw new DomainValidationException($"{field} contains prohibited markup or secret-like content.");
+            throw new DomainValidationException($"{field} contains prohibited markup, URL or secret-like content.");
         }
 
         return normalized;
@@ -161,6 +162,9 @@ public static partial class DependencyText
 
     [GeneratedRegex("<[^>]+>", RegexOptions.CultureInvariant)]
     private static partial Regex HtmlPattern();
+
+    [GeneratedRegex("https?://", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex UrlPattern();
 
     [GeneratedRegex("-----BEGIN [A-Z ]*PRIVATE KEY-----", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PrivateKeyPattern();
