@@ -620,12 +620,30 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.Property<Guid?>("MatchedEntityId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("MatchedSqlDatabaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("MatchedSqlInstanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("NormalizedDatabaseName")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("NormalizedHostname")
                         .HasMaxLength(253)
                         .HasColumnType("nvarchar(253)");
 
+                    b.Property<string>("NormalizedInstanceName")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ProposedAction")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("ProposedChangesJson")
                         .HasColumnType("nvarchar(max)");
@@ -633,6 +651,11 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.Property<string>("RawDataJson")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ReconciliationFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength();
 
                     b.Property<int>("RowNumber")
                         .HasColumnType("int");
@@ -658,16 +681,22 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
 
                     b.HasIndex("CustomerId");
 
-                    b.HasIndex("ImportBatchId");
-
                     b.HasIndex("MatchedEntityId");
 
                     b.HasIndex("ProjectId");
 
-                    b.HasIndex("ImportBatchId", "RowNumber")
+                    b.HasIndex("CustomerId", "ProjectId", "Classification");
+
+                    b.HasIndex("CustomerId", "ProjectId", "MatchedSqlDatabaseId");
+
+                    b.HasIndex("CustomerId", "ProjectId", "ImportBatchId", "RowNumber")
                         .IsUnique();
 
-                    b.HasIndex("CustomerId", "ProjectId", "Classification");
+                    b.HasIndex("CustomerId", "ProjectId", "MatchedSqlInstanceId", "NormalizedDatabaseName")
+                        .HasDatabaseName("IX_DiscoveryImportRows_Owner_DatabaseMatch");
+
+                    b.HasIndex("CustomerId", "ProjectId", "NormalizedHostname", "NormalizedInstanceName")
+                        .HasDatabaseName("IX_DiscoveryImportRows_Owner_InstanceMatch");
 
                     b.ToTable("DiscoveryImportRows");
                 });
@@ -677,6 +706,15 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommitIdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("CommitResultJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<DateTimeOffset?>("CommittedAt")
                         .HasColumnType("datetimeoffset");
@@ -712,6 +750,12 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
 
                     b.Property<int>("RejectCount")
                         .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<string>("SourceType")
                         .IsRequired()
@@ -760,6 +804,10 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.HasIndex("ProjectId");
 
                     b.HasIndex("CustomerId", "FileHash");
+
+                    b.HasIndex("CustomerId", "ProjectId", "CommitIdempotencyKeyHash")
+                        .HasDatabaseName("IX_ImportBatches_Owner_CommitIdempotencyKeyHash")
+                        .HasFilter("[CommitIdempotencyKeyHash] IS NOT NULL");
 
                     b.HasIndex("CustomerId", "ProjectId", "Status");
 
@@ -2943,6 +2991,128 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.ToTable("ServerDiscoverySnapshots");
                 });
 
+            modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlAssessment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("AssessedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AssessmentStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Blockers")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DeletedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Findings")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MigrationApproach")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReadinessStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid?>("SqlDatabaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SqlInstanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TargetPlatform")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("TargetSqlVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("CustomerId", "ProjectId", "Id")
+                        .HasName("AK_SqlAssessments_CustomerId_ProjectId_Id");
+
+                    b.HasIndex("CustomerId", "ProjectId", "SqlDatabaseId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SqlAssessments_Owner_Active_Database")
+                        .HasFilter("[IsDeleted] = 0 AND [SqlDatabaseId] IS NOT NULL");
+
+                    b.HasIndex("CustomerId", "ProjectId", "SqlInstanceId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SqlAssessments_Owner_Active_Instance")
+                        .HasFilter("[IsDeleted] = 0 AND [SqlInstanceId] IS NOT NULL");
+
+                    b.HasIndex("CustomerId", "ProjectId", "IsDeleted", "AssessmentStatus", "ReadinessStatus", "Id")
+                        .HasDatabaseName("IX_SqlAssessments_Owner_Filter");
+
+                    b.ToTable("SqlAssessments", t =>
+                        {
+                            t.HasCheckConstraint("CK_SqlAssessments_AssessmentStatus", "[AssessmentStatus] IN ('NotStarted', 'InProgress', 'Complete', 'Blocked')");
+
+                            t.HasCheckConstraint("CK_SqlAssessments_ExactlyOneTarget", "(CASE WHEN [SqlInstanceId] IS NULL THEN 0 ELSE 1 END + CASE WHEN [SqlDatabaseId] IS NULL THEN 0 ELSE 1 END) = 1");
+
+                            t.HasCheckConstraint("CK_SqlAssessments_MigrationApproach", "[MigrationApproach] IS NULL OR [MigrationApproach] IN ('Offline', 'Online', 'ToBeDetermined', 'NotApplicable')");
+
+                            t.HasCheckConstraint("CK_SqlAssessments_ReadinessStatus", "[ReadinessStatus] IN ('NotAssessed', 'NotReady', 'AtRisk', 'ReadyWithConditions', 'Ready', 'Blocked')");
+
+                            t.HasCheckConstraint("CK_SqlAssessments_TargetPlatform", "[TargetPlatform] IS NULL OR [TargetPlatform] IN ('AzureSqlDatabase', 'AzureSqlManagedInstance', 'SqlServerOnAzureVm', 'Retain', 'Retire', 'Investigate')");
+                        });
+                });
+
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlDatabase", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3049,6 +3219,71 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                             t.HasCheckConstraint("CK_SqlDatabases_CompatibilityLevel", "[CompatibilityLevel] >= 80 AND [CompatibilityLevel] <= 200");
 
                             t.HasCheckConstraint("CK_SqlDatabases_SizeMb", "[SizeMb] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlDatabaseDiscoverySnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Collation")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("CompatibilityLevel")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ImportBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ImportedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RecoveryModel")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<long>("SizeMb")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("SqlDatabaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SqlInstanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId", "ProjectId", "ImportBatchId");
+
+                    b.HasIndex("CustomerId", "ProjectId", "SqlDatabaseId", "ImportedAt", "Id")
+                        .IsDescending(false, false, false, true, false)
+                        .HasDatabaseName("IX_SqlDatabaseDiscoverySnapshots_Owner_History");
+
+                    b.ToTable("SqlDatabaseDiscoverySnapshots", t =>
+                        {
+                            t.HasCheckConstraint("CK_SqlDatabaseDiscoverySnapshots_CompatibilityLevel", "[CompatibilityLevel] >= 80 AND [CompatibilityLevel] <= 200");
+
+                            t.HasCheckConstraint("CK_SqlDatabaseDiscoverySnapshots_SizeMb", "[SizeMb] >= 0");
                         });
                 });
 
@@ -3166,6 +3401,75 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.ToTable("SqlInstances", t =>
                         {
                             t.HasCheckConstraint("CK_SqlInstances_Port", "[Port] IS NULL OR ([Port] >= 1 AND [Port] <= 65535)");
+                        });
+                });
+
+            modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlInstanceDiscoverySnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DiscoverySource")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Edition")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("ImportBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ImportedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("InstanceName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset?>("LastDiscoveredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("Port")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ServerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ServiceStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("SqlInstanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SqlVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId", "ProjectId", "ImportBatchId");
+
+                    b.HasIndex("CustomerId", "ProjectId", "SqlInstanceId", "ImportedAt", "Id")
+                        .IsDescending(false, false, false, true, false)
+                        .HasDatabaseName("IX_SqlInstanceDiscoverySnapshots_Owner_History");
+
+                    b.ToTable("SqlInstanceDiscoverySnapshots", t =>
+                        {
+                            t.HasCheckConstraint("CK_SqlInstanceDiscoverySnapshots_Port", "[Port] IS NULL OR ([Port] >= 1 AND [Port] <= 65535)");
                         });
                 });
 
@@ -3436,20 +3740,37 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
 
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.DiscoveryImportRow", b =>
                 {
-                    b.HasOne("LgrTransformationMigration.Api.Domain.ImportBatch", "ImportBatch")
-                        .WithMany("Rows")
-                        .HasForeignKey("ImportBatchId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("LgrTransformationMigration.Api.Domain.Server", "MatchedServer")
                         .WithMany()
                         .HasForeignKey("MatchedEntityId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("LgrTransformationMigration.Api.Domain.ImportBatch", "ImportBatch")
+                        .WithMany("Rows")
+                        .HasForeignKey("CustomerId", "ProjectId", "ImportBatchId")
+                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LgrTransformationMigration.Api.Domain.SqlDatabase", "MatchedSqlDatabase")
+                        .WithMany()
+                        .HasForeignKey("CustomerId", "ProjectId", "MatchedSqlDatabaseId")
+                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LgrTransformationMigration.Api.Domain.SqlInstance", "MatchedSqlInstance")
+                        .WithMany()
+                        .HasForeignKey("CustomerId", "ProjectId", "MatchedSqlInstanceId")
+                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("ImportBatch");
 
                     b.Navigation("MatchedServer");
+
+                    b.Navigation("MatchedSqlDatabase");
+
+                    b.Navigation("MatchedSqlInstance");
                 });
 
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.ImportBatch", b =>
@@ -3579,6 +3900,34 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.Navigation("Server");
                 });
 
+            modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlAssessment", b =>
+                {
+                    b.HasOne("LgrTransformationMigration.Api.Domain.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("CustomerId", "ProjectId")
+                        .HasPrincipalKey("CustomerId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LgrTransformationMigration.Api.Domain.SqlDatabase", "SqlDatabase")
+                        .WithMany("Assessments")
+                        .HasForeignKey("CustomerId", "ProjectId", "SqlDatabaseId")
+                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LgrTransformationMigration.Api.Domain.SqlInstance", "SqlInstance")
+                        .WithMany("Assessments")
+                        .HasForeignKey("CustomerId", "ProjectId", "SqlInstanceId")
+                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Project");
+
+                    b.Navigation("SqlDatabase");
+
+                    b.Navigation("SqlInstance");
+                });
+
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlDatabase", b =>
                 {
                     b.HasOne("LgrTransformationMigration.Api.Domain.Project", "Project")
@@ -3608,6 +3957,27 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.Navigation("SqlInstance");
                 });
 
+            modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlDatabaseDiscoverySnapshot", b =>
+                {
+                    b.HasOne("LgrTransformationMigration.Api.Domain.ImportBatch", "ImportBatch")
+                        .WithMany("SqlDatabaseSnapshots")
+                        .HasForeignKey("CustomerId", "ProjectId", "ImportBatchId")
+                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LgrTransformationMigration.Api.Domain.SqlDatabase", "SqlDatabase")
+                        .WithMany("DiscoverySnapshots")
+                        .HasForeignKey("CustomerId", "ProjectId", "SqlDatabaseId")
+                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ImportBatch");
+
+                    b.Navigation("SqlDatabase");
+                });
+
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlInstance", b =>
                 {
                     b.HasOne("LgrTransformationMigration.Api.Domain.Project", "Project")
@@ -3635,6 +4005,27 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("Server");
+                });
+
+            modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlInstanceDiscoverySnapshot", b =>
+                {
+                    b.HasOne("LgrTransformationMigration.Api.Domain.ImportBatch", "ImportBatch")
+                        .WithMany("SqlInstanceSnapshots")
+                        .HasForeignKey("CustomerId", "ProjectId", "ImportBatchId")
+                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LgrTransformationMigration.Api.Domain.SqlInstance", "SqlInstance")
+                        .WithMany("DiscoverySnapshots")
+                        .HasForeignKey("CustomerId", "ProjectId", "SqlInstanceId")
+                        .HasPrincipalKey("CustomerId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ImportBatch");
+
+                    b.Navigation("SqlInstance");
                 });
 
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.WaveAsset", b =>
@@ -3677,6 +4068,10 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.Navigation("Rows");
 
                     b.Navigation("ServerSnapshots");
+
+                    b.Navigation("SqlDatabaseSnapshots");
+
+                    b.Navigation("SqlInstanceSnapshots");
                 });
 
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.MigrationWave", b =>
@@ -3700,9 +4095,20 @@ namespace LgrTransformationMigration.Api.Infrastructure.Migrations
                     b.Navigation("SqlInstances");
                 });
 
+            modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlDatabase", b =>
+                {
+                    b.Navigation("Assessments");
+
+                    b.Navigation("DiscoverySnapshots");
+                });
+
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.SqlInstance", b =>
                 {
+                    b.Navigation("Assessments");
+
                     b.Navigation("Databases");
+
+                    b.Navigation("DiscoverySnapshots");
                 });
 
             modelBuilder.Entity("LgrTransformationMigration.Api.Domain.Subnet", b =>

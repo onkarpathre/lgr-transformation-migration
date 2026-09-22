@@ -57,6 +57,73 @@ public sealed class IdentityAuthorizationTests
             ]));
     }
 
+    [Theory]
+    [InlineData("DatabaseSme", true, false, false, false)]
+    [InlineData("DiscoveryAnalyst", true, true, true, true)]
+    [InlineData("MigrationArchitect", true, false, false, false)]
+    [InlineData("ProjectManager", true, false, false, false)]
+    [InlineData("ReviewerAuditor", true, false, false, false)]
+    [InlineData("CustomerAdministrator", false, false, false, false)]
+    [InlineData("PlatformAdministrator", false, false, false, false)]
+    [InlineData("UnexpectedRole", false, false, false, false)]
+    public void Sql_discovery_role_mapping_is_exact_and_deny_by_default(
+        string role,
+        bool read,
+        bool prepare,
+        bool commit,
+        bool cancel)
+    {
+        var permissions = SqlDiscoveryPermissions.ForRoles([role]);
+
+        Assert.Equal(read, permissions.Contains(SqlDiscoveryPermissions.Read));
+        Assert.Equal(prepare, permissions.Contains(SqlDiscoveryPermissions.Prepare));
+        Assert.Equal(commit, permissions.Contains(SqlDiscoveryPermissions.Commit));
+        Assert.Equal(cancel, permissions.Contains(SqlDiscoveryPermissions.Cancel));
+    }
+
+    [Fact]
+    public void Project_permission_union_preserves_inventory_discovery_and_assessment_boundaries()
+    {
+        var permissions = ProjectPermissions.ForRoles(["DatabaseSme", "DiscoveryAnalyst", "UnexpectedRole"]);
+
+        Assert.True(permissions.SetEquals(
+        [
+            SqlInventoryPermissions.Read,
+            SqlInventoryPermissions.Create,
+            SqlInventoryPermissions.Update,
+            SqlInventoryPermissions.Delete,
+            SqlDiscoveryPermissions.Read,
+            SqlDiscoveryPermissions.Prepare,
+            SqlDiscoveryPermissions.Commit,
+            SqlDiscoveryPermissions.Cancel,
+            SqlAssessmentPermissions.Read,
+            SqlAssessmentPermissions.Manage,
+            SqlAssessmentPermissions.Plan
+        ]));
+    }
+
+    [Theory]
+    [InlineData("DatabaseSme", true, true, true)]
+    [InlineData("MigrationArchitect", true, false, true)]
+    [InlineData("ProjectManager", true, false, false)]
+    [InlineData("DiscoveryAnalyst", true, false, false)]
+    [InlineData("ReviewerAuditor", true, false, false)]
+    [InlineData("CustomerAdministrator", false, false, false)]
+    [InlineData("PlatformAdministrator", false, false, false)]
+    [InlineData("UnexpectedRole", false, false, false)]
+    public void Sql_assessment_role_mapping_is_exact_and_deny_by_default(
+        string role,
+        bool read,
+        bool manage,
+        bool plan)
+    {
+        var permissions = SqlAssessmentPermissions.ForRoles([role]);
+
+        Assert.Equal(read, permissions.Contains(SqlAssessmentPermissions.Read));
+        Assert.Equal(manage, permissions.Contains(SqlAssessmentPermissions.Manage));
+        Assert.Equal(plan, permissions.Contains(SqlAssessmentPermissions.Plan));
+    }
+
     [Fact]
     public async Task Entra_token_validator_accepts_a_correctly_signed_v2_api_token()
     {
