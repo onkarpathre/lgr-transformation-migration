@@ -31,6 +31,11 @@ public sealed class AppDbContext(
     public DbSet<SqlInstanceDiscoverySnapshot> SqlInstanceDiscoverySnapshots => Set<SqlInstanceDiscoverySnapshot>();
     public DbSet<SqlDatabaseDiscoverySnapshot> SqlDatabaseDiscoverySnapshots => Set<SqlDatabaseDiscoverySnapshot>();
     public DbSet<SqlAssessment> SqlAssessments => Set<SqlAssessment>();
+    public DbSet<DependencyReference> DependencyReferences => Set<DependencyReference>();
+    public DbSet<Dependency> Dependencies => Set<Dependency>();
+    public DbSet<DependencyPolicy> DependencyPolicies => Set<DependencyPolicy>();
+    public DbSet<DependencyPolicyRule> DependencyPolicyRules => Set<DependencyPolicyRule>();
+    public DbSet<DependencyGraphState> DependencyGraphStates => Set<DependencyGraphState>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -74,6 +79,8 @@ public sealed class AppDbContext(
         modelBuilder.Entity<Application>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .HasName("AK_Applications_CustomerId_ProjectId_Id");
             entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
             ConfigureBusinessStrings(entity);
             entity.HasIndex(x => new { x.CustomerId, x.ProjectId });
@@ -526,6 +533,170 @@ public sealed class AppDbContext(
                 .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id })
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId && !x.IsDeleted);
+        });
+
+        modelBuilder.Entity<DependencyReference>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .HasName("AK_DependencyReferences_CustomerId_ProjectId_Id");
+            entity.Property(x => x.ReferenceType).HasMaxLength(32).IsUnicode(false).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.NormalizedName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(1000);
+            entity.Property(x => x.ResolutionStatus).HasMaxLength(20).IsUnicode(false).IsRequired();
+            entity.Property(x => x.CreatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.UpdatedBy).HasMaxLength(200).IsRequired();
+            ConfigureRowVersion(entity.Property(x => x.RowVersion));
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint("CK_DependencyReferences_ReferenceType", "[ReferenceType] IN ('FileShare', 'Api', 'ExternalSystem')");
+                table.HasCheckConstraint("CK_DependencyReferences_ResolutionStatus", "[ResolutionStatus] IN ('Unresolved', 'Resolved')");
+            });
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.ReferenceType, x.NormalizedName })
+                .IsUnique()
+                .HasDatabaseName("UX_DependencyReferences_Owner_Type_Name_Active")
+                .HasFilter("[IsArchived] = 0");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.IsArchived, x.ReferenceType, x.ResolutionStatus, x.NormalizedName, x.Id })
+                .HasDatabaseName("IX_DependencyReferences_Owner_List");
+            entity.HasOne<Project>()
+                .WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
+        });
+
+        modelBuilder.Entity<Dependency>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .HasName("AK_Dependencies_CustomerId_ProjectId_Id");
+            entity.Property(x => x.SourceType).HasMaxLength(32).IsUnicode(false).IsRequired();
+            entity.Property(x => x.TargetType).HasMaxLength(32).IsUnicode(false).IsRequired();
+            var sourceKey = entity.Property(x => x.SourceEndpointKey).HasMaxLength(34).IsUnicode(false).IsRequired();
+            var targetKey = entity.Property(x => x.TargetEndpointKey).HasMaxLength(34).IsUnicode(false).IsRequired();
+            if (Database.IsSqlServer())
+            {
+                sourceKey.HasComputedColumnSql(
+                    "CASE [SourceType] WHEN 'Application' THEN 'A:' + REPLACE(CONVERT(varchar(36), [SourceApplicationId]), '-', '') WHEN 'Server' THEN 'S:' + REPLACE(CONVERT(varchar(36), [SourceServerId]), '-', '') WHEN 'SqlInstance' THEN 'I:' + REPLACE(CONVERT(varchar(36), [SourceSqlInstanceId]), '-', '') WHEN 'SqlDatabase' THEN 'D:' + REPLACE(CONVERT(varchar(36), [SourceSqlDatabaseId]), '-', '') END",
+                    stored: true);
+                targetKey.HasComputedColumnSql(
+                    "CASE [TargetType] WHEN 'Application' THEN 'A:' + REPLACE(CONVERT(varchar(36), [TargetApplicationId]), '-', '') WHEN 'Server' THEN 'S:' + REPLACE(CONVERT(varchar(36), [TargetServerId]), '-', '') WHEN 'SqlInstance' THEN 'I:' + REPLACE(CONVERT(varchar(36), [TargetSqlInstanceId]), '-', '') WHEN 'SqlDatabase' THEN 'D:' + REPLACE(CONVERT(varchar(36), [TargetSqlDatabaseId]), '-', '') WHEN 'DependencyReference' THEN 'R:' + REPLACE(CONVERT(varchar(36), [TargetReferenceId]), '-', '') END",
+                    stored: true);
+            }
+            entity.Property(x => x.DependencyType).HasMaxLength(40).IsUnicode(false).IsRequired();
+            entity.Property(x => x.Criticality).HasMaxLength(20).IsUnicode(false).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(2000);
+            entity.Property(x => x.BusinessContext).HasMaxLength(4000);
+            entity.Property(x => x.ConfirmationStatus).HasMaxLength(20).IsUnicode(false).IsRequired();
+            entity.Property(x => x.ConfirmedBy).HasMaxLength(200);
+            entity.Property(x => x.CreatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.UpdatedBy).HasMaxLength(200).IsRequired();
+            ConfigureRowVersion(entity.Property(x => x.RowVersion));
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_Dependencies_SourceEndpoint",
+                    "([SourceType] = 'Application' AND [SourceApplicationId] IS NOT NULL AND [SourceServerId] IS NULL AND [SourceSqlInstanceId] IS NULL AND [SourceSqlDatabaseId] IS NULL) OR ([SourceType] = 'Server' AND [SourceApplicationId] IS NULL AND [SourceServerId] IS NOT NULL AND [SourceSqlInstanceId] IS NULL AND [SourceSqlDatabaseId] IS NULL) OR ([SourceType] = 'SqlInstance' AND [SourceApplicationId] IS NULL AND [SourceServerId] IS NULL AND [SourceSqlInstanceId] IS NOT NULL AND [SourceSqlDatabaseId] IS NULL) OR ([SourceType] = 'SqlDatabase' AND [SourceApplicationId] IS NULL AND [SourceServerId] IS NULL AND [SourceSqlInstanceId] IS NULL AND [SourceSqlDatabaseId] IS NOT NULL)");
+                table.HasCheckConstraint(
+                    "CK_Dependencies_TargetEndpoint",
+                    "([TargetType] = 'Application' AND [TargetApplicationId] IS NOT NULL AND [TargetServerId] IS NULL AND [TargetSqlInstanceId] IS NULL AND [TargetSqlDatabaseId] IS NULL AND [TargetReferenceId] IS NULL) OR ([TargetType] = 'Server' AND [TargetApplicationId] IS NULL AND [TargetServerId] IS NOT NULL AND [TargetSqlInstanceId] IS NULL AND [TargetSqlDatabaseId] IS NULL AND [TargetReferenceId] IS NULL) OR ([TargetType] = 'SqlInstance' AND [TargetApplicationId] IS NULL AND [TargetServerId] IS NULL AND [TargetSqlInstanceId] IS NOT NULL AND [TargetSqlDatabaseId] IS NULL AND [TargetReferenceId] IS NULL) OR ([TargetType] = 'SqlDatabase' AND [TargetApplicationId] IS NULL AND [TargetServerId] IS NULL AND [TargetSqlInstanceId] IS NULL AND [TargetSqlDatabaseId] IS NOT NULL AND [TargetReferenceId] IS NULL) OR ([TargetType] = 'DependencyReference' AND [TargetApplicationId] IS NULL AND [TargetServerId] IS NULL AND [TargetSqlInstanceId] IS NULL AND [TargetSqlDatabaseId] IS NULL AND [TargetReferenceId] IS NOT NULL)");
+                table.HasCheckConstraint("CK_Dependencies_NotSelf", "[SourceEndpointKey] <> [TargetEndpointKey]");
+                table.HasCheckConstraint("CK_Dependencies_Type", "[DependencyType] IN ('Service', 'DataRead', 'DataWrite', 'ApiCall', 'FileTransfer', 'Authentication', 'NetworkConnectivity', 'OperationalSequence')");
+                table.HasCheckConstraint("CK_Dependencies_Criticality", "[Criticality] IN ('Mandatory', 'Advisory')");
+                table.HasCheckConstraint("CK_Dependencies_Confirmation", "([ConfirmationStatus] = 'Unconfirmed' AND [ConfirmedAt] IS NULL AND [ConfirmedBy] IS NULL) OR ([ConfirmationStatus] = 'Confirmed' AND [ConfirmedAt] IS NOT NULL AND [ConfirmedBy] IS NOT NULL)");
+            });
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.SourceEndpointKey, x.TargetEndpointKey, x.DependencyType })
+                .IsUnique()
+                .HasDatabaseName("UX_Dependencies_Owner_Endpoints_Type_Active")
+                .HasFilter("[IsArchived] = 0");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.IsArchived, x.SourceEndpointKey, x.DependencyType, x.Id })
+                .HasDatabaseName("IX_Dependencies_Owner_Forward");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.IsArchived, x.TargetEndpointKey, x.DependencyType, x.Id })
+                .HasDatabaseName("IX_Dependencies_Owner_Reverse");
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.IsArchived, x.ConfirmationStatus, x.Criticality, x.Id })
+                .HasDatabaseName("IX_Dependencies_Owner_Validation");
+            entity.HasOne<Project>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Application>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.SourceApplicationId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Server>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.SourceServerId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<SqlInstance>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.SourceSqlInstanceId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<SqlDatabase>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.SourceSqlDatabaseId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Application>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.TargetApplicationId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Server>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.TargetServerId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<SqlInstance>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.TargetSqlInstanceId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<SqlDatabase>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.TargetSqlDatabaseId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<DependencyReference>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.TargetReferenceId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
+        });
+
+        modelBuilder.Entity<DependencyPolicy>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.CustomerId, x.ProjectId, x.Id })
+                .HasName("AK_DependencyPolicies_CustomerId_ProjectId_Id");
+            entity.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.CreatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.ActivatedBy).HasMaxLength(200);
+            ConfigureRowVersion(entity.Property(x => x.RowVersion));
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId })
+                .IsUnique().HasDatabaseName("UX_DependencyPolicies_Owner_Active").HasFilter("[IsActive] = 1");
+            entity.HasOne<Project>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
+        });
+
+        modelBuilder.Entity<DependencyPolicyRule>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.RuleCode).HasMaxLength(50).IsUnicode(false).IsRequired();
+            entity.Property(x => x.MandatorySeverity).HasMaxLength(20).IsUnicode(false).IsRequired();
+            entity.Property(x => x.AdvisorySeverity).HasMaxLength(20).IsUnicode(false).IsRequired();
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_DependencyPolicyRules_Severity",
+                "[MandatorySeverity] IN ('Information', 'Warning', 'Blocker') AND [AdvisorySeverity] IN ('Information', 'Warning', 'Blocker')"));
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId, x.DependencyPolicyId, x.RuleCode }).IsUnique();
+            entity.HasOne(x => x.DependencyPolicy).WithMany(x => x.Rules)
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId, x.DependencyPolicyId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.ProjectId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
+        });
+
+        modelBuilder.Entity<DependencyGraphState>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            ConfigureRowVersion(entity.Property(x => x.RowVersion));
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint("CK_DependencyGraphStates_GraphVersion", "[GraphVersion] >= 0");
+                table.HasCheckConstraint("CK_DependencyGraphStates_PlanningVersion", "[PlanningVersion] >= 0");
+            });
+            entity.HasIndex(x => new { x.CustomerId, x.ProjectId }).IsUnique();
+            entity.HasOne<Project>().WithMany()
+                .HasForeignKey(x => new { x.CustomerId, x.ProjectId })
+                .HasPrincipalKey(x => new { x.CustomerId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => x.CustomerId == currentContext.CustomerId);
         });
 
         SeedData.Configure(modelBuilder);

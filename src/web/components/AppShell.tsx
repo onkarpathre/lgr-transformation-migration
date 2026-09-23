@@ -19,6 +19,8 @@ const navigation = [
   { section: "Assessment" },
   { label: "Migration Decisions", href: "/assessment/migration-decisions", icon: "MD" },
   { label: "SQL assessments", href: "/assessment/sql", icon: "SA", permission: "sql.assessment.read" },
+  { section: "Planning" },
+  { label: "Dependencies", href: "/planning/dependencies", icon: "DP", permission: "dependency.read" },
   { section: "Azure Design" },
   { label: "Target Builds", href: "/azure/target-builds", icon: "AZ" },
   { label: "IP Management", href: "/azure/ip-management", icon: "IP" },

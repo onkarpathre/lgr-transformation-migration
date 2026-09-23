@@ -52,6 +52,51 @@ public static class SqlAssessmentAuthorizationPolicies
     public const string Plan = "SqlAssessmentPlan";
 }
 
+public static class DependencyAuthorizationPolicies
+{
+    public const string Read = "DependencyRead";
+    public const string Manage = "DependencyManage";
+    public const string Confirm = "DependencyConfirm";
+    public const string Validate = "DependencyValidate";
+    public const string AuditRead = "DependencyAuditRead";
+}
+
+public static class DependencyPermissions
+{
+    public const string Read = "dependency.read";
+    public const string Manage = "dependency.manage";
+    public const string Confirm = "dependency.confirm";
+    public const string Validate = "dependency.validate";
+    public const string AuditRead = "dependency.audit.read";
+
+    public static IReadOnlySet<string> ForRoles(IEnumerable<string> roles)
+    {
+        var normalized = roles.ToHashSet(StringComparer.Ordinal);
+        var permissions = new HashSet<string>(StringComparer.Ordinal);
+        if (normalized.Overlaps(["MigrationArchitect", "DatabaseSme", "ProjectManager", "DiscoveryAnalyst", "ReviewerAuditor"]))
+        {
+            permissions.Add(Read);
+        }
+
+        if (normalized.Overlaps(["MigrationArchitect", "DatabaseSme"]))
+        {
+            permissions.UnionWith([Manage, Confirm, Validate, AuditRead]);
+        }
+
+        if (normalized.Contains("ProjectManager"))
+        {
+            permissions.UnionWith([Validate, AuditRead]);
+        }
+
+        if (normalized.Contains("ReviewerAuditor"))
+        {
+            permissions.Add(AuditRead);
+        }
+
+        return permissions.ToFrozenSet(StringComparer.Ordinal);
+    }
+}
+
 public static class SqlAssessmentPermissions
 {
     public const string Read = "sql.assessment.read";
@@ -138,6 +183,7 @@ public static class ProjectPermissions
         SqlInventoryPermissions.ForRoles(roles)
             .Concat(SqlDiscoveryPermissions.ForRoles(roles))
             .Concat(SqlAssessmentPermissions.ForRoles(roles))
+            .Concat(DependencyPermissions.ForRoles(roles))
             .ToFrozenSet(StringComparer.Ordinal);
 }
 

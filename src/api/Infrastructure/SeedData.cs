@@ -36,6 +36,44 @@ public static class SeedData
             UpdatedAt = SeedTime
         });
 
+        var dependencyPolicyId = Guid.Parse("44444444-4444-4444-4444-444444444401");
+        modelBuilder.Entity<DependencyPolicy>().HasData(new DependencyPolicy
+        {
+            Id = dependencyPolicyId,
+            CustomerId = SeedIds.DemoCustomer,
+            ProjectId = SeedIds.DemoProject,
+            Version = DependencyPolicyDefaults.Version,
+            Name = DependencyPolicyDefaults.Name,
+            IsActive = true,
+            CreatedAt = SeedTime,
+            CreatedBy = "synthetic-seed",
+            ActivatedAt = SeedTime,
+            ActivatedBy = "synthetic-seed",
+            RowVersion = Array.Empty<byte>()
+        });
+        modelBuilder.Entity<DependencyPolicyRule>().HasData(
+            DependencyPolicyDefaults.Rules.Select((rule, index) => new DependencyPolicyRule
+            {
+                Id = Guid.Parse($"44444444-4444-4444-4444-{index + 101:000000000000}"),
+                CustomerId = SeedIds.DemoCustomer,
+                ProjectId = SeedIds.DemoProject,
+                DependencyPolicyId = dependencyPolicyId,
+                RuleCode = rule.Code,
+                MandatorySeverity = rule.Mandatory,
+                AdvisorySeverity = rule.Advisory
+            }));
+        modelBuilder.Entity<DependencyGraphState>().HasData(new DependencyGraphState
+        {
+            Id = Guid.Parse("44444444-4444-4444-4444-444444444402"),
+            CustomerId = SeedIds.DemoCustomer,
+            ProjectId = SeedIds.DemoProject,
+            GraphVersion = 0,
+            PlanningVersion = 0,
+            CurrentValidationRunId = null,
+            UpdatedAt = SeedTime,
+            RowVersion = Array.Empty<byte>()
+        });
+
         var applications = new[]
         {
             NewApplication(1, "Housing Management", "Prod", "Critical", "COTS", "2024.3", "In Scope", "Rehost", "In Progress"),
