@@ -30,7 +30,10 @@ public sealed class BrowserCapabilitiesApiTests
         Assert.Contains(allowed, result.Permissions);
         Assert.DoesNotContain(denied, result.Permissions);
         Assert.Equal(dba, result.Permissions.Contains("sql.inventory.delete"));
-        Assert.All(result.Permissions, permission => Assert.StartsWith("sql.", permission, StringComparison.Ordinal));
+        Assert.All(result.Permissions, permission => Assert.True(
+            permission.StartsWith("sql.", StringComparison.Ordinal)
+            || permission.StartsWith("dependency.", StringComparison.Ordinal),
+            $"Unexpected browser permission family: {permission}"));
     }
 
     [Fact]

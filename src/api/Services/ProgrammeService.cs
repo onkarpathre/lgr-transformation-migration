@@ -4,6 +4,7 @@ using LgrTransformationMigration.Api.Infrastructure;
 using LgrTransformationMigration.Api.Services.Discovery;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
 
 namespace LgrTransformationMigration.Api.Services;
 
@@ -55,9 +56,35 @@ public sealed class ProgrammeService(
             CreatedAt = Now, UpdatedAt = Now
         };
         db.Projects.Add(entity);
+        AddDependencyFoundation(entity.Id);
         AddAudit("Project", entity.Id, "Created", entity.Id);
         await db.SaveChangesAsync(cancellationToken);
         return await GetProjectAsync(entity.Id, cancellationToken);
+    }
+
+    private void AddDependencyFoundation(Guid projectId)
+    {
+        var policyId = Guid.NewGuid();
+        db.DependencyPolicies.Add(new DependencyPolicy
+        {
+            Id = policyId, CustomerId = context.CustomerId, ProjectId = projectId,
+            Version = DependencyPolicyDefaults.Version, Name = DependencyPolicyDefaults.Name,
+            IsActive = true, CreatedAt = Now, CreatedBy = context.UserName,
+            ActivatedAt = Now, ActivatedBy = context.UserName,
+            RowVersion = RandomNumberGenerator.GetBytes(8)
+        });
+        db.DependencyPolicyRules.AddRange(DependencyPolicyDefaults.Rules.Select(rule => new DependencyPolicyRule
+        {
+            Id = Guid.NewGuid(), CustomerId = context.CustomerId, ProjectId = projectId,
+            DependencyPolicyId = policyId, RuleCode = rule.Code,
+            MandatorySeverity = rule.Mandatory, AdvisorySeverity = rule.Advisory
+        }));
+        db.DependencyGraphStates.Add(new DependencyGraphState
+        {
+            Id = Guid.NewGuid(), CustomerId = context.CustomerId, ProjectId = projectId,
+            GraphVersion = 0, PlanningVersion = 0, UpdatedAt = Now,
+            RowVersion = RandomNumberGenerator.GetBytes(8)
+        });
     }
 
     public async Task<ProjectDto> UpdateProjectAsync(Guid id, ProjectRequest request, CancellationToken cancellationToken)
@@ -76,6 +103,18 @@ public sealed class ProgrammeService(
     {
         var entity = await db.Projects.SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
             ?? throw new KeyNotFoundException("Project not found.");
+        if (await db.Dependencies.AnyAsync(x => x.ProjectId == id, cancellationToken)
+            || await db.DependencyReferences.AnyAsync(x => x.ProjectId == id, cancellationToken))
+        {
+            throw new DomainConflictException(
+                "A project with dependency register evidence cannot be deleted.");
+        }
+        var policies = await db.DependencyPolicies.Where(x => x.ProjectId == id)
+            .Include(x => x.Rules).ToListAsync(cancellationToken);
+        db.DependencyPolicyRules.RemoveRange(policies.SelectMany(x => x.Rules));
+        db.DependencyPolicies.RemoveRange(policies);
+        db.DependencyGraphStates.RemoveRange(
+            await db.DependencyGraphStates.Where(x => x.ProjectId == id).ToListAsync(cancellationToken));
         db.Projects.Remove(entity);
         AddAudit("Project", entity.Id, "Deleted", entity.Id);
         await db.SaveChangesAsync(cancellationToken);

@@ -76,13 +76,19 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy(SqlDiscoveryAuthorizationPolicies.Cancel, ProjectPolicy(SqlDiscoveryPermissions.Cancel))
     .AddPolicy(SqlAssessmentAuthorizationPolicies.Read, ProjectPolicy(SqlAssessmentPermissions.Read))
     .AddPolicy(SqlAssessmentAuthorizationPolicies.Manage, ProjectPolicy(SqlAssessmentPermissions.Manage))
-    .AddPolicy(SqlAssessmentAuthorizationPolicies.Plan, ProjectPolicy(SqlAssessmentPermissions.Plan));
+    .AddPolicy(SqlAssessmentAuthorizationPolicies.Plan, ProjectPolicy(SqlAssessmentPermissions.Plan))
+    .AddPolicy(DependencyAuthorizationPolicies.Read, ProjectPolicy(DependencyPermissions.Read))
+    .AddPolicy(DependencyAuthorizationPolicies.Manage, ProjectPolicy(DependencyPermissions.Manage))
+    .AddPolicy(DependencyAuthorizationPolicies.Confirm, ProjectPolicy(DependencyPermissions.Confirm))
+    .AddPolicy(DependencyAuthorizationPolicies.Validate, ProjectPolicy(DependencyPermissions.Validate))
+    .AddPolicy(DependencyAuthorizationPolicies.AuditRead, ProjectPolicy(DependencyPermissions.AuditRead));
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(
     builder.Configuration.GetConnectionString("LgrDatabase")
     ?? throw new InvalidOperationException("ConnectionStrings:LgrDatabase is required.")));
 builder.Services.AddScoped<ProgrammeService>();
 builder.Services.AddScoped<SqlInventoryService>();
 builder.Services.AddScoped<SqlAssessmentService>();
+builder.Services.AddScoped<DependencyRegisterService>();
 builder.Services.AddScoped<IpAllocationService>();
 builder.Services.AddScoped<RunbookService>();
 builder.Services.Configure<DiscoveryImportOptions>(builder.Configuration.GetSection(DiscoveryImportOptions.SectionName));
@@ -108,6 +114,7 @@ builder.Services.AddScoped<SqlDiscoveryAssessmentFeatureFilter>();
 builder.Services.AddScoped<SqlDiscoveryImportFeatureFilter>();
 builder.Services.AddScoped<SqlAssessmentFeatureFilter>();
 builder.Services.AddScoped<SqlBrowserJourneysFeatureFilter>();
+builder.Services.AddScoped<DependencyRegisterFeatureFilter>();
 builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
 {
     options.InvalidModelStateResponseFactory = context =>

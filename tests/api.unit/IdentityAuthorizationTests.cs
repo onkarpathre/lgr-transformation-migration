@@ -82,7 +82,7 @@ public sealed class IdentityAuthorizationTests
     }
 
     [Fact]
-    public void Project_permission_union_preserves_inventory_discovery_and_assessment_boundaries()
+    public void Project_permission_union_preserves_inventory_discovery_assessment_and_dependency_boundaries()
     {
         var permissions = ProjectPermissions.ForRoles(["DatabaseSme", "DiscoveryAnalyst", "UnexpectedRole"]);
 
@@ -98,7 +98,12 @@ public sealed class IdentityAuthorizationTests
             SqlDiscoveryPermissions.Cancel,
             SqlAssessmentPermissions.Read,
             SqlAssessmentPermissions.Manage,
-            SqlAssessmentPermissions.Plan
+            SqlAssessmentPermissions.Plan,
+            DependencyPermissions.Read,
+            DependencyPermissions.Manage,
+            DependencyPermissions.Confirm,
+            DependencyPermissions.Validate,
+            DependencyPermissions.AuditRead
         ]));
     }
 
