@@ -31,7 +31,7 @@
         "active duplicate returns data_conflict",
         "missing If-Match returns precondition_required",
         "stale If-Match returns stale_version",
-        "markup and secret-like narrative are rejected",
+        "markup, URL and secret-like narrative are rejected",
         "failed commands persist no dependency or audit mutation"
       ]
     },

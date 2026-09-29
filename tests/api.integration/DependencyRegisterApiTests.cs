@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using LgrTransformationMigration.Api.Contracts;
 using LgrTransformationMigration.Api.Domain;
@@ -28,9 +29,12 @@ public sealed class DependencyRegisterApiTests
         LgrWebApplicationFactory.ApplySyntheticIdentity(client, "architect-project-a", SeedIds.DemoProject);
 
         var response = await client.GetAsync("/api/v1/dependencies");
+        var capabilities = await client.GetFromJsonAsync<BrowserCapabilitiesDto>(
+            "/api/v1/session/capabilities", JsonOptions);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal("feature_disabled", await ErrorCodeAsync(response));
+        Assert.DoesNotContain("dependency.read", capabilities!.Permissions);
     }
 
     [Fact]
@@ -46,6 +50,26 @@ public sealed class DependencyRegisterApiTests
         Assert.Equal(HttpStatusCode.BadRequest, referenceResponse.StatusCode);
         Assert.Equal("validation_failed", await ErrorCodeAsync(dependencyResponse));
         Assert.Equal("validation_failed", await ErrorCodeAsync(referenceResponse));
+    }
+
+    [Fact]
+    public async Task Reference_names_use_NFC_normalization_for_duplicate_detection()
+    {
+        using var factory = new LgrWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient("architect-project-a", SeedIds.DemoProject);
+
+        var decomposed = await client.PostAsJsonAsync(
+            "/api/v1/dependency-references",
+            new DependencyReferenceWriteV1("Api", "Cafe\u0301", null, "Unresolved"));
+        Assert.Equal(HttpStatusCode.Created, decomposed.StatusCode);
+        var created = await decomposed.Content.ReadFromJsonAsync<DependencyReferenceDto>(JsonOptions);
+        Assert.True(created!.Name.IsNormalized(NormalizationForm.FormC));
+
+        var canonicallyEquivalent = await client.PostAsJsonAsync(
+            "/api/v1/dependency-references",
+            new DependencyReferenceWriteV1("Api", "Caf\u00e9", null, "Unresolved"));
+        Assert.Equal(HttpStatusCode.Conflict, canonicallyEquivalent.StatusCode);
+        Assert.Equal("data_conflict", await ErrorCodeAsync(canonicallyEquivalent));
     }
 
     [Fact]
@@ -217,6 +241,13 @@ public sealed class DependencyRegisterApiTests
             Description = "Password=synthetic-do-not-store"
         });
         Assert.Equal(HttpStatusCode.BadRequest, sensitive.StatusCode);
+
+        var url = await client.PostAsJsonAsync("/api/v1/dependencies", Request(
+            new("Application", applicationId), new("Server", serverId), "Service") with
+        {
+            Description = "https://example.test/dependency"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, url.StatusCode);
 
         var (created, _) = await CreateDependencyAsync(
             client, new("Application", applicationId), new("Server", serverId), "Service");

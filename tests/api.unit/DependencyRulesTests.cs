@@ -65,13 +65,14 @@ public sealed class DependencyRulesTests
 
     [Theory]
     [InlineData("<script>alert(1)</script>")]
+    [InlineData("https://example.test/dependency")]
     [InlineData("Password=synthetic-secret")]
     [InlineData("AccountKey=synthetic-secret")]
     [InlineData("Bearer abcdefghijklmnopqrstuvwxyz")]
     [InlineData("eyJabcdefgh.abcdefghijkl.abcdefghijkl")]
     [InlineData("https://example.invalid/path?sig=synthetic")]
     [InlineData("-----BEGIN PRIVATE KEY-----")]
-    public void Narrative_rejects_markup_and_secret_like_content(string value) =>
+    public void Narrative_rejects_markup_urls_and_secret_like_content(string value) =>
         Assert.Throws<DomainValidationException>(() => DependencyText.Optional(value, 2000, "Description"));
 
     [Fact]
