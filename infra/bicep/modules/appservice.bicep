@@ -360,6 +360,7 @@ resource slotDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-previ
 
 output webSiteId string = web.id
 output apiSiteId string = api.id
+output webStagingSlotId string = webSlot.id
 output apiStagingSlotId string = apiSlot.id
 output webAppName string = web.name
 output apiAppName string = api.name

@@ -5,6 +5,30 @@ parameters:
 - name: rollbackAzureDemo
   type: boolean
   default: false
+- name: rollbackReleaseIdentifier
+  type: string
+  default: ''
+- name: rollbackEnvironmentName
+  type: string
+  default: ''
+- name: rollbackResourceGroupName
+  type: string
+  default: ''
+- name: rollbackWebAppName
+  type: string
+  default: ''
+- name: rollbackApiAppName
+  type: string
+  default: ''
+- name: rollbackWebSlotName
+  type: string
+  default: ''
+- name: rollbackApiSlotName
+  type: string
+  default: ''
+- name: rollbackTargetSlotName
+  type: string
+  default: ''
 
 trigger: none
 pr:
@@ -66,6 +90,10 @@ stages:
       displayName: Secret, LocalTest, header and prohibited-capability boundaries
     - pwsh: ./scripts/build/Test-AzurePipelineStructure.ps1
       displayName: Azure Pipelines structural contract
+    - pwsh: ./scripts/build/Test-AzureDemoMonitoringAlerts.ps1
+      displayName: Mandatory Azure demo monitoring alert contract
+    - pwsh: ./scripts/build/Test-AzureDemoRollbackSafeguards.ps1
+      displayName: Fail-closed Azure demo rollback guard tests
     - pwsh: ./scripts/build/New-AzureDemoSboms.ps1 -OutputDirectory '$(Build.ArtifactStagingDirectory)/sbom'
       displayName: Generate locked dependency SBOM evidence
     - publish: $(Build.ArtifactStagingDirectory)/sbom
@@ -309,7 +337,7 @@ stages:
 - stage: Rollback
   displayName: Human-authorised application slot swap-back
   dependsOn: SwapAndVerify
-  condition: and(always(), eq('${{ parameters.rollbackAzureDemo }}', true))
+  condition: and(always(), in(dependencies.SwapAndVerify.result, 'Succeeded', 'SucceededWithIssues', 'Failed'), eq('${{ parameters.deployAzureDemo }}', true), eq('${{ parameters.rollbackAzureDemo }}', true), eq(variables['Build.SourceBranch'], 'refs/heads/release/azure-demo-v1'), ne('${{ parameters.rollbackReleaseIdentifier }}', ''), eq('${{ parameters.rollbackReleaseIdentifier }}', variables['Build.SourceVersion']), eq('${{ parameters.rollbackEnvironmentName }}', 'azure-demo'), eq('${{ parameters.rollbackResourceGroupName }}', 'Onkar.Pathre'), eq('${{ parameters.rollbackWebAppName }}', variables['webAppName']), eq('${{ parameters.rollbackApiAppName }}', variables['apiAppName']), eq('${{ parameters.rollbackWebSlotName }}', variables['webSlotName']), eq('${{ parameters.rollbackApiSlotName }}', variables['apiSlotName']), eq('${{ parameters.rollbackTargetSlotName }}', 'production'))
   variables:
   - group: vg-lgrtm-azdemo-public
   jobs:
@@ -320,12 +348,39 @@ stages:
       runOnce:
         deploy:
           steps:
+          - checkout: self
+            clean: true
+            fetchDepth: 0
+          - pwsh: ./scripts/build/Assert-AzureDemoRollbackTarget.ps1 -SourceBranch $env:ROLLBACK_SOURCE_BRANCH -SourceVersion $env:ROLLBACK_SOURCE_VERSION -ReleaseIdentifier $env:ROLLBACK_RELEASE_IDENTIFIER -DeploymentEnvironmentName $env:ROLLBACK_ENVIRONMENT -ResourceGroupName $env:ROLLBACK_RESOURCE_GROUP -WebAppName $env:ROLLBACK_WEB_APP -ExpectedWebAppName $env:EXPECTED_WEB_APP -ApiAppName $env:ROLLBACK_API_APP -ExpectedApiAppName $env:EXPECTED_API_APP -WebSlotName $env:ROLLBACK_WEB_SLOT -ApiSlotName $env:ROLLBACK_API_SLOT -TargetSlotName $env:ROLLBACK_TARGET_SLOT
+            displayName: Validate immutable release and exact rollback target
+            env:
+              ROLLBACK_SOURCE_BRANCH: $(Build.SourceBranch)
+              ROLLBACK_SOURCE_VERSION: $(Build.SourceVersion)
+              ROLLBACK_RELEASE_IDENTIFIER: ${{ parameters.rollbackReleaseIdentifier }}
+              ROLLBACK_ENVIRONMENT: ${{ parameters.rollbackEnvironmentName }}
+              ROLLBACK_RESOURCE_GROUP: ${{ parameters.rollbackResourceGroupName }}
+              ROLLBACK_WEB_APP: ${{ parameters.rollbackWebAppName }}
+              EXPECTED_WEB_APP: $(webAppName)
+              ROLLBACK_API_APP: ${{ parameters.rollbackApiAppName }}
+              EXPECTED_API_APP: $(apiAppName)
+              ROLLBACK_WEB_SLOT: ${{ parameters.rollbackWebSlotName }}
+              ROLLBACK_API_SLOT: ${{ parameters.rollbackApiSlotName }}
+              ROLLBACK_TARGET_SLOT: ${{ parameters.rollbackTargetSlotName }}
           - task: AzureCLI@2
             inputs:
               azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
               scriptType: pscore
               scriptLocation: inlineScript
               inlineScript: |
-                az webapp deployment slot swap --resource-group Onkar.Pathre --name '$(webAppName)' --slot staging --target-slot production
-                az webapp deployment slot swap --resource-group Onkar.Pathre --name '$(apiAppName)' --slot staging --target-slot production
+                az webapp deployment slot swap --resource-group $env:ROLLBACK_RESOURCE_GROUP --name $env:ROLLBACK_WEB_APP --slot $env:ROLLBACK_WEB_SLOT --target-slot $env:ROLLBACK_TARGET_SLOT
+                if ($LASTEXITCODE) { throw 'Restricted demo web rollback failed.' }
+                az webapp deployment slot swap --resource-group $env:ROLLBACK_RESOURCE_GROUP --name $env:ROLLBACK_API_APP --slot $env:ROLLBACK_API_SLOT --target-slot $env:ROLLBACK_TARGET_SLOT
+                if ($LASTEXITCODE) { throw 'Restricted demo API rollback failed.' }
                 Write-Output 'Database rollback was not attempted. Forward-fix or separately approved PITR-to-new-database remains mandatory.'
+            env:
+              ROLLBACK_RESOURCE_GROUP: ${{ parameters.rollbackResourceGroupName }}
+              ROLLBACK_WEB_APP: ${{ parameters.rollbackWebAppName }}
+              ROLLBACK_API_APP: ${{ parameters.rollbackApiAppName }}
+              ROLLBACK_WEB_SLOT: ${{ parameters.rollbackWebSlotName }}
+              ROLLBACK_API_SLOT: ${{ parameters.rollbackApiSlotName }}
+              ROLLBACK_TARGET_SLOT: ${{ parameters.rollbackTargetSlotName }}

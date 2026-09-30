@@ -155,9 +155,16 @@ module alerts 'modules/alerts.bicep' = {
   name: 'alerts-${environmentName}'
   params: {
     location: location
+    resourceGroupName: resourceGroupName
     actionGroupId: monitoring.outputs.actionGroupId
+    applicationInsightsResourceId: monitoring.outputs.applicationInsightsResourceId
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+    telemetryDailyCapGb: telemetryDailyCapGb
+    webHostname: apps.outputs.webHostname
     webSiteId: apps.outputs.webSiteId
     apiSiteId: apps.outputs.apiSiteId
+    webStagingSlotId: apps.outputs.webStagingSlotId
+    apiStagingSlotId: apps.outputs.apiStagingSlotId
     sqlDatabaseId: data.outputs.sqlDatabaseId
     tags: tags
   }

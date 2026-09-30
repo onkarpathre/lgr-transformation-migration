@@ -27,7 +27,20 @@ if (($actualStages -join '|') -ne ($expectedStages -join '|')) {
 $requiredFragments = @(
     'name: deployAzureDemo',
     'name: rollbackAzureDemo',
+    'name: rollbackReleaseIdentifier',
+    'name: rollbackEnvironmentName',
+    'name: rollbackResourceGroupName',
+    'name: rollbackWebAppName',
+    'name: rollbackApiAppName',
+    'name: rollbackWebSlotName',
+    'name: rollbackApiSlotName',
+    'name: rollbackTargetSlotName',
     'eq(''${{ parameters.deployAzureDemo }}'', true)',
+    'eq(''${{ parameters.rollbackAzureDemo }}'', true)',
+    'eq(''${{ parameters.rollbackReleaseIdentifier }}'', variables[''Build.SourceVersion''])',
+    'eq(''${{ parameters.rollbackEnvironmentName }}'', ''azure-demo'')',
+    'eq(''${{ parameters.rollbackResourceGroupName }}'', ''Onkar.Pathre'')',
+    'in(dependencies.SwapAndVerify.result, ''Succeeded'', ''SucceededWithIssues'', ''Failed'')',
     "eq(variables['Build.SourceBranch'], 'refs/heads/release/azure-demo-v1')",
     'environment: azure-demo-staging',
     'environment: azure-demo',
@@ -37,6 +50,7 @@ $requiredFragments = @(
     'az deployment group what-if',
     'lgrtm-efbundle-linux-x64',
     'Invoke-AzureDemoSmokeTests.ps1',
+    'Assert-AzureDemoRollbackTarget.ps1',
     'az webapp deployment slot swap'
 )
 foreach ($fragment in $requiredFragments) {
@@ -56,7 +70,13 @@ if ($swap.IndexOf('$(apiAppName)', [StringComparison]::Ordinal) -ge $swap.IndexO
     throw 'Approved swap order must be API before web.'
 }
 if ($rollback.IndexOf('$(webAppName)', [StringComparison]::Ordinal) -ge $rollback.IndexOf('$(apiAppName)', [StringComparison]::Ordinal)) {
-    throw 'Approved rollback order must be web before API.'
+    throw 'Rollback target comparisons must list the web application before the API application.'
+}
+if ($rollback.IndexOf('--name $env:ROLLBACK_WEB_APP', [StringComparison]::Ordinal) -ge $rollback.IndexOf('--name $env:ROLLBACK_API_APP', [StringComparison]::Ordinal)) {
+    throw 'Approved rollback execution order must be web before API.'
+}
+if ($rollback.IndexOf('Assert-AzureDemoRollbackTarget.ps1', [StringComparison]::Ordinal) -ge $rollback.IndexOf('AzureCLI@2', [StringComparison]::Ordinal)) {
+    throw 'Rollback target validation must run before any Azure task.'
 }
 
 Write-Output "Azure Pipelines structural contract passed for $($actualStages.Count) ordered stages."

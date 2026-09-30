@@ -50,7 +50,68 @@ public sealed class AzureDemoDeploymentBoundaryTests
         var rollbackStage = pipeline[pipeline.IndexOf("- stage: Rollback", StringComparison.Ordinal)..];
 
         Assert.True(swapStage.IndexOf("$(apiAppName)", StringComparison.Ordinal) < swapStage.IndexOf("$(webAppName)", StringComparison.Ordinal));
-        Assert.True(rollbackStage.IndexOf("$(webAppName)", StringComparison.Ordinal) < rollbackStage.IndexOf("$(apiAppName)", StringComparison.Ordinal));
+        Assert.True(rollbackStage.IndexOf("--name $env:ROLLBACK_WEB_APP", StringComparison.Ordinal) < rollbackStage.IndexOf("--name $env:ROLLBACK_API_APP", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Rollback_requires_exact_branch_release_environment_and_target_guard()
+    {
+        var root = FindRepositoryRoot();
+        var pipeline = File.ReadAllText(Path.Combine(root, "azure-pipelines.yml"));
+        var rollbackStage = pipeline[pipeline.IndexOf("- stage: Rollback", StringComparison.Ordinal)..];
+
+        foreach (var fragment in new[]
+        {
+            "eq('${{ parameters.deployAzureDemo }}', true)",
+            "eq('${{ parameters.rollbackAzureDemo }}', true)",
+            "eq(variables['Build.SourceBranch'], 'refs/heads/release/azure-demo-v1')",
+            "eq('${{ parameters.rollbackReleaseIdentifier }}', variables['Build.SourceVersion'])",
+            "eq('${{ parameters.rollbackEnvironmentName }}', 'azure-demo')",
+            "eq('${{ parameters.rollbackResourceGroupName }}', 'Onkar.Pathre')",
+            "in(dependencies.SwapAndVerify.result, 'Succeeded', 'SucceededWithIssues', 'Failed')",
+            "Assert-AzureDemoRollbackTarget.ps1"
+        })
+        {
+            Assert.Contains(fragment, rollbackStage, StringComparison.Ordinal);
+        }
+
+        Assert.True(rollbackStage.IndexOf("Assert-AzureDemoRollbackTarget.ps1", StringComparison.Ordinal) < rollbackStage.IndexOf("AzureCLI@2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Bicep_defines_every_approved_monitoring_alert_family_and_action_group_wiring()
+    {
+        var root = FindRepositoryRoot();
+        var alerts = File.ReadAllText(Path.Combine(root, "infra", "bicep", "modules", "alerts.bicep"));
+
+        foreach (var alertName in new[]
+        {
+            "alert-lgrtm-web-health-azdemo",
+            "alert-lgrtm-api-readiness-azdemo",
+            "alert-lgrtm-web-http5xx-azdemo",
+            "alert-lgrtm-api-http5xx-azdemo",
+            "alert-lgrtm-unhandled-errors-azdemo",
+            "alert-lgrtm-auth-failures-denials-azdemo",
+            "alert-lgrtm-sql-dtu-azdemo",
+            "alert-lgrtm-sql-connectivity-azdemo",
+            "alert-lgrtm-keyvault-denial-azdemo",
+            "alert-lgrtm-blob-dependency-azdemo",
+            "alert-lgrtm-import-failure-azdemo",
+            "alert-lgrtm-storage-malware-azdemo",
+            "alert-lgrtm-failed-deployment-azdemo",
+            "alert-lgrtm-web-slot-health-azdemo",
+            "alert-lgrtm-api-slot-health-azdemo",
+            "alert-lgrtm-log-daily-cap-azdemo",
+            "alert-lgrtm-service-health-azdemo"
+        })
+        {
+            Assert.Contains(alertName, alerts, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("actionGroupId: actionGroupId", alerts, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.Insights/webtests@2022-06-15", alerts, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.Insights/scheduledQueryRules@2023-12-01", alerts, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.Insights/activityLogAlerts@2020-10-01", alerts, StringComparison.Ordinal);
     }
 
     [Fact]
