@@ -1,27 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useEntraAuth } from "./EntraAuth";
 
 const DEMO_CUSTOMER = "11111111-1111-1111-1111-111111111111";
 const DEMO_PROJECT = "22222222-2222-2222-2222-222222222222";
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
-const TEST_PRINCIPAL_HEADER = "X-Lgr-Test-Principal";
-
-function getDevelopmentTestPrincipal(): string | null {
-  if (process.env.NODE_ENV !== "development") return null;
-
-  const principal = process.env.NEXT_PUBLIC_LGR_TEST_PRINCIPAL?.trim();
-  if (!principal) {
-    throw new Error(
-      "Local development authentication is not configured. Set NEXT_PUBLIC_LGR_TEST_PRINCIPAL to an allow-listed synthetic alias and restart the frontend."
-    );
-  }
-
-  return principal;
-}
-
-const DEVELOPMENT_TEST_PRINCIPAL = getDevelopmentTestPrincipal();
-
 type Named = { id: string; name: string };
 export type ApiProblem = { title?: string; detail?: string; errorCode?: string; correlationId?: string; errors?: Record<string, string[]> };
 export class ApiError extends Error {
@@ -45,6 +28,7 @@ type ApiContextValue = {
 const Context = createContext<ApiContextValue | null>(null);
 
 export function ApiProvider({ children }: { children: React.ReactNode }) {
+  const { accessToken } = useEntraAuth();
   const [customerId, setCustomer] = useState(DEMO_CUSTOMER);
   const [projectId, setProject] = useState(DEMO_PROJECT);
   const [customers, setCustomers] = useState<Named[]>([{ id: DEMO_CUSTOMER, name: "Demo Council" }]);
@@ -54,13 +38,11 @@ export function ApiProvider({ children }: { children: React.ReactNode }) {
 
   const apiResponse = useCallback(async <T,>(path: string, init: RequestInit = {}): Promise<ApiResponse<T>> => {
     const headers = new Headers(init.headers);
-    headers.delete(TEST_PRINCIPAL_HEADER);
-    if (DEVELOPMENT_TEST_PRINCIPAL) {
-      headers.set(TEST_PRINCIPAL_HEADER, DEVELOPMENT_TEST_PRINCIPAL);
-    }
+    ["X-Customer-Id", "X-User-Name", "X-Lgr-Test-Principal", "X-Principal-Id", "X-Roles", "X-Project-Roles", "X-Permissions"].forEach(name => headers.delete(name));
+    if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
     headers.set("X-Project-Id", projectId);
     if (!(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
-    const response = await fetch(`${API_BASE}${path}`, {
+    const response = await fetch(path, {
       ...init,
       headers,
       cache: "no-store"
@@ -71,7 +53,7 @@ export function ApiProvider({ children }: { children: React.ReactNode }) {
     }
     const data = response.status === 204 ? undefined as T : await response.json() as T;
     return { data, etag: response.headers.get("ETag") };
-  }, [projectId]);
+  }, [projectId, accessToken]);
 
   const api = useCallback(async <T,>(path: string, init: RequestInit = {}): Promise<T> => (await apiResponse<T>(path, init)).data, [apiResponse]);
 

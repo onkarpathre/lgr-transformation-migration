@@ -1,41 +1,331 @@
-trigger:
-  branches:
-    include: [ main ]
+parameters:
+- name: deployAzureDemo
+  type: boolean
+  default: false
+- name: rollbackAzureDemo
+  type: boolean
+  default: false
 
-pool:
-  vmImage: windows-latest
+trigger: none
+pr:
+  branches:
+    include: [ release/azure-demo-v1, main ]
+
+variables:
+- name: DOTNET_NOLOGO
+  value: 'true'
+- name: NUGET_XMLDOC_MODE
+  value: skip
 
 stages:
-- stage: BuildAndTest
+- stage: Validate
+  displayName: Build, test, audit and validate
   jobs:
-  - job: Api
+  - job: Application
+    pool: { vmImage: ubuntu-latest }
     steps:
+    - checkout: self
+      clean: true
+      fetchDepth: 0
     - task: UseDotNet@2
-      inputs:
-        packageType: sdk
-        version: 10.0.x
-    - script: dotnet restore LgrTransformationMigration.sln
-      displayName: Restore .NET packages
-    - script: dotnet build LgrTransformationMigration.sln --configuration Release --no-restore
-      displayName: Build API and tests
-    - script: dotnet test LgrTransformationMigration.sln --configuration Release --no-build --logger trx
-      displayName: Run API tests
+      inputs: { packageType: sdk, version: 10.0.x }
+    - task: NodeTool@0
+      inputs: { versionSpec: 24.x }
+    - pwsh: |
+        dotnet --info
+        node --version
+        npm --version
+        dotnet restore LgrTransformationMigration.sln --locked-mode
+        dotnet format LgrTransformationMigration.sln --verify-no-changes --no-restore --include src/api/Program.cs src/api/Infrastructure/IdentityAuthorization.cs src/api/Infrastructure/AzureDemoInfrastructure.cs src/api/Infrastructure/HealthAndSecurity.cs src/api/Services/Discovery/DiscoveryImportOptions.cs src/api/Services/Discovery/ImportFileStorage.cs tests/api.unit/AzureDemoConfigurationTests.cs tests/api.unit/AzureDemoDeploymentBoundaryTests.cs tools/AzureDemo.DataTool/Program.cs
+        dotnet build LgrTransformationMigration.sln --configuration Release --no-restore
+        dotnet test LgrTransformationMigration.sln --configuration Release --no-build --logger "trx;LogFilePrefix=azure-demo"
+      displayName: Locked restore, format, build and .NET tests
+    - pwsh: |
+        dotnet list LgrTransformationMigration.sln package --vulnerable --include-transitive
+        dotnet list LgrTransformationMigration.sln package --deprecated --include-transitive
+      displayName: Connected NuGet vulnerability and deprecation gates
+    - pwsh: |
+        npm ci --ignore-scripts
+        npm audit --audit-level=moderate
+        npm run lint
+        npm run test:component -- --reporter=junit --outputFile=../../TestResults/vitest-junit.xml
+        npm run build
+        $tree = npm ls --all --json | ConvertFrom-Json
+        $tree | ConvertTo-Json -Depth 100 | Set-Content ../../TestResults/npm-dependency-tree.json
+      workingDirectory: src/web
+      displayName: Connected npm audit, lint, tests and production build
+      env:
+        NEXT_PUBLIC_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)
+        NEXT_PUBLIC_ENTRA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
+        NEXT_PUBLIC_API_SCOPE: $(AZDEMO_API_SCOPE)
+        NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production demo
+    - pwsh: |
+        node -e "const l=require('./src/web/package-lock.json'); const e={vitest:'4.1.11','@vitest/mocker':'4.1.11','brace-expansion-1':'1.1.21','brace-expansion-5':'5.0.12'}; const a={vitest:l.packages['node_modules/vitest'].version,'@vitest/mocker':l.packages['node_modules/@vitest/mocker'].version,'brace-expansion-1':l.packages['node_modules/brace-expansion'].version,'brace-expansion-5':l.packages['node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion'].version}; for(const [k,v] of Object.entries(e)) if(a[k]!==v) throw new Error(k+' is '+a[k]+' not '+v);"
+      displayName: Enforce approved frontend remediation versions
+    - pwsh: ./scripts/build/Test-AzureDemoSourceBoundaries.ps1
+      displayName: Secret, LocalTest, header and prohibited-capability boundaries
+    - pwsh: ./scripts/build/Test-AzurePipelineStructure.ps1
+      displayName: Azure Pipelines structural contract
+    - pwsh: ./scripts/build/New-AzureDemoSboms.ps1 -OutputDirectory '$(Build.ArtifactStagingDirectory)/sbom'
+      displayName: Generate locked dependency SBOM evidence
+    - publish: $(Build.ArtifactStagingDirectory)/sbom
+      artifact: dependency-sboms
     - task: PublishTestResults@2
       condition: succeededOrFailed()
-      inputs:
-        testResultsFormat: VSTest
-        testResultsFiles: '**/*.trx'
-  - job: Web
+      inputs: { testResultsFormat: VSTest, testResultsFiles: '**/TestResults/*.trx', failTaskOnFailedTests: true }
+    - task: PublishTestResults@2
+      condition: succeededOrFailed()
+      inputs: { testResultsFormat: JUnit, testResultsFiles: 'TestResults/vitest-junit.xml', failTaskOnFailedTests: true }
+  - job: IaC
+    pool: { vmImage: ubuntu-latest }
     steps:
+    - checkout: self
+      clean: true
+    - pwsh: |
+        az bicep version
+        Get-ChildItem infra/bicep -Recurse -Include *.bicep,*.bicepparam | ForEach-Object {
+          az bicep format --file $_.FullName
+          if ($LASTEXITCODE) { throw "Bicep formatting failed for $($_.FullName)." }
+        }
+        $changed = git status --short -- infra/bicep
+        if ($changed) { throw "Bicep formatting differs:`n$changed" }
+        az bicep build --file infra/bicep/main.bicep --outfile $(Build.ArtifactStagingDirectory)/main.json
+        if ($LASTEXITCODE) { throw 'Bicep build failed.' }
+        az bicep build-params --file infra/bicep/parameters/azure-demo.bicepparam --outfile $(Build.ArtifactStagingDirectory)/azure-demo.parameters.json
+        if ($LASTEXITCODE) { throw 'AzureDemo Bicep parameter build failed.' }
+        if (Select-String -Path $(Build.ArtifactStagingDirectory)/main.json -Pattern 'listKeys|password|clientSecret|publishProfile' -CaseSensitive:$false) { throw 'Bicep output contains a prohibited credential pattern.' }
+      displayName: Bicep format, lint, build and credential-pattern gate
+    - publish: $(Build.ArtifactStagingDirectory)/main.json
+      artifact: bicep-validation
+
+- stage: Package
+  displayName: Immutable application and migration artifacts
+  dependsOn: Validate
+  jobs:
+  - job: Package
+    pool: { vmImage: ubuntu-latest }
+    steps:
+    - checkout: self
+      clean: true
+      fetchDepth: 0
+    - task: UseDotNet@2
+      inputs: { packageType: sdk, version: 10.0.x }
     - task: NodeTool@0
+      inputs: { versionSpec: 24.x }
+    - pwsh: ./scripts/build/New-AzureDemoPackages.ps1 -OutputDirectory '$(Build.ArtifactStagingDirectory)/application' -SkipTests
+      displayName: Create web and API ZIP artifacts
+      env:
+        NEXT_PUBLIC_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)
+        NEXT_PUBLIC_ENTRA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
+        NEXT_PUBLIC_API_SCOPE: $(AZDEMO_API_SCOPE)
+        NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production demo
+    - pwsh: ./scripts/build/New-EfMigrationArtifacts.ps1 -OutputDirectory '$(Build.ArtifactStagingDirectory)/migration'
+      displayName: Create controlled Linux EF bundle, SQL and manifest
+    - pwsh: ./scripts/build/Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '$(Build.ArtifactStagingDirectory)/application'
+      displayName: Verify hashes, ZIP roots and prohibited-file absence
+    - pwsh: |
+        Copy-Item infra/bicep -Destination '$(Build.ArtifactStagingDirectory)/infrastructure' -Recurse
+        Copy-Item demo-data -Destination '$(Build.ArtifactStagingDirectory)/demo-data' -Recurse
+        Copy-Item scripts/smoke -Destination '$(Build.ArtifactStagingDirectory)/smoke' -Recurse
+        Get-ChildItem '$(Build.ArtifactStagingDirectory)' -Recurse -File | ForEach-Object {
+          [pscustomobject]@{ path = $_.FullName.Substring('$(Build.ArtifactStagingDirectory)'.Length + 1).Replace('\','/'); sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+        } | ConvertTo-Json | Set-Content '$(Build.ArtifactStagingDirectory)/deployment-artifact-manifest.json'
+      displayName: Assemble deployment evidence manifest
+    - publish: $(Build.ArtifactStagingDirectory)
+      artifact: azure-demo-immutable
+
+- stage: PreDeploymentGate
+  displayName: Platform gate and Bicep what-if
+  dependsOn: Package
+  condition: and(succeeded(), eq('${{ parameters.deployAzureDemo }}', true), eq(variables['Build.SourceBranch'], 'refs/heads/release/azure-demo-v1'))
+  variables:
+  - group: vg-lgrtm-azdemo-public
+  jobs:
+  - deployment: WhatIf
+    environment: azure-demo-staging
+    pool: { name: $(AZDEMO_PRIVATE_AGENT_POOL) }
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                if ((az account show --query tenantId -o tsv) -ne '$(AZDEMO_ENTRA_TENANT_ID)') { throw 'Wrong Azure tenant.' }
+                $runtimes = az webapp list-runtimes --os linux -o tsv
+                if ($runtimes -notmatch 'NODE:24-lts' -or $runtimes -notmatch 'DOTNETCORE:10.0') { throw 'Approved native App Service runtimes are unavailable.' }
+                az deployment group what-if --resource-group 'Onkar.Pathre' --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --no-pretty-print > $(Pipeline.Workspace)/bicep-what-if.json
+            env:
+              AZDEMO_UNIQUE_SUFFIX: $(AZDEMO_UNIQUE_SUFFIX)
+              AZDEMO_OWNER: $(AZDEMO_OWNER)
+              AZDEMO_COST_CENTRE: $(AZDEMO_COST_CENTRE)
+              AZDEMO_EXPIRY_DATE: $(AZDEMO_EXPIRY_DATE)
+              AZDEMO_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)
+              AZDEMO_SPA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
+              AZDEMO_API_CLIENT_ID: $(AZDEMO_API_CLIENT_ID)
+              AZDEMO_SQL_ADMIN_OBJECT_ID: $(AZDEMO_SQL_ADMIN_OBJECT_ID)
+              AZDEMO_SQL_ADMIN_NAME: $(AZDEMO_SQL_ADMIN_NAME)
+              AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID: $(AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID)
+              AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
+              AZDEMO_ALERT_EMAIL: $(AZDEMO_ALERT_EMAIL)
+              AZDEMO_VNET_PREFIX: $(AZDEMO_VNET_PREFIX)
+              AZDEMO_INTEGRATION_SUBNET_PREFIX: $(AZDEMO_INTEGRATION_SUBNET_PREFIX)
+              AZDEMO_PRIVATE_ENDPOINT_SUBNET_PREFIX: $(AZDEMO_PRIVATE_ENDPOINT_SUBNET_PREFIX)
+          - publish: $(Pipeline.Workspace)/bicep-what-if.json
+            artifact: approved-what-if-candidate
+
+- stage: MigrateAndDeploySlots
+  displayName: Reviewed migration, seed and staging-slot deployment
+  dependsOn: PreDeploymentGate
+  variables:
+  - group: vg-lgrtm-azdemo-public
+  jobs:
+  - deployment: DatabaseAndSlots
+    environment: azure-demo-staging
+    pool: { name: $(AZDEMO_PRIVATE_AGENT_POOL) }
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - download: current
+            artifact: azure-demo-immutable
+          - task: AzureCLI@2
+            displayName: Deploy approved resource-group Bicep with workload identity
+            inputs:
+              azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $deploymentName = "lgrtm-azdemo-$(Build.BuildId)"
+                az deployment group create --resource-group Onkar.Pathre --name $deploymentName --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --only-show-errors
+                if ($LASTEXITCODE) { throw 'Bicep deployment failed.' }
+                $outputs = az deployment group show --resource-group Onkar.Pathre --name $deploymentName --query properties.outputs -o json | ConvertFrom-Json
+                Write-Host "##vso[task.setvariable variable=webAppName]$($outputs.webAppName.value)"
+                Write-Host "##vso[task.setvariable variable=apiAppName]$($outputs.apiAppName.value)"
+                Write-Host "##vso[task.setvariable variable=AZDEMO_SQL_SERVER_FQDN]$($outputs.sqlServerFqdn.value)"
+                Write-Host "##vso[task.setvariable variable=AZDEMO_SQL_SERVER_NAME]$($outputs.sqlServerFqdn.value.Split('.')[0])"
+                Write-Host "##vso[task.setvariable variable=AZDEMO_API_MAIN_PRINCIPAL_OBJECT_ID]$($outputs.apiMainIdentityPrincipalId.value)"
+                Write-Host "##vso[task.setvariable variable=AZDEMO_API_STAGING_PRINCIPAL_OBJECT_ID]$($outputs.apiStagingIdentityPrincipalId.value)"
+            env:
+              AZDEMO_UNIQUE_SUFFIX: $(AZDEMO_UNIQUE_SUFFIX)
+              AZDEMO_OWNER: $(AZDEMO_OWNER)
+              AZDEMO_COST_CENTRE: $(AZDEMO_COST_CENTRE)
+              AZDEMO_EXPIRY_DATE: $(AZDEMO_EXPIRY_DATE)
+              AZDEMO_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)
+              AZDEMO_SPA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
+              AZDEMO_API_CLIENT_ID: $(AZDEMO_API_CLIENT_ID)
+              AZDEMO_SQL_ADMIN_OBJECT_ID: $(AZDEMO_SQL_ADMIN_OBJECT_ID)
+              AZDEMO_SQL_ADMIN_NAME: $(AZDEMO_SQL_ADMIN_NAME)
+              AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID: $(AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID)
+              AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
+              AZDEMO_ALERT_EMAIL: $(AZDEMO_ALERT_EMAIL)
+              AZDEMO_VNET_PREFIX: $(AZDEMO_VNET_PREFIX)
+              AZDEMO_INTEGRATION_SUBNET_PREFIX: $(AZDEMO_INTEGRATION_SUBNET_PREFIX)
+              AZDEMO_PRIVATE_ENDPOINT_SUBNET_PREFIX: $(AZDEMO_PRIVATE_ENDPOINT_SUBNET_PREFIX)
+          - pwsh: |
+              sqlcmd -G -S 'tcp:$(AZDEMO_SQL_SERVER_FQDN),1433' -d 'sqldb-lgrtm-azdemo' -b -i scripts/database/Configure-AzureDemoDatabasePrincipals.sql -v ApiMainPrincipalObjectId='$(AZDEMO_API_MAIN_PRINCIPAL_OBJECT_ID)' ApiStagingPrincipalObjectId='$(AZDEMO_API_STAGING_PRINCIPAL_OBJECT_ID)' MigrationPrincipalObjectId='$(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)'
+              if ($LASTEXITCODE) { throw 'Database workload-identity bootstrap failed.' }
+            displayName: Apply reviewed contained-user least-privilege grants
+          - task: AzureCLI@2
+            displayName: Record pre-migration PITR and schema checkpoint
+            inputs:
+              azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $checkpoint = [ordered]@{ capturedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); database = 'sqldb-lgrtm-azdemo'; state = (az sql db show -g Onkar.Pathre -s '$(AZDEMO_SQL_SERVER_NAME)' -n sqldb-lgrtm-azdemo --query '{status:status,earliestRestoreDate:earliestRestoreDate,resourceId:id}' -o json | ConvertFrom-Json) }
+                $checkpoint | ConvertTo-Json -Depth 5 | Set-Content '$(Pipeline.Workspace)/pre-migration-checkpoint.json'
+          - pwsh: |
+              $manifest = Get-Content '$(Pipeline.Workspace)/azure-demo-immutable/migration/migration-manifest.json' -Raw | ConvertFrom-Json
+              if ($manifest.startupMigration -ne $false) { throw 'Migration manifest permits startup migration.' }
+              & '$(Pipeline.Workspace)/azure-demo-immutable/migration/lgrtm-efbundle-linux-x64' --connection '$(AZDEMO_MIGRATION_CONNECTION_STRING)'
+              if ($LASTEXITCODE) { throw 'Reviewed EF bundle failed.' }
+            displayName: Execute reviewed EF bundle with migration workload identity
+          - pwsh: ./scripts/data/Invoke-AzureDemoSeed.ps1 -Environment AzureDemo -DatabaseName sqldb-lgrtm-azdemo -ResourceGroupName Onkar.Pathre
+            displayName: Reconcile approved synthetic seed
+            env:
+              LGR_AZURE_DEMO_SQL_CONNECTION_STRING: $(AZDEMO_MIGRATION_CONNECTION_STRING)
+          - task: AzureWebApp@1
+            displayName: Deploy API ZIP to staging only
+            inputs: { azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION), appType: webAppLinux, appName: $(apiAppName), resourceGroupName: Onkar.Pathre, deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/api.zip', deploymentMethod: zipDeploy }
+          - task: AzureWebApp@1
+            displayName: Deploy web ZIP to staging only
+            inputs: { azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION), appType: webAppLinux, appName: $(webAppName), resourceGroupName: Onkar.Pathre, deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/web.zip', deploymentMethod: zipDeploy }
+          - pwsh: ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/smoke-evidence' -PrerequisiteEvidenceDirectory '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)' -WebBaseUri 'https://$(webAppName)-staging.azurewebsites.net' -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -Execute
+            displayName: Run staging smoke checks
+          - publish: $(Pipeline.Workspace)/smoke-evidence
+            artifact: staging-smoke-evidence
+
+- stage: ReleaseApproval
+  displayName: Independent test, quality and human release approval
+  dependsOn: MigrateAndDeploySlots
+  variables:
+  - group: vg-lgrtm-azdemo-public
+  jobs:
+  - job: ManualEvidenceGate
+    pool: server
+    timeoutInMinutes: 1440
+    steps:
+    - task: ManualValidation@0
+      timeoutInMinutes: 1440
       inputs:
-        versionSpec: 24.x
-    - script: npm ci
-      workingDirectory: src/web
-      displayName: Restore web packages
-    - script: npm run lint
-      workingDirectory: src/web
-      displayName: Lint web
-    - script: npm run build
-      workingDirectory: src/web
-      displayName: Build web
+        notifyUsers: $(AZDEMO_RELEASE_APPROVERS)
+        instructions: 'Verify exact-commit Tester PASS, Quality recommendation, Product scope confirmation, Information Security evidence, Platform/Operations approval, DBA migration evidence and rollback target. Reject on any missing evidence.'
+        onTimeout: reject
+
+- stage: SwapAndVerify
+  displayName: Approved API-first and web-second slot swap
+  dependsOn: ReleaseApproval
+  variables:
+  - group: vg-lgrtm-azdemo-public
+  jobs:
+  - deployment: Swap
+    environment: azure-demo
+    pool: { name: $(AZDEMO_PRIVATE_AGENT_POOL) }
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - download: current
+            artifact: azure-demo-immutable
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                az webapp deployment slot swap --resource-group Onkar.Pathre --name '$(apiAppName)' --slot staging --target-slot production
+                az webapp deployment slot swap --resource-group Onkar.Pathre --name '$(webAppName)' --slot staging --target-slot production
+          - pwsh: ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/post-swap-smoke-evidence' -PrerequisiteEvidenceDirectory '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)' -WebBaseUri 'https://$(webAppName).azurewebsites.net' -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -Execute
+          - publish: $(Pipeline.Workspace)/post-swap-smoke-evidence
+            artifact: post-swap-smoke-evidence
+
+- stage: Rollback
+  displayName: Human-authorised application slot swap-back
+  dependsOn: SwapAndVerify
+  condition: and(always(), eq('${{ parameters.rollbackAzureDemo }}', true))
+  variables:
+  - group: vg-lgrtm-azdemo-public
+  jobs:
+  - deployment: SwapBack
+    environment: azure-demo
+    pool: { name: $(AZDEMO_PRIVATE_AGENT_POOL) }
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                az webapp deployment slot swap --resource-group Onkar.Pathre --name '$(webAppName)' --slot staging --target-slot production
+                az webapp deployment slot swap --resource-group Onkar.Pathre --name '$(apiAppName)' --slot staging --target-slot production
+                Write-Output 'Database rollback was not attempted. Forward-fix or separately approved PITR-to-new-database remains mandatory.'

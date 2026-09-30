@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useApi } from "./ApiContext";
+import { useEntraAuth } from "./EntraAuth";
 
 const navigation = [
   { label: "Dashboard", href: "/", icon: "DB" },
@@ -35,6 +36,7 @@ const navigation = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const { customerId, projectId, customers, projects, setCustomerId, setProjectId, hasPermission } = useApi();
+  const auth = useEntraAuth();
   const [open, setOpen] = useState(false);
   return (
     <div className="shell">
@@ -46,7 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             : ("permission" in item && !hasPermission(item.permission)) ? null
             : <Link onClick={() => setOpen(false)} aria-current={path === item.href || path.startsWith(`${item.href}/`) ? "page" : undefined} className={path === item.href || path.startsWith(`${item.href}/`) ? "nav-link active" : "nav-link"} href={item.href} key={item.href}><span aria-hidden="true">{item.icon}</span>{item.label}</Link>)}
         </nav>
-        <div className="sidebar-footer"><span className="status-dot" />Development context</div>
+        <div className="sidebar-footer"><span className="status-dot" />Restricted synthetic demo</div>
       </aside>
       <div className="workspace">
         <header className="topbar">
@@ -56,8 +58,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="context-arrow">›</span>
             <label>Project<select value={projectId} onChange={e => setProjectId(e.target.value)}>{projects.map(x => <option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
           </div>
-          <div className="user"><span className="user-avatar">PM</span><span><strong>Programme Manager</strong><small>Development user</small></span></div>
+          <div className="user"><span className="user-avatar">ID</span><span><strong>Internal demo user</strong><small>Synthetic project access</small></span>{auth.state === "authenticated" && <button className="text-button" onClick={auth.logout}>Sign out</button>}</div>
         </header>
+        <p className="demo-banner">{process.env.NEXT_PUBLIC_DEMO_LABEL ?? "Restricted synthetic non-production demo"}</p>
         <main>{children}</main>
       </div>
     </div>

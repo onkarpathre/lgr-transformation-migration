@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
 import { ApiProvider } from "@/components/ApiContext";
+import { EntraAuthGate, EntraAuthProvider } from "@/components/EntraAuth";
 
 export const metadata: Metadata = {
   title: { default: "LGR Transformation and Migration", template: "%s | LGR Transformation and Migration" },
@@ -11,11 +12,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>
-        <ApiProvider>
-          <AppShell>{children}</AppShell>
-        </ApiProvider>
-      </body>
+      <body><EntraAuthProvider><EntraAuthGate><ApiProvider><AppShell>{children}</AppShell></ApiProvider></EntraAuthGate></EntraAuthProvider></body>
     </html>
   );
 }
