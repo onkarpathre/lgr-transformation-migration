@@ -24,10 +24,12 @@ traceability:
 - **Role:** Developer under `AGENTS.md`.
 - **Work item:** `AZURE-DEMO-001`; architecture package `AZURE-DEMO-ARCH-001`.
 - **Branch:** `release/azure-demo-v1`.
-- **Exact unchanged HEAD:** `4dc284b06a9d0cb2e0114c7a16d99196b545b63e`.
-- **Implementation commit:** `null`; the recovered implementation remains uncommitted by instruction.
+- **Original tested Azure demo candidate:** `38add95edf8b63a552a29a6d6625336de92ea896`.
+- **Committed and pushed repair candidate:** `a5d683c7336d5938e274cb2c9460a2b6e4da6542`.
+- **Repair scope:** commit `a5d683c` contains the monitoring-alert implementation, rollback safeguards and related validation changes. It addresses Tester defects `AZD-TST-001`, `AZD-TST-002` and `AZD-TST-003`.
 - **Data/environment boundary:** local and isolated validation using synthetic data only.
-- **Developer state:** `READY_FOR_TEST`.
+- **Developer state:** `READY_FOR_RETEST`.
+- **Evidence-only update:** this document update records the immutable repair candidate and does not alter candidate `a5d683c7336d5938e274cb2c9460a2b6e4da6542`.
 
 The four exact-package decisions authorise controlled implementation and local or isolated testing only. Q-01 is closed for this package. Q-09 external identity remains excluded and is separable. Azure Platform/Operations approval remains `PENDING_PRE_DEPLOYMENT`; no Azure, Azure SQL, Key Vault, Entra, App Service, Azure DevOps, resource-group or other cloud action was performed.
 
@@ -37,9 +39,9 @@ The four exact-package decisions authorise controlled implementation and local o
 - Added liveness/readiness checks, secure response headers, forwarded-header handling, private API expectations and same-origin Next.js proxy/authentication contracts.
 - Added Node.js 24/Next.js 16 standalone and .NET 10 Linux App Service packaging, with local Development, Testing and LocalTest configuration excluded from published artifacts.
 - Added Azure Blob discovery-import persistence with bounded tenant/project paths and retained file-based import only. No discovery API was introduced.
-- Added parameterised resource-group-scoped Bicep for App Service staging slots, user-assigned managed identities, Key Vault, Azure SQL, Blob Storage, monitoring, VNet integration, private endpoints, private DNS and alerts. The templates do not provision migration targets.
+- Added parameterised resource-group-scoped Bicep for App Service staging slots, user-assigned managed identities, Key Vault, Azure SQL, Blob Storage, monitoring, VNet integration, private endpoints, private DNS and alerts. The repaired alert module now covers web availability, API readiness through the web health route, web/API HTTP 5xx, unhandled exceptions, authentication failures/authorization denials, SQL saturation/connectivity, Key Vault denial, Blob dependency failure, discovery-import failure, storage malware/scan failure, failed deployment, both staging-slot health signals, the daily telemetry cap and UK South service health. All alert resources route to the approved action group. The templates do not provision migration targets.
 - Preserved `infra/bicep/parameters/dev.bicepparam` as an AzureDemo-only compatibility parameter entry. Deletion was unnecessary: the restored equivalent contains the same 21 approved parameters as `azure-demo.bicepparam` and no legacy development values.
-- Added a default-disabled, release-branch-only Azure Pipelines path with build/test/audit/package/SBOM, Bicep build/what-if, controlled EF artifacts, gated slot deployment, 22 smoke contracts, API-before-web swap and web-before-API rollback ordering. Human validation and protected environments remain mandatory.
+- Added a default-disabled, release-branch-only Azure Pipelines path with build/test/audit/package/SBOM, Bicep build/what-if, controlled EF artifacts, gated slot deployment, 22 smoke contracts, API-before-web swap and web-before-API rollback ordering. The repaired rollback stage can run only when its same pipeline run actually reached a succeeded or failed `SwapAndVerify` attempt; it also requires deployment and rollback opt-in, the exact release branch, an explicit full immutable source commit, exact `azure-demo` environment, exact `Onkar.Pathre` resource group, approved web/API application names and exact `staging` to `production` slot values. A separate fail-closed guard runs before any Azure task. Human validation and protected environments remain mandatory.
 - Added controlled EF idempotent-script and Linux migration-bundle production with no startup migration. Generation preserves the owner-supplied API lock file even on a failed runtime restore.
 - Added synthetic seed/reset tooling that validates manifest classification and hashes and refuses non-AzureDemo, unapproved SQL targets or unsafe environments.
 - Added deployment-boundary, exact configuration and browser contract tests plus source-boundary, artifact-manifest, pipeline-structure and SBOM tooling.
@@ -57,24 +59,58 @@ The four exact-package decisions authorise controlled implementation and local o
 
 | Check | Result |
 |---|---|
-| Exact Git control | PASS: branch `release/azure-demo-v1`; HEAD remains `4dc284b06a9d0cb2e0114c7a16d99196b545b63e`; no stage, commit, push, merge or deployment. |
+| Exact Git control | PASS locally: branch `release/azure-demo-v1`; HEAD and local upstream `origin/release/azure-demo-v1` both resolve to repair candidate `a5d683c7336d5938e274cb2c9460a2b6e4da6542`; ahead/behind `0/0`. Its direct parent is original tested candidate `38add95edf8b63a552a29a6d6625336de92ea896`. The repair is committed and pushed; no commit, push, merge or deployment was performed by this evidence-only document update. |
 | Locked .NET restore | PASS with four `NU1900` warnings because the NuGet advisory endpoint is unavailable in the isolated environment. Package locks remained intact. |
 | Release build | PASS: 0 errors, 4 `NU1900` advisory-feed warnings. |
-| Complete .NET tests | PASS: 195 unit + 145 integration = 340 passed; 0 failed or skipped. |
+| Complete .NET tests | PASS: 197 unit + 145 integration = 342 passed; 0 failed or skipped. |
+| Focused AzureDemo tests | PASS: 19/19, including mandatory monitoring coverage and rollback guard structure. |
 | EF pending-model validation | PASS with pinned global `dotnet-ef` 10.0.11: no changes since the last migration. No database was accessed. |
-| Frontend dependency tree | PASS offline from `package-lock.json` using `npm ls --package-lock-only`: lockfile v3; Vitest 4.1.11; `@vitest/mocker` 4.1.11; `brace-expansion` 1.1.21 and 5.0.12. |
-| Frontend tests/lint/build | OWNER EVIDENCE retained: 22/22 tests, lint and Next.js production build with 21 routes passed. A repeat install could not run because the isolated npm cache lacks the Vitest tarball and network access is denied; no connected npm audit was attempted. |
-| Owner dependency audit | OWNER EVIDENCE retained: connected npm audit exited 0 with zero vulnerabilities. It was not rerun, as instructed. |
-| Bicep build/lint | NOT LOCALLY AVAILABLE: neither Bicep CLI nor Azure CLI is installed. The pipeline compiles `main.bicep` and the approved parameter file before what-if; independent connected CI evidence remains required. |
-| Azure Pipelines YAML | PASS for the local structural contract: exactly 7 ordered stages, default-disabled deployment, release-branch condition, protected environments, human validation, swap and rollback order. No general YAML parser is installed locally. |
-| PowerShell validation | PASS: all 9 new scripts parse without errors. |
-| Packaging and manifest | PASS: API/web ZIP hashes, ZIP-root layout and prohibited-file/local-setting scans validated against the recovered package. No ZIP, DLL or PDB is intended for source control. |
-| SBOM generation | PASS: CycloneDX inventories generated locally for 522 npm and 107 NuGet components under ignored output. |
+| Frontend dependency tree | PASS from `package-lock.json` using `npm.cmd ls --package-lock-only --all` (exit 0): Vitest and `@vitest/mocker` resolve to 4.1.11; patched `brace-expansion` versions remain locked. Frontend execution remained unavailable as recorded below. |
+| Mandatory monitoring coverage | PASS: `Test-AzureDemoMonitoringAlerts.ps1` validates 17 required alert resources, the four approved Azure Monitor resource types, Bicep parameter/slot wiring and action-group routing. Microsoft template references were used for static schema review because the Bicep CLI is unavailable. |
+| Rollback fail-closed guards | PASS: one exact approved target accepted and 10 wrong-branch/release/environment/resource-group/application/slot cases rejected. Pipeline structure proves the guard precedes `AzureCLI@2`. |
+| Azure Pipelines YAML | PASS for the local structural contract: exactly 7 ordered stages, default-disabled deployment, protected environments, human validation, exact rollback conditions, API-before-web swap and web-before-API rollback. No general YAML parser is installed locally. |
+| PowerShell validation | PASS: all 17 repository PowerShell scripts, including Tester-owned scripts read-only, parse with zero errors under Windows PowerShell 5.1. PowerShell 7 is unavailable. |
+| Bicep parameter parity | PASS: `azure-demo.bicepparam` and `dev.bicepparam` each contain 21 assignments; comparison delta 0. |
+| SBOM generation | PASS: candidate-bound CycloneDX inventories generated for 522 npm and 107 NuGet components. SHA-256: API `00b2b890a8c7d19dda792dc125f732391c8b8741aa199f98bf5c04949554886e`; web `aa8c7a930ca67669e51e7a2f30cb977c0099653bd961cd0ffc9c3c80827b0ada`. |
 | Smoke contracts | PASS at plan level: contiguous `SMK-01` through `SMK-22`; plan-only mode confirmed no endpoint or cloud calls. Execution requires the protected deployed environment and independent evidence. |
-| Boundary scan | PASS across 152 source/configuration files for likely secrets, prohibited identity/local-test settings, startup migration/seed, generated binaries and prohibited application capability dependencies. This is a scoped developer diagnostic, not a substitute for an approved secret/SAST scanner. |
+| Boundary scan | PASS across 155 source/configuration files for likely secrets, prohibited identity/local-test settings, startup migration/seed, generated binaries and prohibited application capability dependencies. This is a scoped developer diagnostic, not a substitute for an approved secret/SAST scanner. |
 | Startup behaviour | PASS: an AzureDemo startup rehearsal without required configuration terminated with `Authentication:Mode must be Entra in AzureDemo.` |
-| EF artifact generation | PASS for the idempotent SQL script and 8-migration manifest. Linux-x64 bundle restore is not locally reproducible because runtime metadata requires the blocked NuGet source; the pipeline must generate it in its connected build environment. |
-| `git diff --check` | PASS: no whitespace errors; index empty; 60 intended source/evidence files; ignored Azure demo generated output absent from status. Git reports only its normal LF-to-CRLF checkout notices. |
+| Formatting and whitespace | PASS: `dotnet format --verify-no-changes` for the repaired .NET test file and `git diff --check` both exit 0. |
+
+The seven-stage pipeline structure, Bicep parameter parity, source-boundary scanning, SBOM generation and Git diff checks passed. These results do not convert any unavailable connected or tool-dependent check into a pass.
+
+### Checks blocked by local tooling or connectivity
+
+| Check and exact command | Exit | Environmental blocker |
+|---|---:|---|
+| Live remote alignment: `git ls-remote --heads origin release/azure-demo-v1` | 128 | Outbound HTTPS to `github.com:443` is blocked. Local `origin/release/azure-demo-v1` alignment is `0/0` at the candidate SHA. |
+| Frontend locked install: `npm.cmd ci --ignore-scripts --fetch-timeout=30000 --fetch-retries=0` | 1 | UNAVAILABLE: registry tarball fetches fail with `EACCES`; the writable-cache retry failed at `zod-validation-error-4.0.2.tgz`. |
+| Frontend component tests: `npm.cmd run test:component` | 1 | UNAVAILABLE: `vitest` executable was unavailable because the locked install could not complete. |
+| Frontend lint: `npm.cmd run lint` | 1 | UNAVAILABLE: `eslint` executable was unavailable because the locked install could not complete. |
+| Frontend production build: `npm.cmd run build` | 1 | UNAVAILABLE: `next` executable was unavailable because the locked install could not complete. |
+| Connected npm audit: `npm.cmd audit --package-lock-only --audit-level=moderate --fetch-timeout=30000 --fetch-retries=0` | 1 | UNAVAILABLE: npm audit endpoint is unreachable in the restricted environment. |
+| Connected NuGet vulnerability check: `dotnet list LgrTransformationMigration.sln package --vulnerable --include-transitive` | 1 | UNAVAILABLE: socket access to `https://api.nuget.org/v3/index.json` is forbidden; no vulnerability result is claimed. |
+| Bicep build: `bicep build infra/bicep/main.bicep --outfile artifacts/azure-demo-local/bicep/main.json` | 1 | UNAVAILABLE: `bicep` is not installed or on `PATH`. |
+| Bicep lint: `bicep lint infra/bicep/main.bicep` | 1 | UNAVAILABLE: `bicep` is not installed or on `PATH`. |
+| Azure CLI Bicep fallback: `az bicep build --file infra/bicep/main.bicep --outfile artifacts/azure-demo-local/bicep/main.json` | 1 | `az` is not installed or on `PATH`. |
+| Linux EF migration bundle: `dotnet-ef migrations bundle --project src/api/LgrTransformationMigration.Api.csproj --startup-project src/api/LgrTransformationMigration.Api.csproj --configuration Release --target-runtime linux-x64 --output artifacts/azure-demo-local/repair-migration/lgrtm-efbundle-linux-x64 --force --verbose` | 1 | UNAVAILABLE: `NU1301` occurred because socket access to NuGet on port 443 is forbidden while resolving `linux-x64` runtime assets. |
+| Complete application packages and package hashes: `New-AzureDemoPackages.ps1 -OutputDirectory artifacts/azure-demo-local/repair-packages -SkipRestore -SkipTests` | 1 | UNAVAILABLE: API publish completed, but the exact-candidate web build failed because `next` is unavailable. No complete package, manifest or package hash is claimed. |
+
+Historical owner frontend/audit evidence remains recorded in the tested candidate history, but it was not reproduced by this repair run and is not represented as successor evidence.
+
+## Repair commit changed-file inventory
+
+- `azure-pipelines.yml`
+- `infra/bicep/main.bicep`
+- `infra/bicep/modules/alerts.bicep`
+- `infra/bicep/modules/appservice.bicep`
+- `scripts/build/Assert-AzureDemoRollbackTarget.ps1`
+- `scripts/build/Test-AzureDemoMonitoringAlerts.ps1`
+- `scripts/build/Test-AzureDemoRollbackSafeguards.ps1`
+- `scripts/build/Test-AzurePipelineStructure.ps1`
+- `tests/api.unit/AzureDemoDeploymentBoundaryTests.cs`
+
+This implementation document is a subsequent evidence-only working-tree update and is not part of immutable repair commit `a5d683c`. The Tester-owned evidence pack and both `tests/assurance` files were preserved byte-for-byte and were not staged.
 
 ## Intended source-commit inventory by classification
 
@@ -103,7 +139,7 @@ The four exact-package decisions authorise controlled implementation and local o
 
 ### Build, database, data and smoke tooling
 
-- `scripts/build/New-AzureDemoPackages.ps1`; `scripts/build/New-AzureDemoSboms.ps1`; `scripts/build/New-EfMigrationArtifacts.ps1`; `scripts/build/Test-AzureDemoArtifacts.ps1`; `scripts/build/Test-AzureDemoSourceBoundaries.ps1`; `scripts/build/Test-AzurePipelineStructure.ps1`.
+- `scripts/build/Assert-AzureDemoRollbackTarget.ps1`; `scripts/build/New-AzureDemoPackages.ps1`; `scripts/build/New-AzureDemoSboms.ps1`; `scripts/build/New-EfMigrationArtifacts.ps1`; `scripts/build/Test-AzureDemoArtifacts.ps1`; `scripts/build/Test-AzureDemoMonitoringAlerts.ps1`; `scripts/build/Test-AzureDemoRollbackSafeguards.ps1`; `scripts/build/Test-AzureDemoSourceBoundaries.ps1`; `scripts/build/Test-AzurePipelineStructure.ps1`.
 - `scripts/data/Invoke-AzureDemoReset.ps1`; `scripts/data/Invoke-AzureDemoSeed.ps1`.
 - `scripts/smoke/Invoke-AzureDemoSmokeTests.ps1`; `scripts/smoke/README.md`; `scripts/smoke/smoke-checks.json`.
 
@@ -120,7 +156,7 @@ The entire `artifacts/azure-demo-local/**` tree is excluded, including staging/s
 
 - The implementation is additive deployment enablement for the existing approved demo journeys. It does not close excluded product gaps.
 - Intended deployment order is controlled migration artifact, API and web staging slots, protected smoke tests, API swap, web swap and post-swap validation. Deployment remains default disabled.
-- Application rollback swaps web before API back to known-good slots. Forward-only database changes require compatibility and a separately approved recovery action; no startup or autonomous migration exists.
+- Application rollback swaps web before API back to known-good slots only after the exact branch, immutable source release, demo environment, resource group, applications and slots pass the pre-Azure guard. Forward-only database changes require compatibility and a separately approved recovery action; no startup or autonomous migration exists.
 - Azure Platform/Operations approval, connected pipeline validation, exact-commit artifact hashes, independent Tester evidence, Quality review and human release authority are still required before any deployment.
 
 ## Hand-off
@@ -129,10 +165,10 @@ The entire `artifacts/azure-demo-local/**` tree is excluded, including staging/s
 handoff:
   from_agent: "developer"
   to_agent: "tester"
-  state: "READY_FOR_TEST"
+  state: "READY_FOR_RETEST"
   work_item: "AZURE-DEMO-001"
   branch: "release/azure-demo-v1"
-  commit: null
+  commit: "a5d683c7336d5938e274cb2c9460a2b6e4da6542"
   traceability:
     product_version: "0.1"
     phase: "Phase 1 - MVP"
@@ -147,30 +183,37 @@ handoff:
   artefacts:
     - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
     - "azure-pipelines.yml"
-    - "infra/bicep/"
-    - "scripts/build/"
-    - "scripts/data/"
-    - "scripts/database/"
-    - "scripts/smoke/"
-    - "src/api/"
-    - "src/web/"
-    - "tools/AzureDemo.DataTool/"
+    - "infra/bicep/main.bicep"
+    - "infra/bicep/modules/alerts.bicep"
+    - "infra/bicep/modules/appservice.bicep"
+    - "scripts/build/Assert-AzureDemoRollbackTarget.ps1"
+    - "scripts/build/Test-AzureDemoMonitoringAlerts.ps1"
+    - "scripts/build/Test-AzureDemoRollbackSafeguards.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "tests/api.unit/AzureDemoDeploymentBoundaryTests.cs"
   evidence:
-    - "Locked restore, Release build, 340 .NET tests and EF pending-model validation passed locally."
-    - "Package-lock dependency tree, 9-script PowerShell parsing, 7-stage pipeline contract, artifact manifest, SBOM, 22 smoke-plan contracts and source-boundary scan passed locally."
-    - "Owner evidence records frontend 22/22, lint, 21-route production build and connected npm audit exit 0 with zero vulnerabilities."
+    - "Locked restore, Release build, 342 .NET tests, 19 focused AzureDemo tests and EF pending-model validation passed locally."
+    - "Seventeen mandatory monitoring alerts, action-group/parameter wiring and approved Azure Monitor resource families passed the local contract."
+    - "Rollback accepted one exact target and rejected 10 incorrect branch/release/environment/resource-group/application/slot cases before any Azure task."
+    - "Package-lock dependency tree, 17-script PowerShell 5.1 parsing, 7-stage pipeline contract, SBOM generation, 22 smoke-plan contracts, source-boundary scan, format and git diff checks passed locally."
+    - "Blocked connected/tooling commands and exact exit codes are recorded without claiming a pass."
   decisions:
     - "The deleted dev.bicepparam was restored as an AzureDemo-compatible equivalent because deletion was unnecessary and would remove an owner-tracked Bicep entry."
     - "Reproducible local Azure demo output is ignored and excluded from source control."
     - "Deployment remains default disabled and subject to Azure Platform/Operations and human gates."
+    - "Repair candidate a5d683c7336d5938e274cb2c9460a2b6e4da6542 is committed and pushed; this document-only evidence update does not change that immutable candidate."
   assumptions:
     - "Connected CI has Bicep, YAML, npm and Linux runtime feeds needed to reproduce the unavailable local checks."
   risks:
-    - "Independent connected Bicep, pipeline, Linux EF bundle, approved secret/SAST and deployed-environment smoke evidence remains required."
+    - "Connected frontend/audit/NuGet evidence, Bicep build/lint, Linux EF bundle, exact package hashes, approved secret/SAST and deployed-environment smoke evidence remain required."
   defects: []
-  blockers: []
+  blockers:
+    - "Local registry/feed connectivity blocks same-worktree frontend, connected audit, NuGet advisory, Linux bundle and package evidence."
+    - "Bicep CLI and Azure CLI are unavailable locally; connected CI must compile and lint the repaired template."
   approvals:
     - "Four exact-package implementation/local-test approvals at b8800e1eda014eef1421a1af5427aaea41393496."
     - "Azure Platform/Operations remains PENDING_PRE_DEPLOYMENT."
-  requested_action: "Bind the uncommitted source inventory to a human-created candidate commit, then independently test the exact commit and generated artifact hashes without deploying or using any non-synthetic data."
+  requested_action: "Independently retest immutable repair candidate a5d683c7336d5938e274cb2c9460a2b6e4da6542 and reproduce the unavailable connected artifacts/checks against that exact candidate without deploying or using non-synthetic data."
 ```
+
+READY_FOR_RETEST
