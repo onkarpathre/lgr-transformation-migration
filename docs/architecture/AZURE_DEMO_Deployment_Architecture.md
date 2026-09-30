@@ -12,7 +12,11 @@ traceability:
   dependencies: ["D-01", "D-02", "D-03", "D-04", "D-05", "D-06", "D-10", "D-11", "D-13"]
   issues: ["I-01", "I-02", "I-03", "I-04", "I-06", "I-08"]
   open_questions: ["Q-01", "Q-02", "Q-03", "Q-06", "Q-07", "Q-08", "Q-09", "Q-10"]
-  approvals: []
+  approvals:
+    - "Product/PRB authority opathre APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
+    - "Independent TDA PTArchitect APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
+    - "Information Security ashish50thbirthday-ship-it APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
+    - "Test Services nextgenexamprep-crypto APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
 ```
 
 ## Document control
@@ -23,14 +27,14 @@ traceability:
 | Architecture package | `AZURE-DEMO-ARCH-001` |
 | Requested branch | `release/azure-demo-v1` |
 | Exact inspected baseline | `6f4b9bb352dd7d2506bc4c3eb1c5b0a4ae1f40de` |
-| Baseline verification | Branch and `HEAD` confirmed on 29 September 2026; the Product Work Package and both Azure-demo architecture documents are supplied untracked workspace artefacts and are not members of the baseline commit |
+| Baseline verification | Application baseline `6f4b9bb352dd7d2506bc4c3eb1c5b0a4ae1f40de`; Product Work Package and both Azure-demo architecture documents bound together at exact package commit `b8800e1eda014eef1421a1af5427aaea41393496` |
 | Target | Restricted, internal, non-production Azure management demonstration |
 | Existing resource group | `Onkar.Pathre` |
 | Primary region | UK South |
 | Data classification | Synthetic demonstration data only; no customer data and no real migration evidence |
-| Status | Final architecture candidate; `READY_FOR_ARCHITECTURE_APPROVAL`; no implementation or deployment authority until the exact-commit gate in this document is satisfied |
+| Status | `READY_FOR_AZURE_DEMO_IMPLEMENTATION_WITH_PLATFORM_GATE_PENDING`; controlled implementation and local/isolated testing only; no Azure-impacting action or deployment authority |
 
-`docs/product/AZURE_DEMO_Product_Work_Package.md` now supplies the previously missing Product Owner authority boundary as work item `AZURE-DEMO-001`: a restricted internal non-production management demonstration, nine fixed browser journeys, synthetic-only data and explicit exclusions. It authorises architecture finalisation only. Its approval list is empty and it is not yet bound with these architecture documents in one immutable package commit, so it does not authorise implementation, provisioning, external reachability, deployment, release or any production/customer use. The local/non-production decisions in ADR-006, ADR-007 and ADR-008 inform this design but do not approve this wider Azure-hosted demo.
+`docs/product/AZURE_DEMO_Product_Work_Package.md` supplies the Product Owner authority boundary as work item `AZURE-DEMO-001`: a restricted internal non-production management demonstration, nine fixed browser journeys, synthetic-only data and explicit exclusions. At exact package commit `b8800e1eda014eef1421a1af5427aaea41393496`, PR #11 records valid Product/PRB, Independent TDA, Information Security and Test Services approvals. The Product/PRB clarification makes those four decisions sufficient for controlled implementation and local/isolated testing only. Azure Platform/Operations is `PENDING_PRE_DEPLOYMENT`; no Azure resource provisioning, external reachability, pipeline deployment or use of `Onkar.Pathre` is authorised until an identified assigned platform engineer approves it. Release, merge, production/customer data and full MVP approval remain excluded. The local/non-production decisions in ADR-006, ADR-007 and ADR-008 remain contextual inputs rather than approval of wider scope.
 
 ## Executive decision
 
@@ -343,7 +347,7 @@ Use latest approved stable API versions at implementation time. All resources mu
 
 ## Developer implementation sequence and acceptance criteria
 
-Development is prohibited until the consolidated exact-commit approval gate is satisfied. Once authorised, the Developer must implement in this order so that security and product boundaries are testable independently:
+The four valid exact-commit approvals authorise the Developer to perform only controlled implementation and local/isolated testing. The sequence below remains mandatory so security and product boundaries are testable independently. It provides no authority to provision Azure resources, establish external reachability, deploy through a pipeline or use `Onkar.Pathre`; those actions remain blocked by `PENDING_PRE_DEPLOYMENT` Azure Platform/Operations approval from an identified assigned platform engineer.
 
 1. remediate Vitest/`@vitest/mocker` to `4.1.11` or a later reviewed compatible stable version; regenerate the lock file and prove the complete frontend regression, lint, build and connected audit;
 2. add the AzureDemo environment guard and publish exclusions so LocalTest, synthetic aliases and test-principal emission cannot enter an Azure artifact;
@@ -470,49 +474,54 @@ The post-deployment addendum records the infrastructure deployment ID, deployed 
 
 ## Governance approvals and architecture blockers
 
-### One consolidated exact-commit architecture approval gate
+### Reconciled exact-commit implementation gate
 
-Before implementation begins, the Product Work Package, this Deployment Architecture, the Environment Configuration and any linked decision record must coexist in one immutable Git commit. The five primary decisions below are one atomic gate: every decision must quote the same full commit SHA, `AZURE-DEMO-001`, reviewer name/role, UTC date, decision, scope, conditions, expiry where applicable and durable evidence link. Approval of a branch, file path, draft hash, baseline application commit or earlier ADR is insufficient. Any material product, architecture, identity, tenancy, reachability, data-classification, cost, acceptance or rollback change invalidates the set.
+The Product Work Package, this Deployment Architecture and the Environment Configuration coexist at immutable package commit `b8800e1eda014eef1421a1af5427aaea41393496`. PR #11 records four valid decisions bound to that exact SHA. Approval of a branch, file path, draft hash, baseline application commit or earlier ADR is insufficient. Any material product, architecture, identity, tenancy, reachability, data-classification, cost, acceptance or rollback change invalidates the affected decisions and requires renewed review.
 
-| Required authority | Exact decision at the same package commit |
+The referenced `docs/approvals/AZURE_DEMO_Architecture_Approval_Evidence.json` is absent from the exact package commit and current PR branch, so it is not relied upon. The durable PR review records are the decision evidence:
+
+| Authority | Status and exact-commit evidence |
 |---|---|
-| Product/PRB | Approve the restricted objective/audience, exact nine journeys and exclusions, synthetic-only classification, success evidence, demo cost/funding ceiling and Q-02 disposition. This is not release or full-MVP approval. |
-| Independent TDA | Approve this architecture, bounded Q-01 disposition, native runtime lifecycle, public-web/private-API trust boundary, shared-schema non-production exception, Blob addition, Entra/membership model, exact S1 choice, migration, slots, rollback and shutdown. The authoring Architect does not self-approve. |
-| Information Security | Approve restricted external reachability, threat model, tenant isolation, Entra/RBAC, LocalTest eradication, proxy/private endpoints, upload scanning, headers/CORS, telemetry redaction, vulnerability policy and security test gates. |
-| Azure Platform/Operations | Approve `Onkar.Pathre`/UK South use, Policy/quota/naming/tags, network/DNS, identities/RBAC, SQL/backup, private agent and protected pipeline, priced configuration, budget/alerts, operational owner, availability boundary, expiry and shutdown/decommission. |
-| Test Services | Approve the isolated environment, synthetic seed/files, requirements-to-test matrix, browser/accessibility/security/tenant coverage, migration/rollback/shutdown rehearsal and evidence entry/exit criteria. |
+| Product/PRB - `opathre` | `APPROVED` 29 September 2026 for the restricted objective, nine journeys, exclusions, synthetic-data boundary and controlled implementation/independent testing only. [Review](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358896442) |
+| Independent TDA - `PTArchitect` | `APPROVED` 29 September 2026 for the documented App Service, Azure SQL, Entra ID, managed identity, Key Vault, private connectivity, monitoring, immutable deployment, staging-slot, migration and rollback architecture, limited to controlled implementation/testing. Material changes require renewed review. [Review](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358867878) |
+| Information Security - `ashish50thbirthday-ship-it` | `APPROVED` 29 September 2026 for implementation and security testing only. LocalTest and `X-Lgr-Test-Principal` remain prohibited in Azure; vulnerable `@vitest/mocker` 4.1.10 must be remediated and successfully audited before external reachability. [Review](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358887229) |
+| Test Services - `nextgenexamprep-crypto` | `APPROVED` 29 September 2026 for independent testing within authorised isolated resources, synthetic data and commit-bound evidence. [Review](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358878842) |
+| Azure Platform/Operations | `PENDING_PRE_DEPLOYMENT`. No decision exists from an identified assigned platform engineer. No other reviewer or supporting-specialist statement is recognised as this approval. |
 
-Supporting Identity Platform, Data Protection/DPO, Network/DNS, Azure SQL/DBA, Azure DevOps/repository and Service Transition owners must provide the evidence assigned to them before the relevant primary authority signs. Supporting evidence does not replace any of the five decisions. Until all five exact-commit decisions exist, the only authorised next action is review; Developer implementation and any Azure/SQL action are blocked.
+The Product/PRB governance clarification confirms that the four approvals above authorise controlled implementation and local/isolated testing, while moving Azure Platform/Operations to the mandatory pre-deployment gate because no platform engineer has yet been assigned. [Clarification](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358989846). Supporting Identity Platform, Data Protection/DPO, Network/DNS, Azure SQL/DBA, Azure DevOps/repository and Service Transition evidence remains required where assigned, but cannot replace the pending decision of an identified assigned platform engineer.
 
 ### Required before the first restricted Azure deployment
 
-1. Developer `READY_FOR_TEST` package with patched dependencies, code/IaC/pipeline changes and same-commit evidence.
-2. Independent Tester `PASS` with security, tenancy, migration, rollback and nine-journey evidence.
-3. Quality Manager recommendation against the exact artifacts and commit.
-4. Information Security confirmation that the vulnerability scan and externally reachable controls pass.
-5. Product Owner confirmation that demonstrated behaviour remains within the approved restricted scope.
-6. Managed Services/Service Transition named demo operational owner for alerts, incident contact, cost and expiry. This is not Q-08 production-service acceptance.
-7. Named human Azure-demo release authority approval. No agent may merge or deploy.
+1. An identified assigned Azure Platform/Operations engineer approves the exact `Onkar.Pathre`/UK South scope, Policy/quota/naming/tags, network/DNS, identities/RBAC, SQL/backup, private agent and protected pipeline, priced configuration, budget/alerts, operational owner, availability boundary, expiry and shutdown/decommission.
+2. Developer `READY_FOR_TEST` package with patched dependencies, code/IaC/pipeline changes and same-commit evidence.
+3. Independent Tester `PASS` with security, tenancy, migration, rollback and nine-journey evidence.
+4. Quality Manager recommendation against the exact artifacts and commit.
+5. Information Security confirmation that the clean vulnerability audit and externally reachable controls pass.
+6. Product Owner confirmation that demonstrated behaviour remains within the approved restricted scope.
+7. Managed Services/Service Transition named demo operational owner for alerts, incident contact, cost and expiry. This is not Q-08 production-service acceptance.
+8. Named human Azure-demo release authority approval. No agent may merge or deploy.
+
+Until item 1 is recorded, no Azure resource provisioning, external reachability, pipeline deployment or use of the `Onkar.Pathre` resource group is authorised. Production, customer data, release, merge and full MVP approval remain excluded regardless of this implementation disposition.
 
 ### Current blockers
 
-- The Product Work Package supplies the required product boundary, but it and both architecture documents are untracked and not yet bound in one immutable package commit.
-- The consolidated Product/PRB, independent TDA, Information Security, Azure Platform/Operations and Test Services exact-commit approvals are absent.
-- Identity Platform, Data Protection, Azure Platform, Network, DBA, Test Authority and human release decisions are absent.
+- Azure Platform/Operations remains `PENDING_PRE_DEPLOYMENT`; no identified assigned platform engineer has approved Azure resource provisioning, external reachability, pipeline deployment or use of `Onkar.Pathre`.
+- Identity Platform, Data Protection, Network, DBA, Azure DevOps/repository, Service Transition and human release evidence remains pending where required for deployment.
 - The private-network Azure DevOps migration/deployment agent is not identified.
 - The browser login, deployed membership provider, private web-to-API proxy, readiness checks, secure headers, Azure storage, telemetry and full Bicep/pipeline implementation do not exist at the baseline.
-- `vitest`/`@vitest/mocker` `4.1.10` is in the affected range and must be remediated before any externally reachable deployment.
+- `vitest`/`@vitest/mocker` `4.1.10` is in the affected range; remediation, full regression/build and a clean connected audit remain mandatory before external reachability.
+- Independent Tester `PASS` and Quality Manager recommendation remain mandatory downstream gates.
 
 ## Architecture hand-off envelope
 
 ```yaml
 handoff:
   from_agent: "architect"
-  to_agent: "independent-tda-and-named-human-authorities"
-  state: "READY_FOR_ARCHITECTURE_APPROVAL"
+  to_agent: "developer"
+  state: "READY_FOR_AZURE_DEMO_IMPLEMENTATION_WITH_PLATFORM_GATE_PENDING"
   work_item: "AZURE-DEMO-001"
   branch: "release/azure-demo-v1"
-  commit: "PENDING-EXACT-PACKAGE-COMMIT"
+  commit: "b8800e1eda014eef1421a1af5427aaea41393496"
   traceability:
     product_version: "0.1"
     phase: "Phase 1 - MVP"
@@ -524,21 +533,27 @@ handoff:
     dependencies: ["D-01", "D-02", "D-03", "D-04", "D-05", "D-06", "D-10", "D-11", "D-13"]
     issues: ["I-01", "I-02", "I-03", "I-04", "I-06", "I-08"]
     open_questions: ["Q-01", "Q-02", "Q-03", "Q-06", "Q-07", "Q-08", "Q-09", "Q-10"]
-    approvals: []
+    approvals:
+      - "Product/PRB opathre APPROVED exact package commit on 2026-09-29."
+      - "Independent TDA PTArchitect APPROVED exact package commit on 2026-09-29."
+      - "Information Security ashish50thbirthday-ship-it APPROVED exact package commit on 2026-09-29."
+      - "Test Services nextgenexamprep-crypto APPROVED exact package commit on 2026-09-29."
   artefacts:
     - "docs/product/AZURE_DEMO_Product_Work_Package.md"
     - "docs/architecture/AZURE_DEMO_Deployment_Architecture.md"
     - "docs/architecture/AZURE_DEMO_Environment_Configuration.md"
   evidence:
-    - "Repository branch and HEAD inspected at exact application baseline; supplied demo package files are untracked; no Azure or SQL access performed."
+    - "Exact package commit b8800e1eda014eef1421a1af5427aaea41393496 inspected; no Azure or SQL access performed."
     - "ADR-006, ADR-007 and ADR-008 conditional local/non-production decisions reviewed."
     - "AZURE-DEMO-001 Product Work Package supplies exact scope, nine journeys, exclusions, acceptance criteria and synthetic-data boundary."
     - "Current App Service, Next.js and Vitest maintainer documentation linked in this package; native Node 24 and .NET 10 are documented App Service stacks at review time."
+    - "PR #11 review permalinks provide the four valid commit-bound decisions and Product/PRB platform-gate clarification; the named approval-evidence JSON is absent and not relied upon."
   decisions:
     - "Use native Node.js 24 LTS and .NET 10 App Service stacks; no container."
     - "Use a public same-origin Next entry point and private API/data services."
     - "Use internal Entra users, server-side membership and no LocalTest capability in Azure."
     - "Use synthetic data only and preserve every immutable product boundary."
+    - "Azure Platform/Operations remains PENDING_PRE_DEPLOYMENT and must be decided by an identified assigned platform engineer."
   assumptions:
     - "The existing resource group and subscription policies permit the proposed resources after human approval."
     - "A VNet-connected Azure DevOps agent can be provided without opening Azure SQL publicly."
@@ -548,9 +563,16 @@ handoff:
   defects:
     - "GHSA-82fw-gwwq-j7x9 affects the locked @vitest/mocker 4.1.10 dependency."
   blockers:
-    - "Package commit is pending and the five consolidated exact-commit human approvals are absent."
-    - "Missing application, infrastructure, pipeline and private-agent controls listed above."
-    - "Vulnerable Vitest dependency is unresolved at the inspected baseline."
-  approvals: []
-  requested_action: "An authorised repository owner must place the unchanged Product and Architecture packages into one immutable commit, after which Product/PRB, independent TDA, Information Security, Azure Platform/Operations and Test Services must make the five exact-commit decisions. No implementation or Azure/SQL action may begin until the complete gate passes."
+    - "Azure Platform/Operations approval by an identified assigned platform engineer is mandatory before any Azure-impacting action."
+    - "Missing application, infrastructure, pipeline and private-agent controls listed above must be implemented and independently verified before deployment."
+    - "Vulnerable Vitest dependency is unresolved at the inspected baseline; remediation and clean connected audit are mandatory."
+    - "Independent Tester PASS and Quality Manager recommendation remain mandatory before deployment/release consideration."
+  approvals:
+    - "Product/PRB opathre: https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358896442"
+    - "Independent TDA PTArchitect: https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358867878"
+    - "Information Security ashish50thbirthday-ship-it: https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358887229"
+    - "Test Services nextgenexamprep-crypto: https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358878842"
+  requested_action: "Developer may perform only controlled implementation and local/isolated testing within the approved scope. Do not provision Azure resources, establish external reachability, deploy a pipeline or use Onkar.Pathre until an identified assigned Azure Platform/Operations engineer records approval. Preserve @vitest/mocker remediation and clean-audit requirements, independent Tester and Quality gates, and all production/customer-data/release/merge/full-MVP exclusions."
 ```
+
+READY_FOR_AZURE_DEMO_IMPLEMENTATION_WITH_PLATFORM_GATE_PENDING

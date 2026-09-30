@@ -12,7 +12,11 @@ traceability:
   dependencies: ["D-01", "D-02", "D-03", "D-04", "D-05", "D-06", "D-10", "D-11", "D-13"]
   issues: ["I-01", "I-02", "I-03", "I-04", "I-06", "I-08"]
   open_questions: ["Q-01", "Q-02", "Q-03", "Q-06", "Q-07", "Q-08", "Q-09", "Q-10"]
-  approvals: []
+  approvals:
+    - "Product/PRB authority opathre APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
+    - "Independent TDA PTArchitect APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
+    - "Information Security ashish50thbirthday-ship-it APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
+    - "Test Services nextgenexamprep-crypto APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
 ```
 
 ## 1. Document control and product decision
@@ -26,12 +30,12 @@ traceability:
 | Exact application baseline | `6f4b9bb352dd7d2506bc4c3eb1c5b0a4ae1f40de` |
 | Target | Restricted internal non-production Azure management demonstration |
 | Data classification | Synthetic demonstration data only |
-| Product state | `READY_FOR_ARCHITECTURE_REVIEW` |
-| Package commit | `PENDING` - this Product Owner has not committed, pushed, merged or deployed |
+| Product state | Product/PRB decision confirmed; `READY_FOR_AZURE_DEMO_IMPLEMENTATION_WITH_PLATFORM_GATE_PENDING` |
+| Package commit | `b8800e1eda014eef1421a1af5427aaea41393496` - exact package approved on PR #11; this reconciliation does not commit, push, merge or deploy |
 
 The Product Owner selects the smallest stable management-demo scope from behaviour already implemented at the exact baseline and supported by retained quality evidence. This work package adds no product capability and does not start Phase 4 Slice 2 or Slice 3. Work needed to host the selected behaviour safely in Azure is deployment, identity, security, observability, packaging and operational enablement; it must not change the product journeys or fill any excluded functional gap.
 
-The two Azure demo architecture documents reviewed for this decision are draft workspace inputs and are not members of the exact baseline commit. They therefore have no approval status and cannot themselves authorise implementation or deployment:
+The two Azure demo architecture documents and this Product Work Package coexist at exact package commit `b8800e1eda014eef1421a1af5427aaea41393496`. PR #11 records four valid, commit-bound decisions from Product/PRB, Independent TDA, Information Security and Test Services. Together with the Product/PRB governance clarification, those decisions authorise controlled implementation and local/isolated testing only. They do not authorise Azure resource provisioning, external reachability, pipeline deployment or any use of the `Onkar.Pathre` resource group. Azure Platform/Operations is `PENDING_PRE_DEPLOYMENT` until an identified assigned platform engineer records that decision.
 
 | Input | Review identity |
 |---|---|
@@ -348,23 +352,25 @@ The current Phase 4 Slice 1 Quality Gate is retained as historical input only. I
 
 ### Single package-commit rule
 
-Before implementation begins, the final Product Work Package, approved Architecture Work Package, environment configuration and any decision record must be present together at one immutable Git commit on the governed branch or PR. Every decision below must quote that full commit SHA, the package/work-item ID `AZURE-DEMO-001`, reviewer identity and role, UTC date, decision, approved scope, conditions, expiry where applicable and durable evidence link.
+The final Product Work Package, approved Architecture Work Package and environment configuration coexist at immutable package commit `b8800e1eda014eef1421a1af5427aaea41393496` on PR #11. Each recognised decision quotes that full SHA, package/work-item `AZURE-DEMO-001`, reviewer identity and role, UTC date, decision, scope, conditions and a durable review link. Approval of a floating branch, file path, draft hash or later application commit is not inferred. A material change to product scope, architecture, identity, tenancy, reachability, data classification, cost envelope, acceptance criteria or rollback invalidates the affected decisions and requires re-review at a new exact package commit.
 
-The package commit is currently `PENDING` because this Product Owner was explicitly prohibited from committing. The two Azure architecture inputs are currently untracked draft files. Therefore no existing approval is treated as applying to this package, and no reviewer may approve only a floating branch, file path, draft hash or later application commit by inference. A material change to product scope, architecture, identity, tenancy, reachability, data classification, cost envelope, acceptance criteria or rollback invalidates the decisions and requires re-review at a new exact package commit.
+The referenced `docs/approvals/AZURE_DEMO_Architecture_Approval_Evidence.json` is not present at the package commit or current PR branch and is not treated as evidence. The durable PR #11 review records below are the evidence used for this reconciliation.
 
 ### Required decisions at that exact commit
 
-| Authority | Mandatory decision |
+| Authority | Decision for exact package commit `b8800e1eda014eef1421a1af5427aaea41393496` |
 |---|---|
-| Product/PRB | Approve objective, audience, exact features and exclusions, nine journeys, synthetic-only classification, restricted-demo value, cost/funding ceiling and Q-02 disposition sufficient for this demo. This is not a release or full MVP approval. |
-| Solution Architect / independent TDA | Approve the Architecture Work Package, Q-01 scope, native runtime lifecycle, trust boundaries, public-web/private-API pattern, non-production shared-schema exception, storage addition, Entra/membership design, App Service/SQL tier, migration, slots and rollback. |
-| Information Security | Approve restricted external reachability, threat model, Entra/RBAC, LocalTest eradication, tenant isolation, private endpoints/proxy, upload controls, headers/CORS, telemetry redaction, security scans and vulnerability policy. |
-| Azure Platform/Operations | Approve UK South and `Onkar.Pathre` use, Azure Policy/quota/naming/tags, network/DNS/private agent path, identities and least privilege, SQL/backup controls, protected pipeline/service connection, priced configuration, budget/alerts, availability/support, operational owner and expiry/decommission decision. Named specialist evidence may be supplied by Identity Platform, Network, DBA, Azure DevOps and Service Transition owners. |
-| Test Services | Approve the environment, synthetic fixtures/files, requirements-to-test matrix, browser/accessibility/security/tenant test scope, migration/rollback rehearsal and evidence entry/exit criteria. |
+| Product/PRB - `opathre` | `APPROVED` on 29 September 2026 for controlled implementation and independent testing only. [Review evidence](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358896442) |
+| Solution Architect / Independent TDA - `PTArchitect` | `APPROVED` on 29 September 2026 for the documented architecture and controlled implementation/testing only. Material design changes require renewed review. [Review evidence](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358867878) |
+| Information Security - `ashish50thbirthday-ship-it` | `APPROVED` on 29 September 2026 for implementation and security testing only. LocalTest and `X-Lgr-Test-Principal` remain prohibited in Azure; `@vitest/mocker` remediation and a successful clean connected audit remain mandatory before external reachability. [Review evidence](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358887229) |
+| Test Services - `nextgenexamprep-crypto` | `APPROVED` on 29 September 2026 for independent testing in the restricted non-production, synthetic-data scope using authorised isolated resources and commit-bound evidence. [Review evidence](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358878842) |
+| Azure Platform/Operations | `PENDING_PRE_DEPLOYMENT`. No identified assigned platform engineer has recorded a decision. Approval must cover UK South and `Onkar.Pathre` use, Policy/quota/naming/tags, network/DNS/private agent path, identities and least privilege, SQL/backup controls, protected pipeline/service connection, priced configuration, budget/alerts, availability/support, operational owner and expiry/decommission. |
+
+The Product/PRB authority clarified that the four approved decisions above are sufficient for controlled implementation and local/isolated testing and that Azure Platform/Operations moves to the mandatory pre-deployment gate because no platform engineer has yet been assigned. [Governance clarification](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358989846). No Azure Platform/Operations decision is recognised unless it is recorded by an identified assigned platform engineer.
 
 Data Protection/DPO must also record Q-06 applicability for internal identity and telemetry if required by policy. Q-09 external customer identity remains open and excluded; Q-07 commercial positioning, Q-08 production operating model and Q-10 final product naming are not closed by this demo.
 
-Before the first externally reachable staging deployment and before the later slot swap, named human authorities must additionally record the Developer hand-off, independent Tester `PASS`, Quality recommendation, Information Security confirmation, Product Owner no-scope-drift confirmation, operational readiness confirmation and Azure-demo release decision against the exact artifact set. No agent decision substitutes for those approvals.
+Before any Azure resource provisioning, external reachability, pipeline deployment or use of `Onkar.Pathre`, an identified assigned Azure Platform/Operations engineer must record `APPROVED` against the exact implementation artefacts and operational scope. Before the first externally reachable staging deployment and before the later slot swap, named human authorities must additionally record the Developer hand-off, independent Tester `PASS`, Quality recommendation, Information Security confirmation, Product Owner no-scope-drift confirmation, operational readiness confirmation and Azure-demo release decision against the exact artifact set. No agent decision substitutes for those approvals. Production, customer data, release, merge and full MVP approval remain excluded.
 
 ## 17. Product risks and treatments
 
@@ -384,16 +390,16 @@ Before the first externally reachable staging deployment and before the later sl
 
 Any approval arising from this package is restricted to a non-production internal management demo using synthetic data and the exact commit/artifacts approved. It does not authorise production, pilot, customer data, customer/external access, commercial release, merge, protected-branch push, deployment by an agent, full Phase 4 completion, Phase 4 Slice 2 or Slice 3, full MVP approval or human release approval.
 
-## 19. Product Owner hand-off
+## 19. Reconciled Architect hand-off
 
 ```yaml
 handoff:
-  from_agent: "product-owner"
-  to_agent: "architect"
-  state: "READY_FOR_ARCHITECTURE_REVIEW"
+  from_agent: "architect"
+  to_agent: "developer"
+  state: "READY_FOR_AZURE_DEMO_IMPLEMENTATION_WITH_PLATFORM_GATE_PENDING"
   work_item: "AZURE-DEMO-001"
   branch: "release/azure-demo-v1"
-  commit: "PENDING"
+  commit: "b8800e1eda014eef1421a1af5427aaea41393496"
   traceability:
     product_version: "0.1"
     phase: "Phase 1 - MVP"
@@ -413,10 +419,12 @@ handoff:
     - "Exact application baseline 6f4b9bb352dd7d2506bc4c3eb1c5b0a4ae1f40de."
     - "Phase 4 Slice 1 Quality Gate retained as restricted historical evidence; it does not authorise Azure deployment."
     - "Scope limited to existing Phase 1-3 surface and quality-reviewed Phase 4 Slice 1 dependency registration."
+    - "PR #11 contains four valid approvals and the Product/PRB pre-deployment platform-gate clarification for exact package commit b8800e1eda014eef1421a1af5427aaea41393496."
   decisions:
     - "Do not add product features or start Phase 4 Slice 2/3."
     - "Remediate @vitest/mocker 4.1.10 and prove full frontend regression, build and clean connected npm audit before external reachability."
-    - "Require one exact package-commit approval set before implementation."
+    - "Four exact-package approvals authorise controlled implementation and local/isolated testing only."
+    - "Azure Platform/Operations is PENDING_PRE_DEPLOYMENT; no Azure provisioning, external reachability, pipeline deployment or Onkar.Pathre use is authorised."
     - "Approval is restricted to a synthetic non-production internal management demo."
   assumptions:
     - "Architecture can make the selected existing journeys safely deployable without adding product behaviour."
@@ -425,9 +433,15 @@ handoff:
     - "External Azure reachability invalidates the prior localhost-only npm risk acceptance."
   defects: []
   blockers:
-    - "Implementation is blocked until the Product/PRB, TDA, Information Security, Azure Platform/Operations and Test Services decisions are recorded against one exact package commit."
-  approvals: []
-  requested_action: "Architect to reconcile the two Azure demo drafts with this exact product scope, remove all Slice 2/3 assumptions, identify any remaining gate conflicts, and prepare the commit-bound Architecture Work Package for independent approval."
+    - "Azure Platform/Operations approval by an identified assigned platform engineer is mandatory before any Azure-impacting action."
+    - "@vitest/mocker remediation and a clean connected audit remain mandatory before external reachability."
+    - "Independent Tester PASS and Quality Manager recommendation remain mandatory before deployment/release consideration."
+  approvals:
+    - "Product/PRB opathre: APPROVED at PR #11 review 5358896442."
+    - "Independent TDA PTArchitect: APPROVED at PR #11 review 5358867878."
+    - "Information Security ashish50thbirthday-ship-it: APPROVED at PR #11 review 5358887229."
+    - "Test Services nextgenexamprep-crypto: APPROVED at PR #11 review 5358878842."
+  requested_action: "Developer may perform only controlled implementation and local/isolated testing within the approved scope. Do not provision Azure resources, establish external reachability, deploy a pipeline or use Onkar.Pathre until an identified assigned Azure Platform/Operations engineer approves the exact pre-deployment scope. Preserve mandatory dependency remediation, independent Tester and Quality gates, and all production/customer-data/release/merge/full-MVP exclusions."
 ```
 
-READY_FOR_ARCHITECTURE_REVIEW
+READY_FOR_AZURE_DEMO_IMPLEMENTATION_WITH_PLATFORM_GATE_PENDING

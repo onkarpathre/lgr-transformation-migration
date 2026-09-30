@@ -12,14 +12,18 @@ traceability:
   dependencies: ["D-01", "D-02", "D-03", "D-04", "D-05", "D-06", "D-10", "D-11", "D-13"]
   issues: ["I-01", "I-02", "I-03", "I-04", "I-06", "I-08"]
   open_questions: ["Q-01", "Q-02", "Q-03", "Q-06", "Q-07", "Q-08", "Q-09", "Q-10"]
-  approvals: []
+  approvals:
+    - "Product/PRB authority opathre APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
+    - "Independent TDA PTArchitect APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
+    - "Information Security ashish50thbirthday-ship-it APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
+    - "Test Services nextgenexamprep-crypto APPROVED exact package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29."
 ```
 
 ## Purpose and status
 
-This document is the configuration contract for Product Work Package `AZURE-DEMO-001` and architecture package `AZURE-DEMO-ARCH-001` at application baseline `6f4b9bb352dd7d2506bc4c3eb1c5b0a4ae1f40de`. The Product Work Package supplies the authoritative restricted scope, nine journeys, exclusions, acceptance criteria and synthetic-data boundary. This document specifies intended values and validation rules; it is not evidence that any Azure, Entra, SQL or Azure DevOps resource exists. The Product and Architecture package files are supplied untracked workspace artefacts and are not members of the baseline commit. No Azure or SQL access was performed during preparation.
+This document is the configuration contract for Product Work Package `AZURE-DEMO-001` and architecture package `AZURE-DEMO-ARCH-001` at application baseline `6f4b9bb352dd7d2506bc4c3eb1c5b0a4ae1f40de` and exact package commit `b8800e1eda014eef1421a1af5427aaea41393496`. The Product Work Package supplies the authoritative restricted scope, nine journeys, exclusions, acceptance criteria and synthetic-data boundary. This document specifies intended values and validation rules; it is not evidence that any Azure, Entra, SQL or Azure DevOps resource exists. No Azure or SQL access was performed during preparation or approval reconciliation.
 
-The configuration is `READY_FOR_ARCHITECTURE_APPROVAL`. Implementation and every Azure/SQL action remain blocked until the consolidated exact-package-commit approval gate is complete.
+The configuration is `READY_FOR_AZURE_DEMO_IMPLEMENTATION_WITH_PLATFORM_GATE_PENDING`. Four valid exact-commit approvals authorise controlled implementation and local/isolated testing only. Azure Platform/Operations is `PENDING_PRE_DEPLOYMENT`; no Azure resource provisioning, external reachability, pipeline deployment or use of `Onkar.Pathre` is authorised until an identified assigned platform engineer records approval.
 
 ## Environment identity
 
@@ -632,22 +636,24 @@ The working estimate is roughly £100-£210 per month before enterprise discount
 
 ## Deployment-readiness and evidence record
 
-Before the first slot deployment, the protected environment check must consume one manifest for the same exact package/application commit. It records: five consolidated architecture approvals; pipeline/run ID; runtime/tool versions; immutable web/API/migration/Bicep hashes and SBOMs; all build/test/lint/SQL/EF/security/licence/IaC results; patched Vitest and clean connected npm audit; approved Bicep `what-if`; target resource group/region and runtime preflight; private-agent identity; migration history/PITR/compatibility/rollback target; seed/reset/sample-file versions and checksums; redacted configuration fingerprint; cost/expiry/operations owner; and Developer `READY_FOR_TEST` plus Tester entry evidence. Any mismatch blocks deployment.
+Before the first slot deployment, the protected environment check must consume one manifest for the same exact package/application commit. It records: the four implementation approvals; the separately mandatory `APPROVED` Azure Platform/Operations pre-deployment decision from an identified assigned platform engineer; pipeline/run ID; runtime/tool versions; immutable web/API/migration/Bicep hashes and SBOMs; all build/test/lint/SQL/EF/security/licence/IaC results; patched Vitest and clean connected npm audit; approved Bicep `what-if`; target resource group/region and runtime preflight; private-agent identity; migration history/PITR/compatibility/rollback target; seed/reset/sample-file versions and checksums; redacted configuration fingerprint; cost/expiry/operations owner; and Developer `READY_FOR_TEST` plus Tester entry evidence. Any mismatch blocks deployment.
 
 The post-deployment record adds the infrastructure deployment ID, slot/site identities, deployed hashes, private DNS/connectivity validation, migration/seed outcome, SMK-01 through SMK-22, J-01 through J-09, trace/redaction and alert evidence, slot swap/swap-back rehearsal, defects, independent Tester decision, Quality recommendation and named human release decision. All evidence is immutable and attributable by UTC time and correlation/run ID; failed evidence is retained.
 
 ## Governance approval checklist
 
-An empty checkbox means approval is absent; it must not be inferred from this document or the user prompt.
+Checked architecture-entry items below are backed by durable PR #11 records for exact package commit `b8800e1eda014eef1421a1af5427aaea41393496`. An empty checkbox means the decision or evidence is absent and must not be inferred from this document or the user prompt. The referenced `docs/approvals/AZURE_DEMO_Architecture_Approval_Evidence.json` is absent from the exact package commit and current PR branch and is not relied upon.
 
 ### Architecture entry
 
-- [ ] The Product Work Package, Deployment Architecture, this Environment Configuration and any linked decision record coexist at one immutable package commit; every decision below quotes that same full SHA, `AZURE-DEMO-001`, reviewer/role, UTC date, scope, conditions and evidence link.
-- [ ] Product/PRB approves restricted objective/audience, exact scope/nine journeys/exclusions, synthetic classification, success evidence, demo funding/cost ceiling and bounded Q-02 disposition; this is not release or full-MVP approval.
-- [ ] Independent TDA approves `AZURE-DEMO-ARCH-001`, bounded Q-01 disposition, native runtimes/no-container decision, trust/network/tenancy/storage/identity design, tier, migration, slots, rollback and shutdown. The authoring Architect does not self-approve.
-- [ ] Information Security approves external reachability, threat model, Entra/RBAC, LocalTest eradication, tenant isolation, proxy/headers/CORS/private endpoints, upload scanning, telemetry redaction, vulnerability policy and security gates.
-- [ ] Azure Platform/Operations approves `Onkar.Pathre`/UK South, Policy/quota/naming/tags, network/DNS, identities/RBAC, SQL/backup, private agent/protected pipeline, priced configuration, budget/alerts, operational owner, expiry and shutdown/decommission.
-- [ ] Test Services approves environment, seed/files, requirements-to-test matrix, browser/accessibility/security/tenant coverage, migration/rollback/shutdown rehearsal and evidence entry/exit criteria.
+- [x] The Product Work Package, Deployment Architecture and this Environment Configuration coexist at immutable package commit `b8800e1eda014eef1421a1af5427aaea41393496`; the four recognised decisions quote that SHA, reviewer role, date, scope, conditions and evidence link.
+- [x] Product/PRB authority `opathre` approves the restricted scope for controlled implementation and independent testing only; this is not deployment, release or full-MVP approval. [Evidence](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358896442)
+- [x] Independent TDA `PTArchitect` approves `AZURE-DEMO-ARCH-001` for controlled implementation/testing only; material design changes require renewed review. [Evidence](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358867878)
+- [x] Information Security `ashish50thbirthday-ship-it` approves implementation/security testing of the documented controls only; LocalTest and `X-Lgr-Test-Principal` remain prohibited in Azure, and `@vitest/mocker` remediation plus successful clean connected audit remain mandatory before external reachability. [Evidence](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358887229)
+- [ ] Azure Platform/Operations is `PENDING_PRE_DEPLOYMENT`. An identified assigned platform engineer must approve `Onkar.Pathre`/UK South, Policy/quota/naming/tags, network/DNS, identities/RBAC, SQL/backup, private agent/protected pipeline, priced configuration, budget/alerts, operational owner, expiry and shutdown/decommission before any Azure-impacting action.
+- [x] Test Services `nextgenexamprep-crypto` approves independent testing in authorised isolated resources with synthetic fixtures and commit-bound evidence. [Evidence](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358878842)
+
+Product/PRB clarified that the four checked authority decisions are sufficient for controlled implementation and local/isolated testing and that the unassigned Platform/Operations decision is a mandatory pre-deployment gate. [Governance clarification](https://github.com/onkarpathre/lgr-transformation-migration/pull/11#pullrequestreview-5358989846). No Azure Platform/Operations decision is recognised unless it comes from an identified assigned platform engineer.
 
 Supporting evidence required before the relevant primary decision:
 
@@ -657,10 +663,11 @@ Supporting evidence required before the relevant primary decision:
 - [ ] Azure SQL/DBA owner approves Entra admin, users/roles, S0, migration and PITR/restore.
 - [ ] Azure DevOps/repository owner approves protected branch/environments, federated service connection, scans and private agent pool.
 
-All five primary decisions form one gate. A supporting approval, earlier ADR, risk acceptance, branch name, draft hash or user prompt cannot replace a missing primary decision. Until the gate passes, implementation and all Azure/SQL actions are prohibited.
+The four checked decisions authorise controlled implementation and local/isolated testing only. A supporting approval, earlier ADR, risk acceptance, branch name, draft hash or user prompt cannot replace the pending Azure Platform/Operations decision. Until an identified assigned platform engineer records that approval, Azure resource provisioning, external reachability, pipeline deployment and any use of `Onkar.Pathre` are prohibited.
 
 ### Deployment entry
 
+- [ ] Identified assigned Azure Platform/Operations engineer records `APPROVED` for the exact pre-deployment scope and artefacts.
 - [ ] `@vitest/mocker` advisory remediated and full same-commit scans pass.
 - [ ] Developer Implementation Work Package is complete and `READY_FOR_TEST`.
 - [ ] Independent Tester recommendation is `PASS` for the exact artifacts/environment.
@@ -680,4 +687,6 @@ All five primary decisions form one gate. A supporting approval, earlier ADR, ri
 
 ## Configuration disposition
 
-The Product Work Package provides the missing authoritative boundary and both architecture documents are reconciled to its exact nine journeys and exclusions. The target is technically feasible with native Node.js 24 and .NET 10 App Service runtimes; custom containers are neither required nor approved. This configuration is ready for the consolidated architecture approval review, not for implementation or deployment. The exact package commit, five primary decisions, required supporting evidence, application/IaC/pipeline controls, private agent, mandatory `@vitest/mocker` remediation, independent Tester/Quality evidence and named human deployment decision remain outstanding.
+The Product Work Package provides the authoritative boundary and both architecture documents are reconciled to its exact nine journeys and exclusions at package commit `b8800e1eda014eef1421a1af5427aaea41393496`. Product/PRB, Independent TDA, Information Security and Test Services have validly approved controlled implementation and local/isolated testing. The target remains technically feasible with native Node.js 24 and .NET 10 App Service runtimes; custom containers are neither required nor approved. Azure Platform/Operations is `PENDING_PRE_DEPLOYMENT`: no Azure resource provisioning, external reachability, pipeline deployment or use of `Onkar.Pathre` is authorised. Required supporting evidence, application/IaC/pipeline controls, private agent, mandatory `@vitest/mocker` remediation and clean audit, independent Tester `PASS`, Quality Manager recommendation and named human deployment decision remain outstanding. Production, customer data, release, merge and full MVP approval remain excluded.
+
+READY_FOR_AZURE_DEMO_IMPLEMENTATION_WITH_PLATFORM_GATE_PENDING
