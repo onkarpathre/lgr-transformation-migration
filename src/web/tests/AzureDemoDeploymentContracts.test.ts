@@ -8,6 +8,17 @@ const forwardedHeaders = ["authorization", "x-project-id", "content-type"];
 const prohibitedHeaders = ["x-lgr-test-principal"];
 
 describe("Azure demo deployment contracts", () => {
+  it("uses MTP production metadata and does not expose internal authentication details", () => {
+    const layout = source("app/layout.tsx");
+    const shell = source("components/AppShell.tsx");
+    const productionPresentation = `${layout}\n${shell}`;
+
+    expect(layout).toContain("MTP – Transformation & Migration Platform");
+    expect(layout).not.toContain("LGR Transformation and Migration");
+    expect(shell).toContain("Restricted synthetic non-production management demo");
+    expect(productionPresentation).not.toMatch(/LocalTest|X-Lgr-Test-Principal|NEXT_PUBLIC_LGR_TEST_PRINCIPAL/);
+  });
+
   it("uses a narrow same-origin proxy and strips caller identity authority", () => {
     const proxy = source("app/api/[...path]/route.ts");
     expect(proxy).toContain("allowedRoots");

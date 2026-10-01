@@ -5,8 +5,8 @@ import { ApiProvider } from "@/components/ApiContext";
 import { EntraAuthGate, EntraAuthProvider } from "@/components/EntraAuth";
 
 export const metadata: Metadata = {
-  title: { default: "LGR Transformation and Migration", template: "%s | LGR Transformation and Migration" },
-  description: "A single source of truth for Local Government reorganisation migration programmes."
+  title: { default: "MTP – Transformation & Migration Platform", template: "%s | MTP – Transformation & Migration Platform" },
+  description: "A governed transformation and migration planning platform for restricted management demonstrations."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

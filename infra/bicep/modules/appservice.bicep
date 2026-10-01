@@ -1,11 +1,11 @@
 param location string
-param uniqueSuffix string
-param appServiceSku string
-param appServiceCapacity int
+param appServicePlanName string
+param webAppName string
+param apiAppName string
+param stagingSlotName string
 param webLinuxFxVersion string
 param apiLinuxFxVersion string
 param integrationSubnetId string
-param apiMainIdentityId string
 param apiMainIdentityClientId string
 param apiStagingIdentityId string
 param apiStagingIdentityClientId string
@@ -21,8 +21,6 @@ param keyVaultUri string
 param storageAccountUri string
 param tags object
 
-var webName = 'app-lgrtm-web-azdemo-uks-${uniqueSuffix}'
-var apiName = 'app-lgrtm-api-azdemo-uks-${uniqueSuffix}'
 var membershipSecretUri = '${trim(keyVaultUri, '/')}/secrets/entra-demo-memberships'
 var sqlBase = 'Server=tcp:${sqlServerFqdn},1433;Database=${sqlDatabaseName};Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;Connect Timeout=30;MultipleActiveResultSets=False;User Id='
 var commonSiteConfig = {
@@ -57,7 +55,7 @@ var commonWebSettings = [
   { name: 'NEXT_PUBLIC_API_SCOPE'
     value: apiScope }
   { name: 'NEXT_PUBLIC_DEMO_LABEL'
-    value: 'Restricted synthetic non-production demo' }
+    value: 'Restricted synthetic non-production management demo' }
 ]
 var apiCommon = [
   { name: 'ASPNETCORE_ENVIRONMENT'
@@ -118,56 +116,37 @@ var apiCommon = [
     value: 'false' }
 ]
 
-resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
-  name: 'asp-lgrtm-azdemo-uks-01'
-  location: location
-  tags: tags
-  sku: {
-    name: appServiceSku
-    tier: 'Standard'
-    capacity: appServiceCapacity
-  }
-  kind: 'linux'
-  properties: {
-    reserved: true
-    perSiteScaling: false
-    zoneRedundant: false
-  }
+resource plan 'Microsoft.Web/serverfarms@2023-12-01' existing = {
+  name: appServicePlanName
 }
-resource web 'Microsoft.Web/sites@2023-12-01' = {
-  name: webName
-  location: location
-  tags: tags
-  kind: 'app,linux'
-  properties: {
-    serverFarmId: plan.id
-    httpsOnly: true
-    publicNetworkAccess: 'Enabled'
-    virtualNetworkSubnetId: integrationSubnetId
+resource web 'Microsoft.Web/sites@2023-12-01' existing = {
+  name: webAppName
+}
+resource webConfiguration 'Microsoft.Web/sites/config@2023-12-01' = {
+  parent: web
+  name: 'web'
+  properties: union(commonSiteConfig, {
+    linuxFxVersion: webLinuxFxVersion
+    appCommandLine: 'node server.js'
+    healthCheckPath: '/health'
     vnetRouteAllEnabled: true
-    siteConfig: union(commonSiteConfig, {
-      linuxFxVersion: webLinuxFxVersion
-      appCommandLine: 'node server.js'
-      healthCheckPath: '/health'
-      appSettings: concat(commonWebSettings, [
-        { name: 'API_ORIGIN'
-          value: 'https://${apiName}.azurewebsites.net' }
-        { name: 'OTEL_SERVICE_NAME'
-          value: 'lgrtm-web-azdemo' }
-      ])
-    })
-  }
+    appSettings: concat(commonWebSettings, [
+      { name: 'API_ORIGIN'
+        value: 'https://${apiAppName}.azurewebsites.net' }
+      { name: 'OTEL_SERVICE_NAME'
+        value: 'lgrtm-web-azdemo' }
+    ])
+  })
 }
 resource webSlot 'Microsoft.Web/sites/slots@2023-12-01' = {
   parent: web
-  name: 'staging'
+  name: stagingSlotName
   location: location
   tags: tags
   properties: {
     serverFarmId: plan.id
     httpsOnly: true
     publicNetworkAccess: 'Enabled'
-    virtualNetworkSubnetId: integrationSubnetId
     vnetRouteAllEnabled: true
     siteConfig: union(commonSiteConfig, {
       linuxFxVersion: webLinuxFxVersion
@@ -175,49 +154,41 @@ resource webSlot 'Microsoft.Web/sites/slots@2023-12-01' = {
       healthCheckPath: '/health'
       appSettings: concat(commonWebSettings, [
         { name: 'API_ORIGIN'
-          value: 'https://${apiName}-staging.azurewebsites.net' }
+          value: 'https://${apiAppName}-${stagingSlotName}.azurewebsites.net' }
         { name: 'OTEL_SERVICE_NAME'
           value: 'lgrtm-web-staging-azdemo' }
       ])
     })
   }
 }
-resource api 'Microsoft.Web/sites@2023-12-01' = {
-  name: apiName
-  location: location
-  tags: tags
-  kind: 'app,linux'
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: { '${apiMainIdentityId}': {} }
-  }
-  properties: {
-    serverFarmId: plan.id
-    httpsOnly: true
-    publicNetworkAccess: 'Disabled'
+resource api 'Microsoft.Web/sites@2023-12-01' existing = {
+  name: apiAppName
+}
+resource apiConfiguration 'Microsoft.Web/sites/config@2023-12-01' = {
+  parent: api
+  name: 'web'
+  properties: union(commonSiteConfig, {
+    linuxFxVersion: apiLinuxFxVersion
+    healthCheckPath: '/health/ready'
     virtualNetworkSubnetId: integrationSubnetId
     vnetRouteAllEnabled: true
-    siteConfig: union(commonSiteConfig, {
-      linuxFxVersion: apiLinuxFxVersion
-      healthCheckPath: '/health/ready'
-      appSettings: concat(apiCommon, [
-        { name: 'AllowedHosts'
-          value: '${apiName}.azurewebsites.net' }
-        { name: 'AllowedOrigins__0'
-          value: 'https://${webName}.azurewebsites.net' }
-        { name: 'AzureIdentity__ManagedIdentityClientId'
-          value: apiMainIdentityClientId }
-        { name: 'ConnectionStrings__LgrDatabase'
-          value: '${sqlBase}${apiMainIdentityClientId}' }
-        { name: 'OTEL_SERVICE_NAME'
-          value: 'lgrtm-api-azdemo' }
-      ])
-    })
-  }
+    appSettings: concat(apiCommon, [
+      { name: 'AllowedHosts'
+        value: '${apiAppName}.azurewebsites.net' }
+      { name: 'AllowedOrigins__0'
+        value: 'https://${webAppName}.azurewebsites.net' }
+      { name: 'AzureIdentity__ManagedIdentityClientId'
+        value: apiMainIdentityClientId }
+      { name: 'ConnectionStrings__LgrDatabase'
+        value: '${sqlBase}${apiMainIdentityClientId}' }
+      { name: 'OTEL_SERVICE_NAME'
+        value: 'lgrtm-api-azdemo' }
+    ])
+  })
 }
 resource apiSlot 'Microsoft.Web/sites/slots@2023-12-01' = {
   parent: api
-  name: 'staging'
+  name: stagingSlotName
   location: location
   tags: tags
   identity: {
@@ -235,9 +206,9 @@ resource apiSlot 'Microsoft.Web/sites/slots@2023-12-01' = {
       healthCheckPath: '/health/ready'
       appSettings: concat(apiCommon, [
         { name: 'AllowedHosts'
-          value: '${apiName}-staging.azurewebsites.net' }
+          value: '${apiAppName}-${stagingSlotName}.azurewebsites.net' }
         { name: 'AllowedOrigins__0'
-          value: 'https://${webName}-staging.azurewebsites.net' }
+          value: 'https://${webAppName}-${stagingSlotName}.azurewebsites.net' }
         { name: 'AzureIdentity__ManagedIdentityClientId'
           value: apiStagingIdentityClientId }
         { name: 'ConnectionStrings__LgrDatabase'

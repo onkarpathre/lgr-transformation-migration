@@ -38,22 +38,18 @@ if (-not [string]::Equals($ReleaseIdentifier, $SourceVersion, [StringComparison]
     throw 'Rollback guard rejected a release identifier that does not match the running source version.'
 }
 
-Assert-ExactValue -Name 'deployment environment' -Actual $DeploymentEnvironmentName -Expected 'azure-demo'
+Assert-ExactValue -Name 'deployment environment' -Actual $DeploymentEnvironmentName -Expected 'mtp-azure-demo-dev'
 Assert-ExactValue -Name 'resource group' -Actual $ResourceGroupName -Expected 'Onkar.Pathre'
+Assert-ExactValue -Name 'expected web application' -Actual $ExpectedWebAppName -Expected 'app-mtp-web-dev-uks-001'
+Assert-ExactValue -Name 'expected API application' -Actual $ExpectedApiAppName -Expected 'app-mtp-api-dev-uks-001'
 Assert-ExactValue -Name 'web application' -Actual $WebAppName -Expected $ExpectedWebAppName
 Assert-ExactValue -Name 'API application' -Actual $ApiAppName -Expected $ExpectedApiAppName
 Assert-ExactValue -Name 'web source slot' -Actual $WebSlotName -Expected 'staging'
 Assert-ExactValue -Name 'API source slot' -Actual $ApiSlotName -Expected 'staging'
 Assert-ExactValue -Name 'target slot' -Actual $TargetSlotName -Expected 'production'
 
-if ($ExpectedWebAppName -notmatch '^app-lgrtm-web-azdemo-uks-[a-z0-9]{3,8}$') {
-    throw 'Rollback guard rejected an unapproved web application naming boundary.'
-}
-if ($ExpectedApiAppName -notmatch '^app-lgrtm-api-azdemo-uks-[a-z0-9]{3,8}$') {
-    throw 'Rollback guard rejected an unapproved API application naming boundary.'
-}
 if ([string]::Equals($ExpectedWebAppName, $ExpectedApiAppName, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Rollback guard requires distinct web and API applications.'
 }
 
-Write-Output "Rollback guard accepted immutable release $($ReleaseIdentifier.ToLowerInvariant()) for the restricted azure-demo target."
+Write-Output "Rollback guard accepted immutable release $($ReleaseIdentifier.ToLowerInvariant()) for the restricted mtp-azure-demo-dev target."

@@ -1,5 +1,6 @@
 param location string
 param resourceGroupName string
+param alertNames object
 param actionGroupId string
 param applicationInsightsResourceId string
 param logAnalyticsWorkspaceId string
@@ -26,7 +27,7 @@ var availabilityTestLocations = [
 
 var logAlertDefinitions = [
   {
-    name: 'alert-lgrtm-unhandled-errors-azdemo'
+    name: alertNames.unhandledErrors
     displayName: 'Azure demo unhandled errors'
     description: 'Unhandled application exceptions were recorded by the restricted demo.'
     severity: 1
@@ -37,7 +38,7 @@ AppExceptions
 '''
   }
   {
-    name: 'alert-lgrtm-auth-failures-denials-azdemo'
+    name: alertNames.authFailuresDenials
     displayName: 'Azure demo authentication failures and authorization denials'
     description: 'Repeated 401 or 403 responses were recorded by the restricted demo.'
     severity: 1
@@ -48,7 +49,7 @@ AppRequests
 '''
   }
   {
-    name: 'alert-lgrtm-sql-connectivity-azdemo'
+    name: alertNames.sqlConnectivity
     displayName: 'Azure demo SQL dependency failure'
     description: 'The restricted demo recorded a failed Azure SQL dependency call.'
     severity: 1
@@ -60,7 +61,7 @@ AppDependencies
 '''
   }
   {
-    name: 'alert-lgrtm-keyvault-denial-azdemo'
+    name: alertNames.keyVaultDenial
     displayName: 'Azure demo Key Vault dependency denial'
     description: 'The restricted demo recorded a failed or denied Key Vault dependency call.'
     severity: 1
@@ -72,7 +73,7 @@ AppDependencies
 '''
   }
   {
-    name: 'alert-lgrtm-blob-dependency-azdemo'
+    name: alertNames.blobDependency
     displayName: 'Azure demo Blob dependency failure'
     description: 'The restricted demo recorded a failed Blob Storage dependency call.'
     severity: 1
@@ -84,7 +85,7 @@ AppDependencies
 '''
   }
   {
-    name: 'alert-lgrtm-import-failure-azdemo'
+    name: alertNames.importFailure
     displayName: 'Azure demo discovery import failure'
     description: 'The restricted demo recorded a failed discovery import request.'
     severity: 1
@@ -96,7 +97,7 @@ AppRequests
 '''
   }
   {
-    name: 'alert-lgrtm-storage-malware-azdemo'
+    name: alertNames.storageMalware
     displayName: 'Azure demo storage malware or scan failure'
     description: 'Defender for Storage did not report a clean malware scan result for an uploaded demo file.'
     severity: 0
@@ -107,7 +108,7 @@ StorageMalwareScanningResults
 '''
   }
   {
-    name: 'alert-lgrtm-log-daily-cap-azdemo'
+    name: alertNames.logDailyCap
     displayName: 'Azure demo log daily cap approaching'
     description: 'Daily Log Analytics ingestion has reached 90 percent of the approved cap.'
     severity: 2
@@ -121,14 +122,14 @@ Usage
 ]
 
 resource webHealthTest 'Microsoft.Insights/webtests@2022-06-15' = {
-  name: 'webtest-lgrtm-web-health-azdemo'
+  name: alertNames.webHealthTest
   location: location
   tags: union(tags, {
     'hidden-link:${applicationInsightsResourceId}': 'Resource'
   })
   kind: 'standard'
   properties: {
-    SyntheticMonitorId: 'webtest-lgrtm-web-health-azdemo'
+    SyntheticMonitorId: alertNames.webHealthTest
     Name: 'Azure demo web health'
     Description: 'Public web availability for the restricted demo.'
     Enabled: true
@@ -153,14 +154,14 @@ resource webHealthTest 'Microsoft.Insights/webtests@2022-06-15' = {
 }
 
 resource apiReadinessTest 'Microsoft.Insights/webtests@2022-06-15' = {
-  name: 'webtest-lgrtm-api-readiness-azdemo'
+  name: alertNames.apiReadinessTest
   location: location
   tags: union(tags, {
     'hidden-link:${applicationInsightsResourceId}': 'Resource'
   })
   kind: 'standard'
   properties: {
-    SyntheticMonitorId: 'webtest-lgrtm-api-readiness-azdemo'
+    SyntheticMonitorId: alertNames.apiReadinessTest
     Name: 'Azure demo API readiness through web'
     Description: 'The public web health route checks private API readiness and its bounded dependencies.'
     Enabled: true
@@ -185,7 +186,7 @@ resource apiReadinessTest 'Microsoft.Insights/webtests@2022-06-15' = {
 }
 
 resource webHealthAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: 'alert-lgrtm-web-health-azdemo'
+  name: alertNames.webHealth
   location: 'global'
   tags: tags
   properties: {
@@ -213,7 +214,7 @@ resource webHealthAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
 }
 
 resource apiReadinessAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: 'alert-lgrtm-api-readiness-azdemo'
+  name: alertNames.apiReadiness
   location: 'global'
   tags: tags
   properties: {
@@ -241,7 +242,7 @@ resource apiReadinessAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
 }
 
 resource webHttpFailures 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: 'alert-lgrtm-web-http5xx-azdemo'
+  name: alertNames.webHttp5xx
   location: 'global'
   tags: tags
   properties: {
@@ -270,7 +271,7 @@ resource webHttpFailures 'Microsoft.Insights/metricAlerts@2018-03-01' = {
 }
 
 resource apiHttpFailures 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: 'alert-lgrtm-api-http5xx-azdemo'
+  name: alertNames.apiHttp5xx
   location: 'global'
   tags: tags
   properties: {
@@ -299,7 +300,7 @@ resource apiHttpFailures 'Microsoft.Insights/metricAlerts@2018-03-01' = {
 }
 
 resource sqlSaturation 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: 'alert-lgrtm-sql-dtu-azdemo'
+  name: alertNames.sqlDtu
   location: 'global'
   tags: tags
   properties: {
@@ -328,7 +329,7 @@ resource sqlSaturation 'Microsoft.Insights/metricAlerts@2018-03-01' = {
 }
 
 resource webSlotHealth 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: 'alert-lgrtm-web-slot-health-azdemo'
+  name: alertNames.webSlotHealth
   location: 'global'
   tags: tags
   properties: {
@@ -357,7 +358,7 @@ resource webSlotHealth 'Microsoft.Insights/metricAlerts@2018-03-01' = {
 }
 
 resource apiSlotHealth 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: 'alert-lgrtm-api-slot-health-azdemo'
+  name: alertNames.apiSlotHealth
   location: 'global'
   tags: tags
   properties: {
@@ -421,7 +422,7 @@ resource logAlerts 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = [for al
 }]
 
 resource failedDeployment 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
-  name: 'alert-lgrtm-failed-deployment-azdemo'
+  name: alertNames.failedDeployment
   location: 'global'
   tags: tags
   properties: {
@@ -460,7 +461,7 @@ resource failedDeployment 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
 }
 
 resource serviceHealth 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
-  name: 'alert-lgrtm-service-health-azdemo'
+  name: alertNames.serviceHealth
   location: 'global'
   tags: tags
   properties: {

@@ -23,7 +23,7 @@ public sealed class AzureDemoConfigurationTests
     {
         var builder = CompleteBuilder();
         builder.Configuration["ConnectionStrings:LgrDatabase"] =
-            "Server=tcp:sql-lgrtm-azdemo-uks-demo.database.windows.net,1433;Database=sqldb-lgrtm-azdemo;Encrypt=True;TrustServerCertificate=True;User ID=demo;Password=prohibited";
+            "Server=tcp:sql-mtp-dev-uks-001.database.windows.net,1433;Database=sqldb-mtp-dev-uks-001;Encrypt=True;TrustServerCertificate=True;User ID=demo;Password=prohibited";
 
         var error = Assert.Throws<InvalidOperationException>(() => AzureDemoStartupGuard.Validate(builder));
 
@@ -42,10 +42,14 @@ public sealed class AzureDemoConfigurationTests
     [InlineData("Authentication:Entra:Issuer", "https://login.microsoftonline.com/common/v2.0")]
     [InlineData("Authentication:Entra:Audience", "api://not-a-guid")]
     [InlineData("Authentication:Entra:AllowedClientIds:0", "")]
-    [InlineData("Authentication:EntraDemoMemberships:SecretUri", "https://kvlgrtmazddemo.vault.azure.net/secrets/other")]
+    [InlineData("Authentication:EntraDemoMemberships:SecretUri", "https://kv-mtp-dev-uks-op01.vault.azure.net/secrets/other")]
+    [InlineData("Authentication:EntraDemoMemberships:SecretUri", "https://kv-other.vault.azure.net/secrets/entra-demo-memberships")]
     [InlineData("Authentication:EntraDemoMemberships:CacheSeconds", "301")]
-    [InlineData("DiscoveryImport:StorageAccountUri", "https://stlgrtmazddemo.blob.core.windows.net/other")]
+    [InlineData("DiscoveryImport:StorageAccountUri", "https://stmtpdevuks001.blob.core.windows.net/other")]
+    [InlineData("DiscoveryImport:StorageAccountUri", "https://stother.blob.core.windows.net")]
     [InlineData("DiscoveryImport:ContainerName", "other")]
+    [InlineData("AllowedHosts", "app-unapproved-api-dev-uks-001.azurewebsites.net")]
+    [InlineData("AllowedOrigins:0", "https://app-unapproved-web-dev-uks-001.azurewebsites.net")]
     public void AzureDemo_rejects_inexact_identity_and_storage_configuration(string key, string value)
     {
         var builder = CompleteBuilder();
@@ -55,8 +59,9 @@ public sealed class AzureDemoConfigurationTests
     }
 
     [Theory]
-    [InlineData("Server=tcp:other.database.windows.net,1433;Database=sqldb-lgrtm-azdemo;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")]
-    [InlineData("Server=tcp:sql-lgrtm-azdemo-uks-demo.database.windows.net,1433;Database=other;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")]
+    [InlineData("Server=tcp:other.database.windows.net,1433;Database=sqldb-mtp-dev-uks-001;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")]
+    [InlineData("Server=tcp:sql-unapproved-dev-uks-001.database.windows.net,1433;Database=sqldb-mtp-dev-uks-001;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")]
+    [InlineData("Server=tcp:sql-mtp-dev-uks-001.database.windows.net,1433;Database=other;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")]
     public void AzureDemo_rejects_wrong_Azure_SQL_target(string connectionString)
     {
         var builder = CompleteBuilder();
@@ -76,16 +81,16 @@ public sealed class AzureDemoConfigurationTests
             ["Authentication:Entra:Issuer"] = "https://login.microsoftonline.com/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/v2.0",
             ["Authentication:Entra:Audience"] = "api://cccccccc-cccc-cccc-cccc-cccccccccccc",
             ["Authentication:Entra:AllowedClientIds:0"] = "dddddddd-dddd-dddd-dddd-dddddddddddd",
-            ["Authentication:EntraDemoMemberships:SecretUri"] = "https://kvlgrtmazddemo.vault.azure.net/secrets/entra-demo-memberships",
+            ["Authentication:EntraDemoMemberships:SecretUri"] = "https://kv-mtp-dev-uks-op01.vault.azure.net/secrets/entra-demo-memberships",
             ["Authentication:EntraDemoMemberships:CacheSeconds"] = "300",
             ["AzureIdentity:ManagedIdentityClientId"] = identity,
             ["DiscoveryImport:StorageMode"] = "AzureBlob",
-            ["DiscoveryImport:StorageAccountUri"] = "https://stlgrtmazddemo.blob.core.windows.net",
+            ["DiscoveryImport:StorageAccountUri"] = "https://stmtpdevuks001.blob.core.windows.net",
             ["DiscoveryImport:ContainerName"] = "discovery-imports",
             ["DemoData:Enabled"] = "false",
-            ["AllowedHosts"] = "app-lgrtm-api-azdemo-uks-demo.azurewebsites.net",
-            ["AllowedOrigins:0"] = "https://app-lgrtm-web-azdemo-uks-demo.azurewebsites.net",
-            ["ConnectionStrings:LgrDatabase"] = $"Server=tcp:sql-lgrtm-azdemo-uks-demo.database.windows.net,1433;Database=sqldb-lgrtm-azdemo;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id={identity}"
+            ["AllowedHosts"] = "app-mtp-api-dev-uks-001.azurewebsites.net",
+            ["AllowedOrigins:0"] = "https://app-mtp-web-dev-uks-001.azurewebsites.net",
+            ["ConnectionStrings:LgrDatabase"] = $"Server=tcp:sql-mtp-dev-uks-001.database.windows.net,1433;Database=sqldb-mtp-dev-uks-001;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id={identity}"
         };
         builder.Configuration.AddInMemoryCollection(values);
         return builder;

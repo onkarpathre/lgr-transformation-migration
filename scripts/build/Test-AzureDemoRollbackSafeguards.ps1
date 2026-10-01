@@ -10,12 +10,12 @@ $valid = @{
     SourceBranch = 'refs/heads/release/azure-demo-v1'
     SourceVersion = $release
     ReleaseIdentifier = $release
-    DeploymentEnvironmentName = 'azure-demo'
+    DeploymentEnvironmentName = 'mtp-azure-demo-dev'
     ResourceGroupName = 'Onkar.Pathre'
-    WebAppName = 'app-lgrtm-web-azdemo-uks-abc123'
-    ExpectedWebAppName = 'app-lgrtm-web-azdemo-uks-abc123'
-    ApiAppName = 'app-lgrtm-api-azdemo-uks-abc123'
-    ExpectedApiAppName = 'app-lgrtm-api-azdemo-uks-abc123'
+    WebAppName = 'app-mtp-web-dev-uks-001'
+    ExpectedWebAppName = 'app-mtp-web-dev-uks-001'
+    ApiAppName = 'app-mtp-api-dev-uks-001'
+    ExpectedApiAppName = 'app-mtp-api-dev-uks-001'
     WebSlotName = 'staging'
     ApiSlotName = 'staging'
     TargetSlotName = 'production'
@@ -31,6 +31,8 @@ $negativeCases = @(
     @{ Name = 'incorrect resource group'; Key = 'ResourceGroupName'; Value = 'unrelated-rg' },
     @{ Name = 'unrelated web application'; Key = 'WebAppName'; Value = 'app-other-web' },
     @{ Name = 'unrelated API application'; Key = 'ApiAppName'; Value = 'app-other-api' },
+    @{ Name = 'unapproved expected web application'; Key = 'ExpectedWebAppName'; Value = 'app-unapproved-web-dev-uks-001' },
+    @{ Name = 'unapproved expected API application'; Key = 'ExpectedApiAppName'; Value = 'app-unapproved-api-dev-uks-001' },
     @{ Name = 'incorrect web source slot'; Key = 'WebSlotName'; Value = 'production' },
     @{ Name = 'incorrect API source slot'; Key = 'ApiSlotName'; Value = 'production' },
     @{ Name = 'incorrect target slot'; Key = 'TargetSlotName'; Value = 'staging' }

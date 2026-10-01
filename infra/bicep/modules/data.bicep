@@ -1,39 +1,18 @@
-param location string
-param uniqueSuffix string
 param entraTenantId string
 param sqlEntraAdminObjectId string
 param sqlEntraAdminName string
-param sqlSkuName string
-param sqlMaxSizeBytes int
+param keyVaultName string
+param storageAccountName string
+param sqlServerName string
+param sqlDatabaseName string
+param importContainerName string
 param logRetentionDays int
 param apiIdentityPrincipalIds array
 param logAnalyticsWorkspaceId string
 param tags object
 
-var vaultName = 'kvlgrtmazd${uniqueSuffix}'
-var storageName = 'stlgrtmazd${uniqueSuffix}'
-var sqlName = 'sql-lgrtm-azdemo-uks-${uniqueSuffix}'
-resource vault 'Microsoft.KeyVault/vaults@2024-11-01' = {
-  name: vaultName
-  location: location
-  tags: tags
-  properties: {
-    tenantId: entraTenantId
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-    enableRbacAuthorization: true
-    enablePurgeProtection: true
-    enableSoftDelete: true
-    softDeleteRetentionInDays: 90
-    publicNetworkAccess: 'Disabled'
-    networkAcls: {
-      bypass: 'None'
-      defaultAction: 'Deny'
-    }
-    accessPolicies: []
-  }
+resource vault 'Microsoft.KeyVault/vaults@2024-11-01' existing = {
+  name: keyVaultName
 }
 resource vaultRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for principalId in apiIdentityPrincipalIds: {
   scope: vault
@@ -64,23 +43,8 @@ resource vaultDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-prev
   }
 }
 
-resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: storageName
-  location: location
-  tags: tags
-  sku: { name: 'Standard_LRS' }
-  kind: 'StorageV2'
-  properties: {
-    supportsHttpsTrafficOnly: true
-    minimumTlsVersion: 'TLS1_2'
-    allowBlobPublicAccess: false
-    allowSharedKeyAccess: false
-    publicNetworkAccess: 'Disabled'
-    networkAcls: {
-      bypass: 'None'
-      defaultAction: 'Deny'
-    }
-  }
+resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  name: storageAccountName
 }
 resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
   parent: storage
@@ -98,7 +62,7 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01'
 }
 resource importContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   parent: blobService
-  name: 'discovery-imports'
+  name: importContainerName
   properties: { publicAccess: 'None' }
 }
 resource storageRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for principalId in apiIdentityPrincipalIds: {
@@ -184,15 +148,8 @@ resource storageDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-pr
   }
 }
 
-resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
-  name: sqlName
-  location: location
-  tags: tags
-  properties: {
-    publicNetworkAccess: 'Disabled'
-    minimalTlsVersion: '1.2'
-    restrictOutboundNetworkAccess: 'Enabled'
-  }
+resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' existing = {
+  name: sqlServerName
 }
 resource sqlAdministrator 'Microsoft.Sql/servers/administrators@2023-08-01-preview' = {
   parent: sqlServer
@@ -205,21 +162,9 @@ resource sqlAdministrator 'Microsoft.Sql/servers/administrators@2023-08-01-previ
     azureADOnlyAuthentication: true
   }
 }
-resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
+resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' existing = {
   parent: sqlServer
-  name: 'sqldb-lgrtm-azdemo'
-  location: location
-  tags: tags
-  sku: {
-    name: sqlSkuName
-    tier: 'Standard'
-  }
-  properties: {
-    maxSizeBytes: sqlMaxSizeBytes
-    zoneRedundant: false
-    readScale: 'Disabled'
-    requestedBackupStorageRedundancy: 'Local'
-  }
+  name: sqlDatabaseName
 }
 resource sqlAudit 'Microsoft.Sql/servers/auditingSettings@2023-08-01-preview' = {
   parent: sqlServer

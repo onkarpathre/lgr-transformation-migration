@@ -43,8 +43,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("LGR_AZURE_DEMO_SQL_CONNECTION_STRING must be supplied by the protected seed stage.");
 var sql = new SqlConnectionStringBuilder(connectionString);
 var sqlHost = NormalizedSqlHost(sql.DataSource);
-if (!sqlHost.StartsWith("sql-lgrtm-azdemo-uks-", StringComparison.OrdinalIgnoreCase)
-    || !sqlHost.EndsWith(".database.windows.net", StringComparison.OrdinalIgnoreCase)
+if (!string.Equals(sqlHost, "sql-mtp-dev-uks-001.database.windows.net", StringComparison.OrdinalIgnoreCase)
     || sql.InitialCatalog != Required("--database")
     || sql.Authentication != SqlAuthenticationMethod.ActiveDirectoryManagedIdentity
     || !sql.Encrypt || sql.TrustServerCertificate || !string.IsNullOrEmpty(sql.Password)

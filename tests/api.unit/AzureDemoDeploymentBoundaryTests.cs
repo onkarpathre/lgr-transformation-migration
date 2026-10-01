@@ -33,11 +33,12 @@ public sealed class AzureDemoDeploymentBoundaryTests
         var pipeline = File.ReadAllText(Path.Combine(root, "azure-pipelines.yml"));
 
         Assert.Contains("default: false", pipeline, StringComparison.Ordinal);
+        Assert.Matches("(?ms)- name: deployAzureDemo\\s+type: boolean\\s+default: false", pipeline);
         Assert.Contains("refs/heads/release/azure-demo-v1", pipeline, StringComparison.Ordinal);
         Assert.Contains("deployToSlotOrASE: true", pipeline, StringComparison.Ordinal);
         Assert.Contains("slotName: staging", pipeline, StringComparison.Ordinal);
         Assert.Contains("ManualValidation@0", pipeline, StringComparison.Ordinal);
-        Assert.Contains("environment: azure-demo", pipeline, StringComparison.Ordinal);
+        Assert.Contains("environment: mtp-azure-demo-dev", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("publishProfile:", pipeline, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -49,7 +50,7 @@ public sealed class AzureDemoDeploymentBoundaryTests
         var swapStage = pipeline[pipeline.IndexOf("- stage: SwapAndVerify", StringComparison.Ordinal)..pipeline.IndexOf("- stage: Rollback", StringComparison.Ordinal)];
         var rollbackStage = pipeline[pipeline.IndexOf("- stage: Rollback", StringComparison.Ordinal)..];
 
-        Assert.True(swapStage.IndexOf("$(apiAppName)", StringComparison.Ordinal) < swapStage.IndexOf("$(webAppName)", StringComparison.Ordinal));
+        Assert.True(swapStage.IndexOf("$(AZDEMO_API_APP_NAME)", StringComparison.Ordinal) < swapStage.IndexOf("$(AZDEMO_WEB_APP_NAME)", StringComparison.Ordinal));
         Assert.True(rollbackStage.IndexOf("--name $env:ROLLBACK_WEB_APP", StringComparison.Ordinal) < rollbackStage.IndexOf("--name $env:ROLLBACK_API_APP", StringComparison.Ordinal));
     }
 
@@ -66,8 +67,11 @@ public sealed class AzureDemoDeploymentBoundaryTests
             "eq('${{ parameters.rollbackAzureDemo }}', true)",
             "eq(variables['Build.SourceBranch'], 'refs/heads/release/azure-demo-v1')",
             "eq('${{ parameters.rollbackReleaseIdentifier }}', variables['Build.SourceVersion'])",
-            "eq('${{ parameters.rollbackEnvironmentName }}', 'azure-demo')",
-            "eq('${{ parameters.rollbackResourceGroupName }}', 'Onkar.Pathre')",
+            "eq(variables['Build.DefinitionName'], 'mtp-azure-demo-deploy')",
+            "eq('${{ parameters.rollbackEnvironmentName }}', 'mtp-azure-demo-dev')",
+            "eq('${{ parameters.rollbackResourceGroupName }}', variables['AZDEMO_RESOURCE_GROUP_NAME'])",
+            "eq('${{ parameters.rollbackWebAppName }}', variables['AZDEMO_WEB_APP_NAME'])",
+            "eq('${{ parameters.rollbackApiAppName }}', variables['AZDEMO_API_APP_NAME'])",
             "in(dependencies.SwapAndVerify.result, 'Succeeded', 'SucceededWithIssues', 'Failed')",
             "Assert-AzureDemoRollbackTarget.ps1"
         })
@@ -83,35 +87,102 @@ public sealed class AzureDemoDeploymentBoundaryTests
     {
         var root = FindRepositoryRoot();
         var alerts = File.ReadAllText(Path.Combine(root, "infra", "bicep", "modules", "alerts.bicep"));
+        var parameters = File.ReadAllText(Path.Combine(root, "infra", "bicep", "parameters", "azure-demo.bicepparam"));
 
         foreach (var alertName in new[]
         {
-            "alert-lgrtm-web-health-azdemo",
-            "alert-lgrtm-api-readiness-azdemo",
-            "alert-lgrtm-web-http5xx-azdemo",
-            "alert-lgrtm-api-http5xx-azdemo",
-            "alert-lgrtm-unhandled-errors-azdemo",
-            "alert-lgrtm-auth-failures-denials-azdemo",
-            "alert-lgrtm-sql-dtu-azdemo",
-            "alert-lgrtm-sql-connectivity-azdemo",
-            "alert-lgrtm-keyvault-denial-azdemo",
-            "alert-lgrtm-blob-dependency-azdemo",
-            "alert-lgrtm-import-failure-azdemo",
-            "alert-lgrtm-storage-malware-azdemo",
-            "alert-lgrtm-failed-deployment-azdemo",
-            "alert-lgrtm-web-slot-health-azdemo",
-            "alert-lgrtm-api-slot-health-azdemo",
-            "alert-lgrtm-log-daily-cap-azdemo",
-            "alert-lgrtm-service-health-azdemo"
+            "alert-mtp-web-health-dev-uks-001",
+            "alert-mtp-api-readiness-dev-uks-001",
+            "alert-mtp-web-http5xx-dev-uks-001",
+            "alert-mtp-api-http5xx-dev-uks-001",
+            "alert-mtp-unhandled-errors-dev-uks-001",
+            "alert-mtp-auth-failures-denials-dev-uks-001",
+            "alert-mtp-sql-dtu-dev-uks-001",
+            "alert-mtp-sql-connectivity-dev-uks-001",
+            "alert-mtp-keyvault-denial-dev-uks-001",
+            "alert-mtp-blob-dependency-dev-uks-001",
+            "alert-mtp-import-failure-dev-uks-001",
+            "alert-mtp-storage-malware-dev-uks-001",
+            "alert-mtp-failed-deployment-dev-uks-001",
+            "alert-mtp-web-slot-health-dev-uks-001",
+            "alert-mtp-api-slot-health-dev-uks-001",
+            "alert-mtp-log-daily-cap-dev-uks-001",
+            "alert-mtp-service-health-dev-uks-001"
         })
         {
-            Assert.Contains(alertName, alerts, StringComparison.Ordinal);
+            Assert.Contains(alertName, parameters, StringComparison.Ordinal);
         }
 
         Assert.Contains("actionGroupId: actionGroupId", alerts, StringComparison.Ordinal);
         Assert.Contains("Microsoft.Insights/webtests@2022-06-15", alerts, StringComparison.Ordinal);
         Assert.Contains("Microsoft.Insights/scheduledQueryRules@2023-12-01", alerts, StringComparison.Ordinal);
         Assert.Contains("Microsoft.Insights/activityLogAlerts@2020-10-01", alerts, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deployment_targets_exact_existing_MTP_resources_and_no_obsolete_LGR_physical_estate()
+    {
+        var root = FindRepositoryRoot();
+        var deploymentPaths = new[]
+        {
+            "azure-pipelines.yml",
+            Path.Combine("infra", "bicep", "main.bicep"),
+            Path.Combine("infra", "bicep", "parameters", "azure-demo.bicepparam"),
+            Path.Combine("infra", "bicep", "modules", "appservice.bicep"),
+            Path.Combine("infra", "bicep", "modules", "data.bicep"),
+            Path.Combine("scripts", "database", "Configure-AzureDemoDatabasePrincipals.sql"),
+            Path.Combine("scripts", "database", "Assert-AzureDemoMigrationTarget.ps1"),
+            Path.Combine("scripts", "data", "Invoke-AzureDemoSeed.ps1"),
+            Path.Combine("scripts", "smoke", "Invoke-AzureDemoSmokeTests.ps1")
+        };
+        var deployment = string.Join('\n', deploymentPaths.Select(path => File.ReadAllText(Path.Combine(root, path))));
+        var main = File.ReadAllText(Path.Combine(root, "infra", "bicep", "main.bicep"));
+        var parameters = File.ReadAllText(Path.Combine(root, "infra", "bicep", "parameters", "azure-demo.bicepparam"));
+        var modules = string.Join('\n', Directory.GetFiles(Path.Combine(root, "infra", "bicep", "modules"), "*.bicep").Select(File.ReadAllText));
+
+        foreach (var name in new[]
+        {
+            "Onkar.Pathre", "asp-mtp-dev-uks-001", "app-mtp-web-dev-uks-001", "app-mtp-api-dev-uks-001",
+            "sql-mtp-dev-uks-001", "sqldb-mtp-dev-uks-001", "kv-mtp-dev-uks-op01", "appi-mtp-dev-uks-001",
+            "log-mtp-dev-uks-001", "stmtpdevuks001", "vnet-mtp-dev-uks-001", "pep-sql-mtp-dev-uks-001",
+            "privatelink.database.windows.net"
+        })
+        {
+            Assert.Contains(name, parameters, StringComparison.Ordinal);
+        }
+
+        foreach (var obsolete in new[] { "app-lgrtm-", "sql-lgrtm-", "sqldb-lgrtm-", "asp-lgrtm-", "kvlgrtm", "stlgrtm", "vnet-lgrtm-", "pep-sql-lgrtm-" })
+        {
+            Assert.DoesNotContain(obsolete, deployment, StringComparison.OrdinalIgnoreCase);
+        }
+
+        Assert.Contains("Microsoft.Web/serverfarms@2023-12-01' existing", modules, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.Web/sites@2023-12-01' existing", modules, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.Sql/servers@2023-08-01-preview' existing", modules, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.Sql/servers/databases@2023-08-01-preview' existing", modules, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.Network/privateEndpoints@2024-05-01' existing", modules, StringComparison.Ordinal);
+        Assert.Contains("assert exactResourceNames", main, StringComparison.Ordinal);
+        Assert.Contains("Required existing MTP resource was not found", deployment, StringComparison.Ordinal);
+        Assert.Contains("Assert-AzureDemoMigrationTarget.ps1", deployment, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deferred_internal_LGR_naming_remains_unchanged()
+    {
+        var root = FindRepositoryRoot();
+
+        Assert.True(File.Exists(Path.Combine(root, "LgrTransformationMigration.sln")));
+        Assert.True(File.Exists(Path.Combine(root, "src", "api", "LgrTransformationMigration.Api.csproj")));
+        Assert.Contains("namespace LgrTransformationMigration.Api.Infrastructure", File.ReadAllText(Path.Combine(root, "src", "api", "Infrastructure", "AzureDemoInfrastructure.cs")), StringComparison.Ordinal);
+        Assert.Contains("ConnectionStrings__LgrDatabase", File.ReadAllText(Path.Combine(root, "infra", "bicep", "modules", "appservice.bicep")), StringComparison.Ordinal);
+        Assert.Contains("lgrtm-efbundle-linux-x64", File.ReadAllText(Path.Combine(root, "azure-pipelines.yml")), StringComparison.Ordinal);
+        var pipeline = File.ReadAllText(Path.Combine(root, "azure-pipelines.yml"));
+        Assert.Contains("vg-mtp-azdemo-public", pipeline, StringComparison.Ordinal);
+        Assert.Contains("sc-mtp-azure-demo-dev", pipeline, StringComparison.Ordinal);
+        Assert.Contains("mtp-azure-demo-deploy", pipeline, StringComparison.Ordinal);
+        Assert.Contains("mtp-azure-demo-dev", pipeline, StringComparison.Ordinal);
+        Assert.Contains("mdp-mtp-dev-uks-001", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("vg-lgrtm-azdemo-public", pipeline, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)] [ValidateSet('AzureDemo')] [string] $Environment,
-    [Parameter(Mandatory)] [ValidatePattern('^sqldb-lgrtm-azdemo-reset-[a-z0-9]+$')] [string] $RestoredDatabaseName,
+    [Parameter(Mandatory)] [ValidatePattern('^sqldb-mtp-dev-uks-001-reset-[a-z0-9]+$')] [string] $RestoredDatabaseName,
     [Parameter(Mandatory)] [ValidateSet('Onkar.Pathre')] [string] $ResourceGroupName,
     [Parameter(Mandatory)] [string] $ApprovedRestoreEvidenceId,
     [Parameter(Mandatory)] [string] $DbaApprovalReference

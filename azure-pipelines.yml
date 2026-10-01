@@ -40,6 +40,18 @@ variables:
   value: 'true'
 - name: NUGET_XMLDOC_MODE
   value: skip
+- name: AZDEMO_RESOURCE_GROUP_NAME
+  value: Onkar.Pathre
+- name: AZDEMO_WEB_APP_NAME
+  value: app-mtp-web-dev-uks-001
+- name: AZDEMO_API_APP_NAME
+  value: app-mtp-api-dev-uks-001
+- name: AZDEMO_SQL_SERVER_NAME
+  value: sql-mtp-dev-uks-001
+- name: AZDEMO_SQL_SERVER_FQDN
+  value: sql-mtp-dev-uks-001.database.windows.net
+- name: AZDEMO_SQL_DATABASE_NAME
+  value: sqldb-mtp-dev-uks-001
 
 stages:
 - stage: Validate
@@ -82,7 +94,7 @@ stages:
         NEXT_PUBLIC_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)
         NEXT_PUBLIC_ENTRA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
         NEXT_PUBLIC_API_SCOPE: $(AZDEMO_API_SCOPE)
-        NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production demo
+        NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production management demo
     - pwsh: |
         node -e "const l=require('./src/web/package-lock.json'); const e={vitest:'4.1.11','@vitest/mocker':'4.1.11','brace-expansion-1':'1.1.21','brace-expansion-5':'5.0.12'}; const a={vitest:l.packages['node_modules/vitest'].version,'@vitest/mocker':l.packages['node_modules/@vitest/mocker'].version,'brace-expansion-1':l.packages['node_modules/brace-expansion'].version,'brace-expansion-5':l.packages['node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion'].version}; for(const [k,v] of Object.entries(e)) if(a[k]!==v) throw new Error(k+' is '+a[k]+' not '+v);"
       displayName: Enforce approved frontend remediation versions
@@ -94,6 +106,8 @@ stages:
       displayName: Mandatory Azure demo monitoring alert contract
     - pwsh: ./scripts/build/Test-AzureDemoRollbackSafeguards.ps1
       displayName: Fail-closed Azure demo rollback guard tests
+    - pwsh: ./scripts/build/Test-AzureDemoMigrationTarget.ps1
+      displayName: Fail-closed Azure demo migration target guard tests
     - pwsh: ./scripts/build/New-AzureDemoSboms.ps1 -OutputDirectory '$(Build.ArtifactStagingDirectory)/sbom'
       displayName: Generate locked dependency SBOM evidence
     - publish: $(Build.ArtifactStagingDirectory)/sbom
@@ -146,7 +160,7 @@ stages:
         NEXT_PUBLIC_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)
         NEXT_PUBLIC_ENTRA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
         NEXT_PUBLIC_API_SCOPE: $(AZDEMO_API_SCOPE)
-        NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production demo
+        NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production management demo
     - pwsh: ./scripts/build/New-EfMigrationArtifacts.ps1 -OutputDirectory '$(Build.ArtifactStagingDirectory)/migration'
       displayName: Create controlled Linux EF bundle, SQL and manifest
     - pwsh: ./scripts/build/Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '$(Build.ArtifactStagingDirectory)/application'
@@ -165,13 +179,13 @@ stages:
 - stage: PreDeploymentGate
   displayName: Platform gate and Bicep what-if
   dependsOn: Package
-  condition: and(succeeded(), eq('${{ parameters.deployAzureDemo }}', true), eq(variables['Build.SourceBranch'], 'refs/heads/release/azure-demo-v1'))
+  condition: and(succeeded(), eq('${{ parameters.deployAzureDemo }}', true), eq(variables['Build.DefinitionName'], 'mtp-azure-demo-deploy'), eq(variables['Build.SourceBranch'], 'refs/heads/release/azure-demo-v1'))
   variables:
-  - group: vg-lgrtm-azdemo-public
+  - group: vg-mtp-azdemo-public
   jobs:
   - deployment: WhatIf
-    environment: azure-demo-staging
-    pool: { name: $(AZDEMO_PRIVATE_AGENT_POOL) }
+    environment: mtp-azure-demo-dev
+    pool: { name: mdp-mtp-dev-uks-001 }
     strategy:
       runOnce:
         deploy:
@@ -179,16 +193,34 @@ stages:
           - checkout: self
           - task: AzureCLI@2
             inputs:
-              azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
+              azureSubscription: sc-mtp-azure-demo-dev
               scriptType: pscore
               scriptLocation: inlineScript
               inlineScript: |
                 if ((az account show --query tenantId -o tsv) -ne '$(AZDEMO_ENTRA_TENANT_ID)') { throw 'Wrong Azure tenant.' }
+                $requiredExistingResources = @(
+                  @{ Type = 'Microsoft.Web/serverfarms'; Name = 'asp-mtp-dev-uks-001' },
+                  @{ Type = 'Microsoft.Web/sites'; Name = 'app-mtp-web-dev-uks-001' },
+                  @{ Type = 'Microsoft.Web/sites'; Name = 'app-mtp-api-dev-uks-001' },
+                  @{ Type = 'Microsoft.Sql/servers'; Name = 'sql-mtp-dev-uks-001' },
+                  @{ Type = 'Microsoft.KeyVault/vaults'; Name = 'kv-mtp-dev-uks-op01' },
+                  @{ Type = 'Microsoft.Insights/components'; Name = 'appi-mtp-dev-uks-001' },
+                  @{ Type = 'Microsoft.OperationalInsights/workspaces'; Name = 'log-mtp-dev-uks-001' },
+                  @{ Type = 'Microsoft.Storage/storageAccounts'; Name = 'stmtpdevuks001' },
+                  @{ Type = 'Microsoft.Network/virtualNetworks'; Name = 'vnet-mtp-dev-uks-001' },
+                  @{ Type = 'Microsoft.Network/privateEndpoints'; Name = 'pep-sql-mtp-dev-uks-001' },
+                  @{ Type = 'Microsoft.Network/privateDnsZones'; Name = 'privatelink.database.windows.net' }
+                )
+                foreach ($resource in $requiredExistingResources) {
+                  az resource show --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --resource-type $resource.Type --name $resource.Name --only-show-errors | Out-Null
+                  if ($LASTEXITCODE) { throw "Required existing MTP resource was not found: $($resource.Type)/$($resource.Name)." }
+                }
+                az sql db show --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --server '$(AZDEMO_SQL_SERVER_NAME)' --name '$(AZDEMO_SQL_DATABASE_NAME)' --only-show-errors | Out-Null
+                if ($LASTEXITCODE) { throw 'Required existing MTP SQL database was not found.' }
                 $runtimes = az webapp list-runtimes --os linux -o tsv
                 if ($runtimes -notmatch 'NODE:24-lts' -or $runtimes -notmatch 'DOTNETCORE:10.0') { throw 'Approved native App Service runtimes are unavailable.' }
-                az deployment group what-if --resource-group 'Onkar.Pathre' --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --no-pretty-print > $(Pipeline.Workspace)/bicep-what-if.json
+                az deployment group what-if --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --no-pretty-print > $(Pipeline.Workspace)/bicep-what-if.json
             env:
-              AZDEMO_UNIQUE_SUFFIX: $(AZDEMO_UNIQUE_SUFFIX)
               AZDEMO_OWNER: $(AZDEMO_OWNER)
               AZDEMO_COST_CENTRE: $(AZDEMO_COST_CENTRE)
               AZDEMO_EXPIRY_DATE: $(AZDEMO_EXPIRY_DATE)
@@ -200,9 +232,6 @@ stages:
               AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID: $(AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID)
               AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
               AZDEMO_ALERT_EMAIL: $(AZDEMO_ALERT_EMAIL)
-              AZDEMO_VNET_PREFIX: $(AZDEMO_VNET_PREFIX)
-              AZDEMO_INTEGRATION_SUBNET_PREFIX: $(AZDEMO_INTEGRATION_SUBNET_PREFIX)
-              AZDEMO_PRIVATE_ENDPOINT_SUBNET_PREFIX: $(AZDEMO_PRIVATE_ENDPOINT_SUBNET_PREFIX)
           - publish: $(Pipeline.Workspace)/bicep-what-if.json
             artifact: approved-what-if-candidate
 
@@ -210,11 +239,11 @@ stages:
   displayName: Reviewed migration, seed and staging-slot deployment
   dependsOn: PreDeploymentGate
   variables:
-  - group: vg-lgrtm-azdemo-public
+  - group: vg-mtp-azdemo-public
   jobs:
   - deployment: DatabaseAndSlots
-    environment: azure-demo-staging
-    pool: { name: $(AZDEMO_PRIVATE_AGENT_POOL) }
+    environment: mtp-azure-demo-dev
+    pool: { name: mdp-mtp-dev-uks-001 }
     strategy:
       runOnce:
         deploy:
@@ -225,22 +254,25 @@ stages:
           - task: AzureCLI@2
             displayName: Deploy approved resource-group Bicep with workload identity
             inputs:
-              azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
+              azureSubscription: sc-mtp-azure-demo-dev
               scriptType: pscore
               scriptLocation: inlineScript
               inlineScript: |
-                $deploymentName = "lgrtm-azdemo-$(Build.BuildId)"
-                az deployment group create --resource-group Onkar.Pathre --name $deploymentName --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --only-show-errors
+                $deploymentName = "mtp-azure-demo-$(Build.BuildId)"
+                az deployment group create --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name $deploymentName --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --only-show-errors
                 if ($LASTEXITCODE) { throw 'Bicep deployment failed.' }
-                $outputs = az deployment group show --resource-group Onkar.Pathre --name $deploymentName --query properties.outputs -o json | ConvertFrom-Json
+                $outputs = az deployment group show --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name $deploymentName --query properties.outputs -o json | ConvertFrom-Json
+                if ($outputs.webAppName.value -ne '$(AZDEMO_WEB_APP_NAME)' -or $outputs.apiAppName.value -ne '$(AZDEMO_API_APP_NAME)' -or $outputs.sqlServerName.value -ne '$(AZDEMO_SQL_SERVER_NAME)' -or $outputs.sqlDatabaseName.value -ne '$(AZDEMO_SQL_DATABASE_NAME)') { throw 'Bicep outputs did not match the exact approved MTP resource targets.' }
                 Write-Host "##vso[task.setvariable variable=webAppName]$($outputs.webAppName.value)"
                 Write-Host "##vso[task.setvariable variable=apiAppName]$($outputs.apiAppName.value)"
                 Write-Host "##vso[task.setvariable variable=AZDEMO_SQL_SERVER_FQDN]$($outputs.sqlServerFqdn.value)"
                 Write-Host "##vso[task.setvariable variable=AZDEMO_SQL_SERVER_NAME]$($outputs.sqlServerFqdn.value.Split('.')[0])"
+                Write-Host "##vso[task.setvariable variable=AZDEMO_SQL_DATABASE_NAME]$($outputs.sqlDatabaseName.value)"
+                Write-Host "##vso[task.setvariable variable=AZDEMO_API_MAIN_PRINCIPAL_NAME]$($outputs.apiMainIdentityName.value)"
+                Write-Host "##vso[task.setvariable variable=AZDEMO_API_STAGING_PRINCIPAL_NAME]$($outputs.apiStagingIdentityName.value)"
                 Write-Host "##vso[task.setvariable variable=AZDEMO_API_MAIN_PRINCIPAL_OBJECT_ID]$($outputs.apiMainIdentityPrincipalId.value)"
                 Write-Host "##vso[task.setvariable variable=AZDEMO_API_STAGING_PRINCIPAL_OBJECT_ID]$($outputs.apiStagingIdentityPrincipalId.value)"
             env:
-              AZDEMO_UNIQUE_SUFFIX: $(AZDEMO_UNIQUE_SUFFIX)
               AZDEMO_OWNER: $(AZDEMO_OWNER)
               AZDEMO_COST_CENTRE: $(AZDEMO_COST_CENTRE)
               AZDEMO_EXPIRY_DATE: $(AZDEMO_EXPIRY_DATE)
@@ -252,39 +284,39 @@ stages:
               AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID: $(AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID)
               AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
               AZDEMO_ALERT_EMAIL: $(AZDEMO_ALERT_EMAIL)
-              AZDEMO_VNET_PREFIX: $(AZDEMO_VNET_PREFIX)
-              AZDEMO_INTEGRATION_SUBNET_PREFIX: $(AZDEMO_INTEGRATION_SUBNET_PREFIX)
-              AZDEMO_PRIVATE_ENDPOINT_SUBNET_PREFIX: $(AZDEMO_PRIVATE_ENDPOINT_SUBNET_PREFIX)
           - pwsh: |
-              sqlcmd -G -S 'tcp:$(AZDEMO_SQL_SERVER_FQDN),1433' -d 'sqldb-lgrtm-azdemo' -b -i scripts/database/Configure-AzureDemoDatabasePrincipals.sql -v ApiMainPrincipalObjectId='$(AZDEMO_API_MAIN_PRINCIPAL_OBJECT_ID)' ApiStagingPrincipalObjectId='$(AZDEMO_API_STAGING_PRINCIPAL_OBJECT_ID)' MigrationPrincipalObjectId='$(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)'
+              sqlcmd -G -S 'tcp:$(AZDEMO_SQL_SERVER_FQDN),1433' -d '$(AZDEMO_SQL_DATABASE_NAME)' -b -i scripts/database/Configure-AzureDemoDatabasePrincipals.sql -v DatabaseName='$(AZDEMO_SQL_DATABASE_NAME)' ApiMainPrincipalName='$(AZDEMO_API_MAIN_PRINCIPAL_NAME)' ApiStagingPrincipalName='$(AZDEMO_API_STAGING_PRINCIPAL_NAME)' MigrationPrincipalName='id-mtp-migration-dev-uks-001' ApiMainPrincipalObjectId='$(AZDEMO_API_MAIN_PRINCIPAL_OBJECT_ID)' ApiStagingPrincipalObjectId='$(AZDEMO_API_STAGING_PRINCIPAL_OBJECT_ID)' MigrationPrincipalObjectId='$(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)'
               if ($LASTEXITCODE) { throw 'Database workload-identity bootstrap failed.' }
             displayName: Apply reviewed contained-user least-privilege grants
           - task: AzureCLI@2
             displayName: Record pre-migration PITR and schema checkpoint
             inputs:
-              azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
+              azureSubscription: sc-mtp-azure-demo-dev
               scriptType: pscore
               scriptLocation: inlineScript
               inlineScript: |
-                $checkpoint = [ordered]@{ capturedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); database = 'sqldb-lgrtm-azdemo'; state = (az sql db show -g Onkar.Pathre -s '$(AZDEMO_SQL_SERVER_NAME)' -n sqldb-lgrtm-azdemo --query '{status:status,earliestRestoreDate:earliestRestoreDate,resourceId:id}' -o json | ConvertFrom-Json) }
+                $checkpoint = [ordered]@{ capturedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); database = '$(AZDEMO_SQL_DATABASE_NAME)'; state = (az sql db show -g '$(AZDEMO_RESOURCE_GROUP_NAME)' -s '$(AZDEMO_SQL_SERVER_NAME)' -n '$(AZDEMO_SQL_DATABASE_NAME)' --query '{status:status,earliestRestoreDate:earliestRestoreDate,resourceId:id}' -o json | ConvertFrom-Json) }
                 $checkpoint | ConvertTo-Json -Depth 5 | Set-Content '$(Pipeline.Workspace)/pre-migration-checkpoint.json'
           - pwsh: |
               $manifest = Get-Content '$(Pipeline.Workspace)/azure-demo-immutable/migration/migration-manifest.json' -Raw | ConvertFrom-Json
               if ($manifest.startupMigration -ne $false) { throw 'Migration manifest permits startup migration.' }
+              ./scripts/database/Assert-AzureDemoMigrationTarget.ps1
               & '$(Pipeline.Workspace)/azure-demo-immutable/migration/lgrtm-efbundle-linux-x64' --connection '$(AZDEMO_MIGRATION_CONNECTION_STRING)'
               if ($LASTEXITCODE) { throw 'Reviewed EF bundle failed.' }
             displayName: Execute reviewed EF bundle with migration workload identity
-          - pwsh: ./scripts/data/Invoke-AzureDemoSeed.ps1 -Environment AzureDemo -DatabaseName sqldb-lgrtm-azdemo -ResourceGroupName Onkar.Pathre
+            env:
+              LGR_AZURE_DEMO_SQL_CONNECTION_STRING: $(AZDEMO_MIGRATION_CONNECTION_STRING)
+          - pwsh: ./scripts/data/Invoke-AzureDemoSeed.ps1 -Environment AzureDemo -DatabaseName '$(AZDEMO_SQL_DATABASE_NAME)' -ResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)'
             displayName: Reconcile approved synthetic seed
             env:
               LGR_AZURE_DEMO_SQL_CONNECTION_STRING: $(AZDEMO_MIGRATION_CONNECTION_STRING)
           - task: AzureWebApp@1
             displayName: Deploy API ZIP to staging only
-            inputs: { azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION), appType: webAppLinux, appName: $(apiAppName), resourceGroupName: Onkar.Pathre, deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/api.zip', deploymentMethod: zipDeploy }
+            inputs: { azureSubscription: sc-mtp-azure-demo-dev, appType: webAppLinux, appName: $(AZDEMO_API_APP_NAME), resourceGroupName: $(AZDEMO_RESOURCE_GROUP_NAME), deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/api.zip', deploymentMethod: zipDeploy }
           - task: AzureWebApp@1
             displayName: Deploy web ZIP to staging only
-            inputs: { azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION), appType: webAppLinux, appName: $(webAppName), resourceGroupName: Onkar.Pathre, deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/web.zip', deploymentMethod: zipDeploy }
-          - pwsh: ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/smoke-evidence' -PrerequisiteEvidenceDirectory '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)' -WebBaseUri 'https://$(webAppName)-staging.azurewebsites.net' -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -Execute
+            inputs: { azureSubscription: sc-mtp-azure-demo-dev, appType: webAppLinux, appName: $(AZDEMO_WEB_APP_NAME), resourceGroupName: $(AZDEMO_RESOURCE_GROUP_NAME), deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/web.zip', deploymentMethod: zipDeploy }
+          - pwsh: ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/smoke-evidence' -PrerequisiteEvidenceDirectory '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)' -WebBaseUri 'https://$(AZDEMO_WEB_APP_NAME)-staging.azurewebsites.net' -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -Execute
             displayName: Run staging smoke checks
           - publish: $(Pipeline.Workspace)/smoke-evidence
             artifact: staging-smoke-evidence
@@ -293,7 +325,7 @@ stages:
   displayName: Independent test, quality and human release approval
   dependsOn: MigrateAndDeploySlots
   variables:
-  - group: vg-lgrtm-azdemo-public
+  - group: vg-mtp-azdemo-public
   jobs:
   - job: ManualEvidenceGate
     pool: server
@@ -310,11 +342,11 @@ stages:
   displayName: Approved API-first and web-second slot swap
   dependsOn: ReleaseApproval
   variables:
-  - group: vg-lgrtm-azdemo-public
+  - group: vg-mtp-azdemo-public
   jobs:
   - deployment: Swap
-    environment: azure-demo
-    pool: { name: $(AZDEMO_PRIVATE_AGENT_POOL) }
+    environment: mtp-azure-demo-dev
+    pool: { name: mdp-mtp-dev-uks-001 }
     strategy:
       runOnce:
         deploy:
@@ -324,26 +356,26 @@ stages:
             artifact: azure-demo-immutable
           - task: AzureCLI@2
             inputs:
-              azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
+              azureSubscription: sc-mtp-azure-demo-dev
               scriptType: pscore
               scriptLocation: inlineScript
               inlineScript: |
-                az webapp deployment slot swap --resource-group Onkar.Pathre --name '$(apiAppName)' --slot staging --target-slot production
-                az webapp deployment slot swap --resource-group Onkar.Pathre --name '$(webAppName)' --slot staging --target-slot production
-          - pwsh: ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/post-swap-smoke-evidence' -PrerequisiteEvidenceDirectory '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)' -WebBaseUri 'https://$(webAppName).azurewebsites.net' -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -Execute
+                az webapp deployment slot swap --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name '$(AZDEMO_API_APP_NAME)' --slot staging --target-slot production
+                az webapp deployment slot swap --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name '$(AZDEMO_WEB_APP_NAME)' --slot staging --target-slot production
+          - pwsh: ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/post-swap-smoke-evidence' -PrerequisiteEvidenceDirectory '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)' -WebBaseUri 'https://$(AZDEMO_WEB_APP_NAME).azurewebsites.net' -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -Execute
           - publish: $(Pipeline.Workspace)/post-swap-smoke-evidence
             artifact: post-swap-smoke-evidence
 
 - stage: Rollback
   displayName: Human-authorised application slot swap-back
   dependsOn: SwapAndVerify
-  condition: and(always(), in(dependencies.SwapAndVerify.result, 'Succeeded', 'SucceededWithIssues', 'Failed'), eq('${{ parameters.deployAzureDemo }}', true), eq('${{ parameters.rollbackAzureDemo }}', true), eq(variables['Build.SourceBranch'], 'refs/heads/release/azure-demo-v1'), ne('${{ parameters.rollbackReleaseIdentifier }}', ''), eq('${{ parameters.rollbackReleaseIdentifier }}', variables['Build.SourceVersion']), eq('${{ parameters.rollbackEnvironmentName }}', 'azure-demo'), eq('${{ parameters.rollbackResourceGroupName }}', 'Onkar.Pathre'), eq('${{ parameters.rollbackWebAppName }}', variables['webAppName']), eq('${{ parameters.rollbackApiAppName }}', variables['apiAppName']), eq('${{ parameters.rollbackWebSlotName }}', variables['webSlotName']), eq('${{ parameters.rollbackApiSlotName }}', variables['apiSlotName']), eq('${{ parameters.rollbackTargetSlotName }}', 'production'))
+  condition: and(always(), in(dependencies.SwapAndVerify.result, 'Succeeded', 'SucceededWithIssues', 'Failed'), eq('${{ parameters.deployAzureDemo }}', true), eq('${{ parameters.rollbackAzureDemo }}', true), eq(variables['Build.DefinitionName'], 'mtp-azure-demo-deploy'), eq(variables['Build.SourceBranch'], 'refs/heads/release/azure-demo-v1'), ne('${{ parameters.rollbackReleaseIdentifier }}', ''), eq('${{ parameters.rollbackReleaseIdentifier }}', variables['Build.SourceVersion']), eq('${{ parameters.rollbackEnvironmentName }}', 'mtp-azure-demo-dev'), eq('${{ parameters.rollbackResourceGroupName }}', variables['AZDEMO_RESOURCE_GROUP_NAME']), eq('${{ parameters.rollbackWebAppName }}', variables['AZDEMO_WEB_APP_NAME']), eq('${{ parameters.rollbackApiAppName }}', variables['AZDEMO_API_APP_NAME']), eq('${{ parameters.rollbackWebSlotName }}', 'staging'), eq('${{ parameters.rollbackApiSlotName }}', 'staging'), eq('${{ parameters.rollbackTargetSlotName }}', 'production'))
   variables:
-  - group: vg-lgrtm-azdemo-public
+  - group: vg-mtp-azdemo-public
   jobs:
   - deployment: SwapBack
-    environment: azure-demo
-    pool: { name: $(AZDEMO_PRIVATE_AGENT_POOL) }
+    environment: mtp-azure-demo-dev
+    pool: { name: mdp-mtp-dev-uks-001 }
     strategy:
       runOnce:
         deploy:
@@ -360,15 +392,15 @@ stages:
               ROLLBACK_ENVIRONMENT: ${{ parameters.rollbackEnvironmentName }}
               ROLLBACK_RESOURCE_GROUP: ${{ parameters.rollbackResourceGroupName }}
               ROLLBACK_WEB_APP: ${{ parameters.rollbackWebAppName }}
-              EXPECTED_WEB_APP: $(webAppName)
+              EXPECTED_WEB_APP: $(AZDEMO_WEB_APP_NAME)
               ROLLBACK_API_APP: ${{ parameters.rollbackApiAppName }}
-              EXPECTED_API_APP: $(apiAppName)
+              EXPECTED_API_APP: $(AZDEMO_API_APP_NAME)
               ROLLBACK_WEB_SLOT: ${{ parameters.rollbackWebSlotName }}
               ROLLBACK_API_SLOT: ${{ parameters.rollbackApiSlotName }}
               ROLLBACK_TARGET_SLOT: ${{ parameters.rollbackTargetSlotName }}
           - task: AzureCLI@2
             inputs:
-              azureSubscription: $(AZDEMO_WIF_SERVICE_CONNECTION)
+              azureSubscription: sc-mtp-azure-demo-dev
               scriptType: pscore
               scriptLocation: inlineScript
               inlineScript: |

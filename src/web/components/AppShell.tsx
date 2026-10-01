@@ -41,14 +41,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="shell">
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
-        <div className="brand"><span className="brand-mark">LGR</span><span><strong>Transformation</strong><small>&amp; Migration</small></span></div>
+        <div className="brand" aria-label="MTP – Transformation & Migration Platform"><span className="brand-mark" aria-hidden="true">MTP</span><span><strong>MTP – Transformation &amp; Migration Platform</strong><small>Management demo</small></span></div>
         <nav aria-label="Primary navigation">
           {navigation.map((item, index) => "section" in item
             ? <p className="nav-section" key={`${item.section}-${index}`}>{item.section}</p>
             : ("permission" in item && !hasPermission(item.permission)) ? null
             : <Link onClick={() => setOpen(false)} aria-current={path === item.href || path.startsWith(`${item.href}/`) ? "page" : undefined} className={path === item.href || path.startsWith(`${item.href}/`) ? "nav-link active" : "nav-link"} href={item.href} key={item.href}><span aria-hidden="true">{item.icon}</span>{item.label}</Link>)}
         </nav>
-        <div className="sidebar-footer"><span className="status-dot" />Restricted synthetic demo</div>
+        <div className="sidebar-footer"><span className="status-dot" />Restricted synthetic non-production management demo</div>
       </aside>
       <div className="workspace">
         <header className="topbar">
@@ -60,7 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="user"><span className="user-avatar">ID</span><span><strong>Internal demo user</strong><small>Synthetic project access</small></span>{auth.state === "authenticated" && <button className="text-button" onClick={auth.logout}>Sign out</button>}</div>
         </header>
-        <p className="demo-banner">{process.env.NEXT_PUBLIC_DEMO_LABEL ?? "Restricted synthetic non-production demo"}</p>
+        <p className="demo-banner">{process.env.NEXT_PUBLIC_DEMO_LABEL ?? "Restricted synthetic non-production management demo"}</p>
         <main>{children}</main>
       </div>
     </div>

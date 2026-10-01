@@ -85,7 +85,7 @@ public static class AzureDemoStartupGuard
         }
 
         RequireAbsoluteHttps(configuration["Authentication:EntraDemoMemberships:SecretUri"],
-            "Authentication:EntraDemoMemberships:SecretUri", ".vault.azure.net", "/secrets/entra-demo-memberships");
+            "Authentication:EntraDemoMemberships:SecretUri", "kv-mtp-dev-uks-op01.vault.azure.net", "/secrets/entra-demo-memberships");
         if (!int.TryParse(configuration["Authentication:EntraDemoMemberships:CacheSeconds"], out var cacheSeconds)
             || cacheSeconds is < 1 or > 300)
         {
@@ -93,18 +93,32 @@ public static class AzureDemoStartupGuard
         }
 
         RequireAbsoluteHttps(configuration["DiscoveryImport:StorageAccountUri"],
-            "DiscoveryImport:StorageAccountUri", ".blob.core.windows.net", "/");
+            "DiscoveryImport:StorageAccountUri", "stmtpdevuks001.blob.core.windows.net", "/");
         RequireEqual(configuration["DiscoveryImport:ContainerName"], "discovery-imports",
             "DiscoveryImport:ContainerName must be discovery-imports in AzureDemo.");
 
         var allowedHosts = configuration["AllowedHosts"];
-        if (string.IsNullOrWhiteSpace(allowedHosts) || allowedHosts.Contains('*', StringComparison.Ordinal))
+        var approvedApiHosts = new[]
+        {
+            "app-mtp-api-dev-uks-001.azurewebsites.net",
+            "app-mtp-api-dev-uks-001-staging.azurewebsites.net"
+        };
+        if (!approvedApiHosts.Contains(allowedHosts, StringComparer.Ordinal))
         {
             throw new InvalidOperationException("AllowedHosts must contain only the approved API hosts in AzureDemo.");
         }
 
         var origins = configuration.GetSection("AllowedOrigins").Get<string[]>() ?? [];
-        if (origins.Length == 0 || origins.Any(origin =>
+        var approvedWebOrigins = new[]
+        {
+            "https://app-mtp-web-dev-uks-001.azurewebsites.net",
+            "https://app-mtp-web-dev-uks-001-staging.azurewebsites.net"
+        };
+        if (origins.Length != 1 || !approvedWebOrigins.Contains(origins[0], StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException("AllowedOrigins must contain the exact approved HTTPS MTP web origin in AzureDemo.");
+        }
+        if (origins.Any(origin =>
                 !Uri.TryCreate(origin, UriKind.Absolute, out var uri)
                 || uri.Scheme != Uri.UriSchemeHttps
                 || uri.AbsolutePath != "/"
@@ -126,7 +140,7 @@ public static class AzureDemoStartupGuard
             || sql.TrustServerCertificate
             || !string.IsNullOrEmpty(sql.Password)
             || !IsApprovedAzureSqlDataSource(sql.DataSource)
-            || !string.Equals(sql.InitialCatalog, "sqldb-lgrtm-azdemo", StringComparison.Ordinal)
+            || !string.Equals(sql.InitialCatalog, "sqldb-mtp-dev-uks-001", StringComparison.Ordinal)
             || !Guid.TryParse(sql.UserID, out var sqlIdentity)
             || !Guid.TryParse(configuration["AzureIdentity:ManagedIdentityClientId"], out var configuredIdentity)
             || sqlIdentity != configuredIdentity)
@@ -167,7 +181,7 @@ public static class AzureDemoStartupGuard
     private static void RequireAbsoluteHttps(
         string? value,
         string name,
-        string? requiredHostSuffix = null,
+        string? requiredHost = null,
         string? requiredPath = null)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
@@ -175,8 +189,8 @@ public static class AzureDemoStartupGuard
             || !string.IsNullOrEmpty(uri.UserInfo)
             || !string.IsNullOrEmpty(uri.Query)
             || !string.IsNullOrEmpty(uri.Fragment)
-            || (requiredHostSuffix is not null
-                && !uri.Host.EndsWith(requiredHostSuffix, StringComparison.OrdinalIgnoreCase))
+            || (requiredHost is not null
+                && !string.Equals(uri.Host, requiredHost, StringComparison.OrdinalIgnoreCase))
             || (requiredPath is not null
                 && !string.Equals(uri.AbsolutePath.TrimEnd('/'), requiredPath.TrimEnd('/'), StringComparison.Ordinal)))
         {
@@ -198,8 +212,7 @@ public static class AzureDemoStartupGuard
             normalized = normalized[..comma];
         }
 
-        return normalized.StartsWith("sql-lgrtm-azdemo-uks-", StringComparison.OrdinalIgnoreCase)
-            && normalized.EndsWith(".database.windows.net", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(normalized, "sql-mtp-dev-uks-001.database.windows.net", StringComparison.OrdinalIgnoreCase);
     }
 }
 

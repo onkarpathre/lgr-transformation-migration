@@ -88,7 +88,7 @@ export function EntraAuthProvider({ children }: { children: React.ReactNode }) {
 export function EntraAuthGate({ children }: { children: React.ReactNode }) {
   const auth = useEntraAuth();
   if (!required || auth.state === "authenticated" || auth.state === "local") return children;
-  return <main className="auth-gate"><section className="panel"><p className="demo-banner">Restricted synthetic non-production demo</p><h1>Sign in required</h1><p>{auth.error || "Use an assigned Agilisys workforce account to continue."}</p><button className="button primary" disabled={auth.state === "initializing"} onClick={() => void auth.login()}>{auth.state === "initializing" ? "Checking sign-in…" : "Sign in with Microsoft Entra"}</button></section></main>;
+  return <main className="auth-gate"><section className="panel"><p className="demo-banner">Restricted synthetic non-production management demo</p><h1>Sign in required</h1><p>{auth.error || "Use an assigned Agilisys workforce account to continue."}</p><button className="button primary" disabled={auth.state === "initializing"} onClick={() => void auth.login()}>{auth.state === "initializing" ? "Checking sign-in…" : "Sign in with Microsoft Entra"}</button></section></main>;
 }
 
 export function useEntraAuth() { return useContext(Context); }

@@ -32,7 +32,7 @@ export function ApiProvider({ children }: { children: React.ReactNode }) {
   const [customerId, setCustomer] = useState(DEMO_CUSTOMER);
   const [projectId, setProject] = useState(DEMO_PROJECT);
   const [customers, setCustomers] = useState<Named[]>([{ id: DEMO_CUSTOMER, name: "Demo Council" }]);
-  const [projects, setProjects] = useState<Named[]>([{ id: DEMO_PROJECT, name: "LGR Azure Transformation Programme" }]);
+  const [projects, setProjects] = useState<Named[]>([{ id: DEMO_PROJECT, name: "MTP Azure Transformation Programme" }]);
   const [permissions, setPermissions] = useState<ReadonlySet<string>>(new Set());
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
 

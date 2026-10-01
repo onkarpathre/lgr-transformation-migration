@@ -1,38 +1,21 @@
-param location string
-param namePrefix string
-param logRetentionDays int
-param telemetryDailyCapGb int
+param applicationInsightsName string
+param logAnalyticsWorkspaceName string
+param actionGroupName string
 param alertEmailAddress string
 param tags object
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: 'log-${namePrefix}-uks-01'
-  location: location
-  tags: tags
-  properties: {
-    retentionInDays: logRetentionDays
-    features: { enableLogAccessUsingOnlyResourcePermissions: true }
-    workspaceCapping: { dailyQuotaGb: telemetryDailyCapGb }
-  }
-  sku: { name: 'PerGB2018' }
+
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
+  name: logAnalyticsWorkspaceName
 }
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: 'appi-${namePrefix}-uks-01'
-  location: location
-  kind: 'web'
-  tags: tags
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: logAnalytics.id
-    IngestionMode: 'LogAnalytics'
-    RetentionInDays: logRetentionDays
-  }
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: applicationInsightsName
 }
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
-  name: 'ag-${namePrefix}-operations'
+  name: actionGroupName
   location: 'global'
   tags: tags
   properties: {
-    groupShortName: 'lgrdemo'
+    groupShortName: 'mtpdemo'
     enabled: true
     emailReceivers: [
       {

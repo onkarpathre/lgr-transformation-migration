@@ -10,8 +10,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if ($WebBaseUri.Scheme -ne 'https' -or -not $WebBaseUri.Host.EndsWith('.azurewebsites.net', [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Smoke tests refuse a non-HTTPS or non-App-Service web target.'
+$approvedWebHosts = @('app-mtp-web-dev-uks-001.azurewebsites.net', 'app-mtp-web-dev-uks-001-staging.azurewebsites.net')
+if ($WebBaseUri.Scheme -ne 'https' -or $WebBaseUri.Host -notin $approvedWebHosts) {
+    throw 'Smoke tests refuse any target except the exact approved MTP web application or its staging slot.'
+}
+if ($null -ne $ApiPublicUri -and ($ApiPublicUri.Scheme -ne 'https' -or $ApiPublicUri.Host -notin @('app-mtp-api-dev-uks-001.azurewebsites.net', 'app-mtp-api-dev-uks-001-staging.azurewebsites.net'))) {
+    throw 'Smoke tests refuse any API target except the exact approved MTP API application or its staging slot.'
 }
 $manifestPath = (Resolve-Path -LiteralPath $ArtifactManifest).Path
 $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()

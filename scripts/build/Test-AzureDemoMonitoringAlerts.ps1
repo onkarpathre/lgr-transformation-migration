@@ -9,6 +9,7 @@ $alerts = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\alerts.
 $main = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\main.bicep') -Raw
 $apps = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\appservice.bicep') -Raw
 $data = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\data.bicep') -Raw
+$parameters = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\parameters\azure-demo.bicepparam') -Raw
 
 function Get-BicepDeclaration([string] $Content, [string] $Symbol) {
     $pattern = "(?ms)^resource\s+$([regex]::Escape($Symbol))\s+.+?(?=^resource\s+|^module\s+|^output\s+|\z)"
@@ -20,27 +21,27 @@ function Get-BicepDeclaration([string] $Content, [string] $Symbol) {
 }
 
 $requiredAlertNames = @(
-    'alert-lgrtm-web-health-azdemo',
-    'alert-lgrtm-api-readiness-azdemo',
-    'alert-lgrtm-web-http5xx-azdemo',
-    'alert-lgrtm-api-http5xx-azdemo',
-    'alert-lgrtm-unhandled-errors-azdemo',
-    'alert-lgrtm-auth-failures-denials-azdemo',
-    'alert-lgrtm-sql-dtu-azdemo',
-    'alert-lgrtm-sql-connectivity-azdemo',
-    'alert-lgrtm-keyvault-denial-azdemo',
-    'alert-lgrtm-blob-dependency-azdemo',
-    'alert-lgrtm-import-failure-azdemo',
-    'alert-lgrtm-storage-malware-azdemo',
-    'alert-lgrtm-failed-deployment-azdemo',
-    'alert-lgrtm-web-slot-health-azdemo',
-    'alert-lgrtm-api-slot-health-azdemo',
-    'alert-lgrtm-log-daily-cap-azdemo',
-    'alert-lgrtm-service-health-azdemo'
+    'alert-mtp-web-health-dev-uks-001',
+    'alert-mtp-api-readiness-dev-uks-001',
+    'alert-mtp-web-http5xx-dev-uks-001',
+    'alert-mtp-api-http5xx-dev-uks-001',
+    'alert-mtp-unhandled-errors-dev-uks-001',
+    'alert-mtp-auth-failures-denials-dev-uks-001',
+    'alert-mtp-sql-dtu-dev-uks-001',
+    'alert-mtp-sql-connectivity-dev-uks-001',
+    'alert-mtp-keyvault-denial-dev-uks-001',
+    'alert-mtp-blob-dependency-dev-uks-001',
+    'alert-mtp-import-failure-dev-uks-001',
+    'alert-mtp-storage-malware-dev-uks-001',
+    'alert-mtp-failed-deployment-dev-uks-001',
+    'alert-mtp-web-slot-health-dev-uks-001',
+    'alert-mtp-api-slot-health-dev-uks-001',
+    'alert-mtp-log-daily-cap-dev-uks-001',
+    'alert-mtp-service-health-dev-uks-001'
 )
 
 foreach ($name in $requiredAlertNames) {
-    if (-not $alerts.Contains($name)) {
+    if (-not $parameters.Contains($name)) {
         throw "Mandatory monitoring alert is missing: $name"
     }
 }
