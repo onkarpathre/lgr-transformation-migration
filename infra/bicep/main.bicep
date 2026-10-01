@@ -35,21 +35,10 @@ param migrationPrincipalObjectId string
 param alertEmailAddress string
 
 assert resourceGroupMatches = resourceGroup().name == resourceGroupName
+assert environmentNameMatches = environmentName == 'azdemo'
 assert apiAudienceMatches = apiAudience == 'api://${apiClientId}'
 assert apiScopeMatches = apiScope == '${apiAudience}/lgr.access'
-assert exactResourceNames = resourceNames.resourceGroup == 'Onkar.Pathre' &&
-  resourceNames.appServicePlan == 'asp-mtp-dev-uks-001' &&
-  resourceNames.webApp == 'app-mtp-web-dev-uks-001' &&
-  resourceNames.apiApp == 'app-mtp-api-dev-uks-001' &&
-  resourceNames.sqlServer == 'sql-mtp-dev-uks-001' &&
-  resourceNames.sqlDatabase == 'sqldb-mtp-dev-uks-001' &&
-  resourceNames.keyVault == 'kv-mtp-dev-uks-op01' &&
-  resourceNames.applicationInsights == 'appi-mtp-dev-uks-001' &&
-  resourceNames.logAnalytics == 'log-mtp-dev-uks-001' &&
-  resourceNames.storageAccount == 'stmtpdevuks001' &&
-  resourceNames.virtualNetwork == 'vnet-mtp-dev-uks-001' &&
-  resourceNames.sqlPrivateEndpoint == 'pep-sql-mtp-dev-uks-001' &&
-  resourceNames.sqlPrivateDnsZone == 'privatelink.database.windows.net'
+assert exactResourceNames = resourceNames.resourceGroup == 'Onkar.Pathre' && resourceNames.appServicePlan == 'asp-mtp-dev-uks-001' && resourceNames.webApp == 'app-mtp-web-dev-uks-001' && resourceNames.apiApp == 'app-mtp-api-dev-uks-001' && resourceNames.sqlServer == 'sql-mtp-dev-uks-001' && resourceNames.sqlDatabase == 'sqldb-mtp-dev-uks-001' && resourceNames.keyVault == 'kv-mtp-dev-uks-op01' && resourceNames.applicationInsights == 'appi-mtp-dev-uks-001' && resourceNames.logAnalytics == 'log-mtp-dev-uks-001' && resourceNames.storageAccount == 'stmtpdevuks001' && resourceNames.virtualNetwork == 'vnet-mtp-dev-uks-001' && resourceNames.sqlPrivateEndpoint == 'pep-sql-mtp-dev-uks-001' && resourceNames.sqlPrivateDnsZone == 'privatelink${environment().suffixes.sqlServerHostname}'
 
 var tags = {
   workload: 'MTP - Transformation & Migration Platform'

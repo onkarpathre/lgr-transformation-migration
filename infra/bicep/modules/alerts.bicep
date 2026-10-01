@@ -65,24 +65,30 @@ AppDependencies
     displayName: 'Azure demo Key Vault dependency denial'
     description: 'The restricted demo recorded a failed or denied Key Vault dependency call.'
     severity: 1
-    query: '''
+    query: format(
+      '''
 AppDependencies
 | where TimeGenerated >= ago(10m)
-| where Target endswith '.vault.azure.net'
+| where Target endswith '{0}'
 | where Success == false or ResultCode in ('401', '403')
-'''
+''',
+      environment().suffixes.keyvaultDns
+    )
   }
   {
     name: alertNames.blobDependency
     displayName: 'Azure demo Blob dependency failure'
     description: 'The restricted demo recorded a failed Blob Storage dependency call.'
     severity: 1
-    query: '''
+    query: format(
+      '''
 AppDependencies
 | where TimeGenerated >= ago(10m)
-| where Target has '.blob.core.windows.net'
+| where Target has '.blob.{0}'
 | where Success == false
-'''
+''',
+      environment().suffixes.storage
+    )
   }
   {
     name: alertNames.importFailure
@@ -112,12 +118,15 @@ StorageMalwareScanningResults
     displayName: 'Azure demo log daily cap approaching'
     description: 'Daily Log Analytics ingestion has reached 90 percent of the approved cap.'
     severity: 2
-    query: '''
+    query: format(
+      '''
 Usage
 | where TimeGenerated >= startofday(now())
 | summarize IngestionGb = sum(Quantity) / 1000.0
-| where IngestionGb >= (${telemetryDailyCapGb} * 0.9)
-'''
+| where IngestionGb >= ({0} * 0.9)
+''',
+      telemetryDailyCapGb
+    )
   }
 ]
 
@@ -406,40 +415,42 @@ resource apiSlotHealth 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   }
 }
 
-resource logAlerts 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = [for alert in logAlertDefinitions: {
-  name: alert.name
-  location: location
-  tags: tags
-  properties: {
-    displayName: alert.displayName
-    description: alert.description
-    severity: alert.severity
-    enabled: true
-    evaluationFrequency: 'PT5M'
-    scopes: [logAnalyticsWorkspaceId]
-    windowSize: 'PT10M'
-    criteria: {
-      allOf: [
-        {
-          query: alert.query
-          timeAggregation: 'Count'
-          dimensions: []
-          operator: 'GreaterThan'
-          threshold: 0
-          failingPeriods: {
-            numberOfEvaluationPeriods: 1
-            minFailingPeriodsToAlert: 1
+resource logAlerts 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = [
+  for alert in logAlertDefinitions: {
+    name: alert.name
+    location: location
+    tags: tags
+    properties: {
+      displayName: alert.displayName
+      description: alert.description
+      severity: alert.severity
+      enabled: true
+      evaluationFrequency: 'PT5M'
+      scopes: [logAnalyticsWorkspaceId]
+      windowSize: 'PT10M'
+      criteria: {
+        allOf: [
+          {
+            query: alert.query
+            timeAggregation: 'Count'
+            dimensions: []
+            operator: 'GreaterThan'
+            threshold: 0
+            failingPeriods: {
+              numberOfEvaluationPeriods: 1
+              minFailingPeriodsToAlert: 1
+            }
           }
-        }
-      ]
+        ]
+      }
+      autoMitigate: false
+      actions: {
+        actionGroups: [actionGroupId]
+      }
+      skipQueryValidation: true
     }
-    autoMitigate: false
-    actions: {
-      actionGroups: [actionGroupId]
-    }
-    skipQueryValidation: true
   }
-}]
+]
 
 resource failedDeployment 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
   name: alertNames.failedDeployment

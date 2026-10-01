@@ -21,7 +21,7 @@ param keyVaultUri string
 param storageAccountUri string
 param tags object
 
-var membershipSecretUri = '${trim(keyVaultUri, '/')}/secrets/entra-demo-memberships'
+var membershipSecretUri = '${keyVaultUri}secrets/entra-demo-memberships'
 var sqlBase = 'Server=tcp:${sqlServerFqdn},1433;Database=${sqlDatabaseName};Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;Connect Timeout=30;MultipleActiveResultSets=False;User Id='
 var commonSiteConfig = {
   alwaysOn: true
@@ -100,7 +100,7 @@ var apiCommon = [
   }
   {
     name: 'Authentication__Entra__Issuer'
-    value: 'https://login.microsoftonline.com/${entraTenantId}/v2.0'
+    value: '${environment().authentication.loginEndpoint}${entraTenantId}/v2.0'
   }
   {
     name: 'Authentication__Entra__Audience'
@@ -410,11 +410,8 @@ resource apiSlotScm 'Microsoft.Web/sites/slots/basicPublishingCredentialsPolicie
     allow: false
   }
 }
-resource siteDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = [for site in [
-  web
-  api
-]: {
-  scope: site
+resource webDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  scope: web
   name: 'send-to-log-analytics'
   properties: {
     workspaceId: logAnalyticsWorkspaceId
@@ -431,12 +428,9 @@ resource siteDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-previ
       }
     ]
   }
-}]
-resource slotDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = [for slot in [
-  webSlot
-  apiSlot
-]: {
-  scope: slot
+}
+resource apiDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  scope: api
   name: 'send-to-log-analytics'
   properties: {
     workspaceId: logAnalyticsWorkspaceId
@@ -453,7 +447,45 @@ resource slotDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-previ
       }
     ]
   }
-}]
+}
+resource webSlotDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  scope: webSlot
+  name: 'send-to-log-analytics'
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        categoryGroup: 'allLogs'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
+resource apiSlotDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  scope: apiSlot
+  name: 'send-to-log-analytics'
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        categoryGroup: 'allLogs'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
 
 output webSiteId string = web.id
 output apiSiteId string = api.id

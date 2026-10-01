@@ -14,15 +14,21 @@ param tags object
 resource vault 'Microsoft.KeyVault/vaults@2024-11-01' existing = {
   name: keyVaultName
 }
-resource vaultRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for principalId in apiIdentityPrincipalIds: {
-  scope: vault
-  name: guid(vault.id, principalId, 'Key Vault Secrets User')
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
-    principalId: principalId
-    principalType: 'ServicePrincipal'
+resource vaultRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
+  for principalId in apiIdentityPrincipalIds: {
+    scope: vault
+    name: guid(vault.id, principalId, 'Key Vault Secrets User')
+    properties: {
+      roleDefinitionId: subscriptionResourceId(
+        'Microsoft.Authorization/roleDefinitions',
+        '4633458b-17de-408a-b874-0445c86b69e6'
+      )
+      principalId: principalId
+      principalType: 'ServicePrincipal'
+      description: 'Managed by ${tags.managedBy} for ${tags.workload}.'
+    }
   }
-}]
+]
 resource vaultDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   scope: vault
   name: 'send-to-log-analytics'
@@ -67,15 +73,21 @@ resource importContainer 'Microsoft.Storage/storageAccounts/blobServices/contain
     publicAccess: 'None'
   }
 }
-resource storageRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for principalId in apiIdentityPrincipalIds: {
-  scope: importContainer
-  name: guid(importContainer.id, principalId, 'Storage Blob Data Contributor')
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-    principalId: principalId
-    principalType: 'ServicePrincipal'
+resource storageRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
+  for principalId in apiIdentityPrincipalIds: {
+    scope: importContainer
+    name: guid(importContainer.id, principalId, 'Storage Blob Data Contributor')
+    properties: {
+      roleDefinitionId: subscriptionResourceId(
+        'Microsoft.Authorization/roleDefinitions',
+        'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+      )
+      principalId: principalId
+      principalType: 'ServicePrincipal'
+      description: 'Managed by ${tags.managedBy} for ${tags.workload}.'
+    }
   }
-}]
+]
 resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
   parent: storage
   name: 'default'
@@ -169,8 +181,15 @@ resource sqlAdministrator 'Microsoft.Sql/servers/administrators@2023-08-01-previ
     login: sqlEntraAdminName
     sid: sqlEntraAdminObjectId
     tenantId: entraTenantId
+  }
+}
+resource sqlEntraOnlyAuthentication 'Microsoft.Sql/servers/azureADOnlyAuthentications@2023-08-01-preview' = {
+  parent: sqlServer
+  name: 'Default'
+  properties: {
     azureADOnlyAuthentication: true
   }
+  dependsOn: [sqlAdministrator]
 }
 resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' existing = {
   parent: sqlServer
@@ -212,5 +231,5 @@ output sqlDatabaseName string = sqlDatabase.name
 output keyVaultId string = vault.id
 output keyVaultUri string = vault.properties.vaultUri
 output storageAccountId string = storage.id
-output storageAccountUri string = 'https://${storage.name}.blob.core.windows.net'
+output storageAccountUri string = 'https://${storage.name}.blob.${environment().suffixes.storage}'
 output storageMalwareScanResultsDiagnosticId string = storageMalwareScanResultsDiagnostics.id

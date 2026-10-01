@@ -33,43 +33,47 @@ var managedTargets = [
     zoneId: privateDnsZoneIds.blob
   }
 ]
-resource endpoints 'Microsoft.Network/privateEndpoints@2024-05-01' = [for target in managedTargets: {
-  name: target.name
-  location: location
-  tags: tags
-  properties: {
-    subnet: {
-      id: privateEndpointSubnetId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: '${target.name}-connection'
-        properties: {
-          privateLinkServiceId: target.id
-          groupIds: [target.groupId]
-          requestMessage: 'Approved restricted synthetic Azure demo private connection.'
-        }
+resource endpoints 'Microsoft.Network/privateEndpoints@2024-05-01' = [
+  for target in managedTargets: {
+    name: target.name
+    location: location
+    tags: tags
+    properties: {
+      subnet: {
+        id: privateEndpointSubnetId
       }
-    ]
+      privateLinkServiceConnections: [
+        {
+          name: '${target.name}-connection'
+          properties: {
+            privateLinkServiceId: target.id
+            groupIds: [target.groupId]
+            requestMessage: 'Approved restricted synthetic Azure demo private connection.'
+          }
+        }
+      ]
+    }
   }
-}]
+]
 resource sqlEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' existing = {
   name: privateEndpointNames.sql
 }
-resource zoneGroups 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = [for (target, index) in managedTargets: {
-  parent: endpoints[index]
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'zone'
-        properties: {
-          privateDnsZoneId: target.zoneId
+resource zoneGroups 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = [
+  for (target, index) in managedTargets: {
+    parent: endpoints[index]
+    name: 'default'
+    properties: {
+      privateDnsZoneConfigs: [
+        {
+          name: 'zone'
+          properties: {
+            privateDnsZoneId: target.zoneId
+          }
         }
-      }
-    ]
+      ]
+    }
   }
-}]
+]
 resource sqlZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = {
   parent: sqlEndpoint
   name: 'default'
@@ -84,4 +88,10 @@ resource sqlZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2
     ]
   }
 }
-output privateEndpointIds array = concat([for endpoint in endpoints: endpoint.id], [sqlEndpoint.id])
+output privateEndpointIds array = [
+  endpoints[0].id
+  endpoints[1].id
+  endpoints[2].id
+  endpoints[3].id
+  sqlEndpoint.id
+]

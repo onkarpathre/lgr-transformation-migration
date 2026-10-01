@@ -22,21 +22,25 @@ var zoneNames = [
   privateDnsZoneNames.keyVault
   privateDnsZoneNames.blob
 ]
-resource zones 'Microsoft.Network/privateDnsZones@2024-06-01' existing = [for zoneName in zoneNames: {
-  name: zoneName
-}]
-resource links 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = [for (zoneName, index) in zoneNames: {
-  parent: zones[index]
-  name: virtualNetworkLinkName
-  location: 'global'
-  tags: tags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: {
-      id: vnet.id
+resource zones 'Microsoft.Network/privateDnsZones@2024-06-01' existing = [
+  for zoneName in zoneNames: {
+    name: zoneName
+  }
+]
+resource links 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = [
+  for (zoneName, index) in zoneNames: {
+    parent: zones[index]
+    name: virtualNetworkLinkName
+    location: 'global'
+    tags: tags
+    properties: {
+      registrationEnabled: false
+      virtualNetwork: {
+        id: vnet.id
+      }
     }
   }
-}]
+]
 output integrationSubnetId string = integrationSubnet.id
 output privateEndpointSubnetId string = privateEndpointSubnet.id
 output privateDnsZoneIds object = {

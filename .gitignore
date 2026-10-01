@@ -40,6 +40,7 @@ Thumbs.db
 
 # Azure deployment output
 infra/bicep/*.json
+!infra/bicep/bicepconfig.json
 infra/bicep/.bicep/
 artifacts/azure-demo-ci/
 artifacts/azure-demo-local/
