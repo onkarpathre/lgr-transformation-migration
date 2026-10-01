@@ -26,12 +26,13 @@ traceability:
 - **Branch:** `release/azure-demo-v1`.
 - **Original Azure demo implementation candidate:** `38add95edf8b63a552a29a6d6625336de92ea896`.
 - **Monitoring and rollback repair:** `a5d683c7336d5938e274cb2c9460a2b6e4da6542`.
-- **Evidence successor:** `0c5122c7deee7629a08625cd30b15ffd84067e6c`.
-- **Final Defender `ScanResults` monitoring repair:** `1ae167d73bd0ae7adcac697c521177ff033563c1`.
+- **Previous evidence successor:** `0c5122c7deee7629a08625cd30b15ffd84067e6c`.
+- **Technical monitoring repair (final Defender `ScanResults` repair):** `1ae167d73bd0ae7adcac697c521177ff033563c1`.
+- **Committed evidence successor:** `3a017ccc44e3603c23d54d4c27469cacf0cda1d2`.
 - **Final repair scope:** commit `1ae167d` resolves the final Tester monitoring defect `AZD-TST-001`; the monitoring and rollback repair history continues to resolve `AZD-TST-002` and `AZD-TST-003`.
 - **Data/environment boundary:** local and isolated validation using synthetic data only.
-- **Developer state:** `READY_FOR_RETEST`.
-- **Evidence-only update:** this unstaged document change records the immutable technical repair commit `1ae167d73bd0ae7adcac697c521177ff033563c1` and does not alter it. No stage, commit, push, merge, deployment or connected-platform action was performed for this document update.
+- **Developer state:** `READY_FOR_EVIDENCE_COMMIT`.
+- **Evidence-only correction:** committed evidence successor `3a017ccc44e3603c23d54d4c27469cacf0cda1d2` records immutable technical monitoring repair `1ae167d73bd0ae7adcac697c521177ff033563c1`. The current correction is an uncommitted evidence-only successor to `3a017ccc44e3603c23d54d4c27469cacf0cda1d2` until the owner commits it; it does not alter either immutable commit.
 
 The four exact-package decisions authorise controlled implementation and local or isolated testing only. Q-01 is closed for this package. Q-09 external identity remains excluded and is separable. Azure Platform/Operations approval remains `PENDING_PRE_DEPLOYMENT`; no Azure, Azure SQL, Key Vault, Entra, App Service, Azure DevOps, resource-group or other cloud action was performed.
 
@@ -62,7 +63,7 @@ The four exact-package decisions authorise controlled implementation and local o
 
 | Check | Result |
 |---|---|
-| Exact Git control | PASS at entry: branch `release/azure-demo-v1`; HEAD and local upstream `origin/release/azure-demo-v1` both resolve to `1ae167d73bd0ae7adcac697c521177ff033563c1`; ahead/behind `0/0`; zero staged files. The only tracked working-tree modification is this requested implementation document; the three authorised Tester-owned files remain untracked and unstaged with their expected SHA-256 values. |
+| Exact Git control | PASS at correction entry: branch `release/azure-demo-v1`; HEAD and local upstream `origin/release/azure-demo-v1` both resolve to committed evidence successor `3a017ccc44e3603c23d54d4c27469cacf0cda1d2`; ahead/behind `0/0`; zero staged files. Technical monitoring repair `1ae167d73bd0ae7adcac697c521177ff033563c1` is its direct parent. The only tracked working-tree modification is the current uncommitted evidence-only correction to this implementation document; the three authorised Tester-owned files remain untracked and unstaged with their expected SHA-256 values. |
 | Locked .NET restore | PASS with four `NU1900` warnings because the NuGet advisory endpoint is unavailable in the isolated environment. Package locks remained intact. |
 | Release build | PASS: 0 errors, 4 `NU1900` advisory-feed warnings. |
 | Complete .NET tests | PASS: 343/343 tests passed: 198 unit and 145 integration; 0 failed or skipped. |
@@ -109,7 +110,7 @@ Historical owner frontend/audit evidence remains recorded in the tested candidat
 - `scripts/build/Test-AzureDemoMonitoringAlerts.ps1`
 - `tests/api.unit/AzureDemoDeploymentBoundaryTests.cs`
 
-These five paths comprise immutable technical repair commit `1ae167d73bd0ae7adcac697c521177ff033563c1`. This implementation-document update is evidence-only, remains unstaged, and does not alter that commit. The Tester-owned evidence pack and both `tests/assurance` files were preserved byte-for-byte and unstaged.
+These five paths comprise immutable technical monitoring repair commit `1ae167d73bd0ae7adcac697c521177ff033563c1`. Its committed evidence successor is `3a017ccc44e3603c23d54d4c27469cacf0cda1d2`. The current correction is an uncommitted evidence-only successor to `3a017ccc44e3603c23d54d4c27469cacf0cda1d2` until the owner commits it and does not alter either immutable commit. The Tester-owned evidence pack and both `tests/assurance` files were preserved byte-for-byte and remain untracked and unstaged.
 
 ## Intended source-commit inventory by classification
 
@@ -164,7 +165,7 @@ The entire `artifacts/azure-demo-local/**` tree is excluded, including staging/s
 handoff:
   from_agent: "developer"
   to_agent: "tester"
-  state: "READY_FOR_RETEST"
+  state: "READY_FOR_EVIDENCE_COMMIT"
   work_item: "AZURE-DEMO-001"
   branch: "release/azure-demo-v1"
   commit: "1ae167d73bd0ae7adcac697c521177ff033563c1"
@@ -197,8 +198,9 @@ handoff:
     - "The approved 10 GB monthly malware-scanning cap and 30-day architecture retention are preserved."
     - "The existing StorageMalwareScanningResults scheduled-query alert remains enabled and unchanged in strength."
     - "Deployment remains default disabled and subject to Azure Platform/Operations and human gates."
-    - "This document update is evidence-only and does not alter immutable technical repair commit 1ae167d73bd0ae7adcac697c521177ff033563c1."
-    - "No stage, commit, push, merge, Azure/SQL/Azure DevOps access, provisioning or deployment action was performed for this document update."
+    - "Technical monitoring repair 1ae167d73bd0ae7adcac697c521177ff033563c1 is followed by committed evidence successor 3a017ccc44e3603c23d54d4c27469cacf0cda1d2."
+    - "The current correction is an uncommitted evidence-only successor to 3a017ccc44e3603c23d54d4c27469cacf0cda1d2 until the owner commits it and changes only this document."
+    - "No merge, Azure/SQL/Azure DevOps access, provisioning or deployment action was performed during the current correction."
   assumptions:
     - "Connected CI has Bicep, YAML, npm and Linux runtime feeds needed to reproduce the unavailable local checks."
   risks:
@@ -211,7 +213,7 @@ handoff:
   approvals:
     - "Four exact-package implementation/local-test approvals at b8800e1eda014eef1421a1af5427aaea41393496."
     - "Azure Platform/Operations remains PENDING_PRE_DEPLOYMENT."
-  requested_action: "Independently retest immutable final Defender ScanResults repair commit 1ae167d73bd0ae7adcac697c521177ff033563c1 and reproduce the unavailable connected checks against that exact commit without deploying or using non-synthetic data."
+  requested_action: "Owner must commit this evidence-only correction as an immutable successor to 3a017ccc44e3603c23d54d4c27469cacf0cda1d2, then return the successor for independent retest without deploying or using non-synthetic data."
 ```
 
-READY_FOR_RETEST
+READY_FOR_EVIDENCE_COMMIT
