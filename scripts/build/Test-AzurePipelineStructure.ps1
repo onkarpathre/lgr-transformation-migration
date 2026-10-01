@@ -57,6 +57,7 @@ $requiredFragments = @(
     'Invoke-AzureDemoSmokeTests.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
+    'Test-AzureDemoSboms.ps1',
     "New-AzureDemoSboms.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom'",
     'publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom',
     'artifact: dependency-sboms',
