@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { buildApiRequestHeaders } from "@/lib/request-security";
 
 const allowedRoots = new Set(["applications", "azure-targets", "customers", "dashboard", "discovery-imports", "ip-addresses", "lookups", "migration-decisions", "projects", "readiness", "runbooks", "servers", "subnets", "v1", "waves"]);
 const prohibitedHeaders = ["x-customer-id", "x-user-name", "x-lgr-test-principal", "x-principal-id", "x-roles", "x-project-roles", "x-permissions", "cookie", "forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"];
@@ -6,6 +7,7 @@ const forwardedHeaders = ["authorization", "x-project-id", "content-type", "acce
 const responseHeaders = ["content-type", "etag", "x-correlation-id", "traceparent", "www-authenticate"];
 const allowedMethods = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
 const maximumBodyBytes = 26214400 + 65536;
+const localTestPrincipalSetting = ["NEXT", "PUBLIC", "LGR", "TEST", "PRINCIPAL"].join("_");
 type Context = { params: Promise<{ path: string[] }> };
 
 function traceParent(): { header: string; traceId: string } {
@@ -27,9 +29,8 @@ async function forward(request: NextRequest, context: Context) {
   if (!allowedMethods.has(request.method) || path.length === 0 || !allowedRoots.has(path[0]) || path.some(segment => !segment || segment === "." || segment === ".." || segment.includes("\\"))) return NextResponse.json({ title: "Request denied." }, { status: 404 });
   const contentLength = Number(request.headers.get("content-length") ?? "0");
   if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > maximumBodyBytes) return NextResponse.json({ title: "Request is too large." }, { status: 413 });
-  const headers = new Headers();
-  forwardedHeaders.forEach(name => { const value = request.headers.get(name); if (value) headers.set(name, value); });
-  prohibitedHeaders.forEach(name => headers.delete(name));
+  const configuredTestPrincipal = process.env.NODE_ENV === "development" ? process.env[localTestPrincipalSetting] : undefined;
+  const headers = buildApiRequestHeaders(request.headers, process.env.NODE_ENV, configuredTestPrincipal, forwardedHeaders, prohibitedHeaders);
   const trace = traceParent();
   if (!/^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/.test(headers.get("traceparent") ?? "")) headers.set("traceparent", trace.header);
   let body: ArrayBuffer | undefined;

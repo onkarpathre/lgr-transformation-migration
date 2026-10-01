@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildApiRequestHeaders, buildContentSecurityPolicy } from "@/lib/request-security";
 
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
+const forwardedHeaders = ["authorization", "x-project-id", "content-type"];
+const prohibitedHeaders = ["x-lgr-test-principal"];
 
 describe("Azure demo deployment contracts", () => {
   it("uses a narrow same-origin proxy and strips caller identity authority", () => {
@@ -26,5 +29,42 @@ describe("Azure demo deployment contracts", () => {
     expect(source("app/health/route.ts")).toContain("/health/ready");
     const middleware = source("proxy.ts");
     for (const header of ["Strict-Transport-Security", "Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy", "X-Frame-Options"]) expect(middleware).toContain(header);
+  });
+
+  it("allows eval only in the development Content Security Policy", () => {
+    const development = buildContentSecurityPolicy("development-nonce", "development");
+    const production = buildContentSecurityPolicy("production-nonce", "production");
+    const test = buildContentSecurityPolicy("test-nonce", "test");
+
+    expect(development).toContain("script-src 'self' 'nonce-development-nonce' 'unsafe-eval'");
+    expect(production).toContain("script-src 'self' 'nonce-production-nonce'");
+    expect(production).not.toContain("'unsafe-eval'");
+    expect(test).not.toContain("'unsafe-eval'");
+  });
+
+  it("suppresses caller-supplied LocalTest identity in production", () => {
+    const requestHeaders = new Headers({
+      "Authorization": "Bearer token",
+      "X-Lgr-Test-Principal": "caller-controlled"
+    });
+
+    const headers = buildApiRequestHeaders(requestHeaders, "production", "manager-project-a", forwardedHeaders, prohibitedHeaders);
+
+    expect(headers.get("Authorization")).toBe("Bearer token");
+    expect(headers.has("X-Lgr-Test-Principal")).toBe(false);
+  });
+
+  it("requires an explicitly configured synthetic alias in development", () => {
+    expect(() => buildApiRequestHeaders(new Headers(), "development", undefined, forwardedHeaders, prohibitedHeaders)).toThrow(/NEXT_PUBLIC_LGR_TEST_PRINCIPAL/);
+    expect(() => buildApiRequestHeaders(new Headers(), "development", "   ", forwardedHeaders, prohibitedHeaders)).toThrow(/NEXT_PUBLIC_LGR_TEST_PRINCIPAL/);
+
+    const headers = buildApiRequestHeaders(
+      new Headers({ "X-Lgr-Test-Principal": "caller-controlled" }),
+      "development",
+      " manager-project-a ",
+      forwardedHeaders,
+      prohibitedHeaders
+    );
+    expect(headers.get("X-Lgr-Test-Principal")).toBe("manager-project-a");
   });
 });

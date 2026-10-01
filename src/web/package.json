@@ -13,7 +13,7 @@
     "test:component": "vitest run"
   },
   "dependencies": {
-    "next": "16.3.4",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -25,7 +25,7 @@
     "@types/react-dom": "19.2.3",
     "axe-core": "https://registry.npmjs.org/axe-core/-/axe-core-4.12.1.tgz",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "16.3.8",
     "jsdom": "https://registry.npmjs.org/jsdom/-/jsdom-27.4.0.tgz",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
