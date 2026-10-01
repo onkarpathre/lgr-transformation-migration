@@ -10,7 +10,13 @@ param apiSiteId string
 param webStagingSlotId string
 param apiStagingSlotId string
 param sqlDatabaseId string
+param malwareScanResultsDiagnosticId string
 param tags object
+
+assert malwareScanResultsDiagnosticScope = endsWith(
+  toLower(malwareScanResultsDiagnosticId),
+  '/providers/microsoft.security/defenderforstoragesettings/current/providers/microsoft.insights/diagnosticsettings/service'
+)
 
 var availabilityTestLocations = [
   {

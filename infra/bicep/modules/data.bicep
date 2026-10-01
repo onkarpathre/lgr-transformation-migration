@@ -5,6 +5,7 @@ param sqlEntraAdminObjectId string
 param sqlEntraAdminName string
 param sqlSkuName string
 param sqlMaxSizeBytes int
+param logRetentionDays int
 param apiIdentityPrincipalIds array
 param logAnalyticsWorkspaceId string
 param tags object
@@ -143,6 +144,24 @@ resource storageDefender 'Microsoft.Security/defenderForStorageSettings@2022-12-
       }
     }
     sensitiveDataDiscovery: { isEnabled: false }
+    overrideSubscriptionLevelSettings: true
+  }
+}
+resource storageMalwareScanResultsDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  scope: storageDefender
+  name: 'service'
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        category: 'ScanResults'
+        enabled: true
+        retentionPolicy: {
+          enabled: true
+          days: logRetentionDays
+        }
+      }
+    ]
   }
 }
 resource storageDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
@@ -239,3 +258,4 @@ output keyVaultId string = vault.id
 output keyVaultUri string = vault.properties.vaultUri
 output storageAccountId string = storage.id
 output storageAccountUri string = 'https://${storage.name}.blob.core.windows.net'
+output storageMalwareScanResultsDiagnosticId string = storageMalwareScanResultsDiagnostics.id

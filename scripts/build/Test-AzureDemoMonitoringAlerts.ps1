@@ -8,6 +8,16 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $alerts = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\alerts.bicep') -Raw
 $main = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\main.bicep') -Raw
 $apps = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\appservice.bicep') -Raw
+$data = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\data.bicep') -Raw
+
+function Get-BicepDeclaration([string] $Content, [string] $Symbol) {
+    $pattern = "(?ms)^resource\s+$([regex]::Escape($Symbol))\s+.+?(?=^resource\s+|^module\s+|^output\s+|\z)"
+    $match = [regex]::Match($Content, $pattern)
+    if (-not $match.Success) {
+        throw "Bicep resource declaration is missing: $Symbol"
+    }
+    return $match.Value
+}
 
 $requiredAlertNames = @(
     'alert-lgrtm-web-health-azdemo',
@@ -86,6 +96,63 @@ foreach ($slotOutput in @('output webStagingSlotId string = webSlot.id', 'output
     if (-not $apps.Contains($slotOutput)) {
         throw "App Service slot monitoring output is missing: $slotOutput"
     }
+}
+
+$defender = Get-BicepDeclaration $data 'storageDefender'
+$scanResultsDiagnostic = Get-BicepDeclaration $data 'storageMalwareScanResultsDiagnostics'
+$requiredDefenderSettings = @(
+    "'Microsoft.Security/defenderForStorageSettings@2022-12-01-preview'",
+    'scope: storage',
+    "name: 'current'",
+    'isEnabled: true',
+    'malwareScanning:',
+    'onUpload:',
+    'capGBPerMonth: 10',
+    'overrideSubscriptionLevelSettings: true'
+)
+foreach ($fragment in $requiredDefenderSettings) {
+    if (-not $defender.Contains($fragment)) {
+        throw "Defender for Storage setting is incomplete: $fragment"
+    }
+}
+if ($defender -notmatch '(?ms)properties:\s*\{\s*isEnabled:\s*true.*?malwareScanning:\s*\{\s*onUpload:\s*\{\s*isEnabled:\s*true\s*capGBPerMonth:\s*10\s*\}') {
+    throw 'Defender for Storage and its on-upload malware scanner are not both explicitly enabled with the approved 10 GB monthly cap.'
+}
+
+$requiredDiagnosticSettings = @(
+    "'Microsoft.Insights/diagnosticSettings@2021-05-01-preview'",
+    'scope: storageDefender',
+    "name: 'service'",
+    'workspaceId: logAnalyticsWorkspaceId',
+    "category: 'ScanResults'",
+    'enabled: true',
+    'retentionPolicy:',
+    'days: logRetentionDays'
+)
+foreach ($fragment in $requiredDiagnosticSettings) {
+    if (-not $scanResultsDiagnostic.Contains($fragment)) {
+        throw "Defender ScanResults diagnostic route is incomplete: $fragment"
+    }
+}
+if ($scanResultsDiagnostic -notmatch "(?ms)logs:\s*\[\s*\{\s*category:\s*'ScanResults'\s*enabled:\s*true\s*retentionPolicy:\s*\{\s*enabled:\s*true\s*days:\s*logRetentionDays") {
+    throw 'The ScanResults log category and its architecture-controlled retention are not both enabled.'
+}
+
+$dependencyAndAlertCoupling = @(
+    'logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId',
+    'logRetentionDays: logRetentionDays',
+    'malwareScanResultsDiagnosticId: data.outputs.storageMalwareScanResultsDiagnosticId',
+    'output storageMalwareScanResultsDiagnosticId string = storageMalwareScanResultsDiagnostics.id'
+)
+foreach ($fragment in $dependencyAndAlertCoupling) {
+    if (-not ($main.Contains($fragment) -or $data.Contains($fragment))) {
+        throw "Workspace, storage, Defender, diagnostic and alert dependency coupling is incomplete: $fragment"
+    }
+}
+if (-not $alerts.Contains('param malwareScanResultsDiagnosticId string') -or
+    -not $alerts.Contains('/providers/microsoft.security/defenderforstoragesettings/current/providers/microsoft.insights/diagnosticsettings/service') -or
+    -not $alerts.Contains('StorageMalwareScanningResults')) {
+    throw 'The Defender ScanResults route is not coupled to the StorageMalwareScanningResults alert.'
 }
 
 if (($alerts.Split("`n") | Where-Object { $_ -match 'actionGroupId' }).Count -lt 10) {

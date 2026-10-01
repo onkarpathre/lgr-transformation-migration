@@ -103,6 +103,7 @@ module data 'modules/data.bicep' = {
     sqlEntraAdminName: sqlEntraAdminName
     sqlSkuName: sqlSkuName
     sqlMaxSizeBytes: sqlMaxSizeBytes
+    logRetentionDays: logRetentionDays
     apiIdentityPrincipalIds: [
       identities.outputs.apiMainPrincipalId
       identities.outputs.apiStagingPrincipalId
@@ -166,6 +167,7 @@ module alerts 'modules/alerts.bicep' = {
     webStagingSlotId: apps.outputs.webStagingSlotId
     apiStagingSlotId: apps.outputs.apiStagingSlotId
     sqlDatabaseId: data.outputs.sqlDatabaseId
+    malwareScanResultsDiagnosticId: data.outputs.storageMalwareScanResultsDiagnosticId
     tags: tags
   }
 }

@@ -115,6 +115,31 @@ public sealed class AzureDemoDeploymentBoundaryTests
     }
 
     [Fact]
+    public void Bicep_routes_Defender_ScanResults_to_the_alert_workspace_at_the_exact_nested_scope()
+    {
+        var root = FindRepositoryRoot();
+        var main = File.ReadAllText(Path.Combine(root, "infra", "bicep", "main.bicep"));
+        var data = File.ReadAllText(Path.Combine(root, "infra", "bicep", "modules", "data.bicep"));
+        var alerts = File.ReadAllText(Path.Combine(root, "infra", "bicep", "modules", "alerts.bicep"));
+
+        Assert.Contains("resource storageDefender 'Microsoft.Security/defenderForStorageSettings@2022-12-01-preview'", data, StringComparison.Ordinal);
+        Assert.Contains("scope: storage", data, StringComparison.Ordinal);
+        Assert.Contains("name: 'current'", data, StringComparison.Ordinal);
+        Assert.Contains("overrideSubscriptionLevelSettings: true", data, StringComparison.Ordinal);
+        Assert.Contains("capGBPerMonth: 10", data, StringComparison.Ordinal);
+        Assert.Contains("resource storageMalwareScanResultsDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview'", data, StringComparison.Ordinal);
+        Assert.Contains("scope: storageDefender", data, StringComparison.Ordinal);
+        Assert.Contains("name: 'service'", data, StringComparison.Ordinal);
+        Assert.Contains("category: 'ScanResults'", data, StringComparison.Ordinal);
+        Assert.Contains("workspaceId: logAnalyticsWorkspaceId", data, StringComparison.Ordinal);
+        Assert.Contains("days: logRetentionDays", data, StringComparison.Ordinal);
+        Assert.Contains("logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId", main, StringComparison.Ordinal);
+        Assert.Contains("malwareScanResultsDiagnosticId: data.outputs.storageMalwareScanResultsDiagnosticId", main, StringComparison.Ordinal);
+        Assert.Contains("/providers/microsoft.security/defenderforstoragesettings/current/providers/microsoft.insights/diagnosticsettings/service", alerts, StringComparison.Ordinal);
+        Assert.Contains("StorageMalwareScanningResults", alerts, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Application_has_no_resource_manager_or_direct_discovery_api_dependency()
     {
         var root = FindRepositoryRoot();
