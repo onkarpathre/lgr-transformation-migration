@@ -36,6 +36,7 @@ pr:
     include: [ release/azure-demo-v1, main ]
 
 variables:
+- group: vg-mtp-azdemo-public
 - name: DOTNET_NOLOGO
   value: 'true'
 - name: NUGET_XMLDOC_MODE
@@ -126,6 +127,7 @@ stages:
     - checkout: self
       clean: true
     - pwsh: |
+        ./scripts/build/Test-AzureDemoParameterEnvironment.ps1
         az bicep version
         Get-ChildItem infra/bicep -Recurse -Include *.bicep,*.bicepparam | ForEach-Object {
           az bicep format --file $_.FullName
@@ -137,8 +139,22 @@ stages:
         if ($LASTEXITCODE) { throw 'Bicep build failed.' }
         az bicep build-params --file infra/bicep/parameters/azure-demo.bicepparam --outfile $(Build.ArtifactStagingDirectory)/azure-demo.parameters.json
         if ($LASTEXITCODE) { throw 'AzureDemo Bicep parameter build failed.' }
+        az bicep build-params --file infra/bicep/parameters/dev.bicepparam --outfile $(Build.ArtifactStagingDirectory)/dev.parameters.json
+        if ($LASTEXITCODE) { throw 'Development compatibility Bicep parameter build failed.' }
         if (Select-String -Path $(Build.ArtifactStagingDirectory)/main.json -Pattern 'listKeys|password|clientSecret|publishProfile' -CaseSensitive:$false) { throw 'Bicep output contains a prohibited credential pattern.' }
       displayName: Bicep format, lint, build and credential-pattern gate
+      env:
+        AZDEMO_OWNER: $(AZDEMO_OWNER)
+        AZDEMO_COST_CENTRE: $(AZDEMO_COST_CENTRE)
+        AZDEMO_EXPIRY_DATE: $(AZDEMO_EXPIRY_DATE)
+        AZDEMO_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)
+        AZDEMO_SPA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
+        AZDEMO_API_CLIENT_ID: $(AZDEMO_API_CLIENT_ID)
+        AZDEMO_SQL_ADMIN_OBJECT_ID: $(AZDEMO_SQL_ADMIN_OBJECT_ID)
+        AZDEMO_SQL_ADMIN_NAME: $(AZDEMO_SQL_ADMIN_NAME)
+        AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID: $(AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID)
+        AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
+        AZDEMO_ALERT_EMAIL: $(AZDEMO_ALERT_EMAIL)
     - publish: $(Build.ArtifactStagingDirectory)/main.json
       artifact: bicep-validation
 
@@ -199,6 +215,7 @@ stages:
               scriptType: pscore
               scriptLocation: inlineScript
               inlineScript: |
+                ./scripts/build/Test-AzureDemoParameterEnvironment.ps1
                 if ((az account show --query tenantId -o tsv) -ne '$(AZDEMO_ENTRA_TENANT_ID)') { throw 'Wrong Azure tenant.' }
                 $requiredExistingResources = @(
                   @{ Type = 'Microsoft.Web/serverfarms'; Name = 'asp-mtp-dev-uks-001' },
@@ -260,6 +277,7 @@ stages:
               scriptType: pscore
               scriptLocation: inlineScript
               inlineScript: |
+                ./scripts/build/Test-AzureDemoParameterEnvironment.ps1
                 $deploymentName = "mtp-azure-demo-$(Build.BuildId)"
                 az deployment group create --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name $deploymentName --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --only-show-errors
                 if ($LASTEXITCODE) { throw 'Bicep deployment failed.' }
