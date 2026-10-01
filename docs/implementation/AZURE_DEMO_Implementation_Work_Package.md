@@ -28,11 +28,22 @@ traceability:
 - **Monitoring and rollback repair:** `a5d683c7336d5938e274cb2c9460a2b6e4da6542`.
 - **Previous evidence successor:** `0c5122c7deee7629a08625cd30b15ffd84067e6c`.
 - **Technical monitoring repair (final Defender `ScanResults` repair):** `1ae167d73bd0ae7adcac697c521177ff033563c1`.
-- **Committed evidence successor:** `3a017ccc44e3603c23d54d4c27469cacf0cda1d2`.
-- **Final repair scope:** commit `1ae167d` resolves the final Tester monitoring defect `AZD-TST-001`; the monitoring and rollback repair history continues to resolve `AZD-TST-002` and `AZD-TST-003`.
+- **Final monitoring evidence:** `3a017ccc44e3603c23d54d4c27469cacf0cda1d2`.
+- **Evidence-status correction:** `c69508ca66c05ddcf8bb09d384cdb49051be30ba`.
+- **Final repair scope:** commit `1ae167d` resolves the final Tester monitoring defect `AZD-TST-001`; `AZD-TST-003` is limited to stable reconciliation wording in this evidence document and does not change the technical implementation or results.
 - **Data/environment boundary:** local and isolated validation using synthetic data only.
-- **Developer state:** `READY_FOR_EVIDENCE_COMMIT`.
-- **Evidence-only correction:** committed evidence successor `3a017ccc44e3603c23d54d4c27469cacf0cda1d2` records immutable technical monitoring repair `1ae167d73bd0ae7adcac697c521177ff033563c1`. The current correction is an uncommitted evidence-only successor to `3a017ccc44e3603c23d54d4c27469cacf0cda1d2` until the owner commits it; it does not alter either immutable commit.
+- **Developer state:** `READY_FOR_FOCUSED_RECONCILIATION`.
+
+```yaml
+candidate_reconciliation:
+  technicalCandidateCommit: "1ae167d73bd0ae7adcac697c521177ff033563c1"
+  evidenceParentCommit: "c69508ca66c05ddcf8bb09d384cdb49051be30ba"
+  reconciliationCandidate: "EXACT_GIT_HEAD_AT_TESTER_INVOCATION"
+```
+
+The immutable reconciliation candidate is the exact Git HEAD supplied to the Independent Tester at invocation time. Git branch, HEAD, upstream alignment, ancestry and changed-file evidence are authoritative. This evidence document intentionally does not attempt to contain the SHA of the commit that contains itself.
+
+Commits after `1ae167d73bd0ae7adcac697c521177ff033563c1` are evidence-only unless independent Git diff verification shows otherwise.
 
 The four exact-package decisions authorise controlled implementation and local or isolated testing only. Q-01 is closed for this package. Q-09 external identity remains excluded and is separable. Azure Platform/Operations approval remains `PENDING_PRE_DEPLOYMENT`; no Azure, Azure SQL, Key Vault, Entra, App Service, Azure DevOps, resource-group or other cloud action was performed.
 
@@ -63,7 +74,7 @@ The four exact-package decisions authorise controlled implementation and local o
 
 | Check | Result |
 |---|---|
-| Exact Git control | PASS at correction entry: branch `release/azure-demo-v1`; HEAD and local upstream `origin/release/azure-demo-v1` both resolve to committed evidence successor `3a017ccc44e3603c23d54d4c27469cacf0cda1d2`; ahead/behind `0/0`; zero staged files. Technical monitoring repair `1ae167d73bd0ae7adcac697c521177ff033563c1` is its direct parent. The only tracked working-tree modification is the current uncommitted evidence-only correction to this implementation document; the three authorised Tester-owned files remain untracked and unstaged with their expected SHA-256 values. |
+| Exact Git control | PASS at Independent Tester reconciliation of evidence-status correction `c69508ca66c05ddcf8bb09d384cdb49051be30ba`: branch `release/azure-demo-v1`; HEAD and local upstream `origin/release/azure-demo-v1` both resolved to that commit; ahead/behind `0/0`; zero staged or tracked worktree changes. Independent Git diff verification showed that commits after technical monitoring repair `1ae167d73bd0ae7adcac697c521177ff033563c1` changed only this evidence document. The three authorised Tester-owned files were reported as untracked artefacts with their expected SHA-256 values. |
 | Locked .NET restore | PASS with four `NU1900` warnings because the NuGet advisory endpoint is unavailable in the isolated environment. Package locks remained intact. |
 | Release build | PASS: 0 errors, 4 `NU1900` advisory-feed warnings. |
 | Complete .NET tests | PASS: 343/343 tests passed: 198 unit and 145 integration; 0 failed or skipped. |
@@ -110,7 +121,7 @@ Historical owner frontend/audit evidence remains recorded in the tested candidat
 - `scripts/build/Test-AzureDemoMonitoringAlerts.ps1`
 - `tests/api.unit/AzureDemoDeploymentBoundaryTests.cs`
 
-These five paths comprise immutable technical monitoring repair commit `1ae167d73bd0ae7adcac697c521177ff033563c1`. Its committed evidence successor is `3a017ccc44e3603c23d54d4c27469cacf0cda1d2`. The current correction is an uncommitted evidence-only successor to `3a017ccc44e3603c23d54d4c27469cacf0cda1d2` until the owner commits it and does not alter either immutable commit. The Tester-owned evidence pack and both `tests/assurance` files were preserved byte-for-byte and remain untracked and unstaged.
+These five paths comprise immutable technical monitoring repair commit `1ae167d73bd0ae7adcac697c521177ff033563c1`. Final monitoring evidence is commit `3a017ccc44e3603c23d54d4c27469cacf0cda1d2`, followed by evidence-status correction `c69508ca66c05ddcf8bb09d384cdb49051be30ba`. Independent Git diff verification showed that both post-technical commits changed only this evidence document. Commits after `1ae167d73bd0ae7adcac697c521177ff033563c1` are evidence-only unless independent Git diff verification shows otherwise. At the last Tester reconciliation, the Tester-owned evidence pack and both `tests/assurance` files were preserved byte-for-byte and reported as authorised untracked artefacts.
 
 ## Intended source-commit inventory by classification
 
@@ -165,10 +176,13 @@ The entire `artifacts/azure-demo-local/**` tree is excluded, including staging/s
 handoff:
   from_agent: "developer"
   to_agent: "tester"
-  state: "READY_FOR_EVIDENCE_COMMIT"
+  state: "READY_FOR_FOCUSED_RECONCILIATION"
   work_item: "AZURE-DEMO-001"
   branch: "release/azure-demo-v1"
-  commit: "1ae167d73bd0ae7adcac697c521177ff033563c1"
+  commit: EXACT_GIT_HEAD_AT_TESTER_INVOCATION
+  technicalCandidateCommit: "1ae167d73bd0ae7adcac697c521177ff033563c1"
+  evidenceParentCommit: "c69508ca66c05ddcf8bb09d384cdb49051be30ba"
+  reconciliationCandidate: "EXACT_GIT_HEAD_AT_TESTER_INVOCATION"
   traceability:
     product_version: "0.1"
     phase: "Phase 1 - MVP"
@@ -198,9 +212,10 @@ handoff:
     - "The approved 10 GB monthly malware-scanning cap and 30-day architecture retention are preserved."
     - "The existing StorageMalwareScanningResults scheduled-query alert remains enabled and unchanged in strength."
     - "Deployment remains default disabled and subject to Azure Platform/Operations and human gates."
-    - "Technical monitoring repair 1ae167d73bd0ae7adcac697c521177ff033563c1 is followed by committed evidence successor 3a017ccc44e3603c23d54d4c27469cacf0cda1d2."
-    - "The current correction is an uncommitted evidence-only successor to 3a017ccc44e3603c23d54d4c27469cacf0cda1d2 until the owner commits it and changes only this document."
-    - "No merge, Azure/SQL/Azure DevOps access, provisioning or deployment action was performed during the current correction."
+    - "Technical monitoring repair 1ae167d73bd0ae7adcac697c521177ff033563c1 is followed by final monitoring evidence 3a017ccc44e3603c23d54d4c27469cacf0cda1d2 and evidence-status correction c69508ca66c05ddcf8bb09d384cdb49051be30ba."
+    - "Commits after 1ae167d73bd0ae7adcac697c521177ff033563c1 are evidence-only unless independent Git diff verification shows otherwise."
+    - "The immutable reconciliation candidate is the exact Git HEAD supplied to the Independent Tester at invocation time; Git branch, HEAD, upstream alignment, ancestry and changed-file evidence are authoritative."
+    - "No merge, Azure/SQL/Azure DevOps access, provisioning or deployment action was performed for the AZD-TST-003 documentation repair."
   assumptions:
     - "Connected CI has Bicep, YAML, npm and Linux runtime feeds needed to reproduce the unavailable local checks."
   risks:
@@ -213,7 +228,7 @@ handoff:
   approvals:
     - "Four exact-package implementation/local-test approvals at b8800e1eda014eef1421a1af5427aaea41393496."
     - "Azure Platform/Operations remains PENDING_PRE_DEPLOYMENT."
-  requested_action: "Owner must commit this evidence-only correction as an immutable successor to 3a017ccc44e3603c23d54d4c27469cacf0cda1d2, then return the successor for independent retest without deploying or using non-synthetic data."
+  requested_action: "Independent Tester must perform focused reconciliation against the exact Git HEAD supplied at invocation time, using authoritative Git branch, HEAD, upstream alignment, ancestry and changed-file evidence, without deploying or using non-synthetic data."
 ```
 
-READY_FOR_EVIDENCE_COMMIT
+READY_FOR_FOCUSED_RECONCILIATION
