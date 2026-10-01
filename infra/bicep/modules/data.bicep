@@ -63,7 +63,9 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01'
 resource importContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   parent: blobService
   name: importContainerName
-  properties: { publicAccess: 'None' }
+  properties: {
+    publicAccess: 'None'
+  }
 }
 resource storageRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for principalId in apiIdentityPrincipalIds: {
   scope: importContainer
@@ -85,7 +87,13 @@ resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05
           name: 'delete-expired-synthetic-imports'
           type: 'Lifecycle'
           definition: {
-            actions: { baseBlob: { delete: { daysAfterModificationGreaterThan: 30 } } }
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: 30
+                }
+              }
+            }
             filters: {
               blobTypes: ['blockBlob']
               prefixMatch: ['discovery-imports/']
@@ -107,7 +115,9 @@ resource storageDefender 'Microsoft.Security/defenderForStorageSettings@2022-12-
         capGBPerMonth: 10
       }
     }
-    sensitiveDataDiscovery: { isEnabled: false }
+    sensitiveDataDiscovery: {
+      isEnabled: false
+    }
     overrideSubscriptionLevelSettings: true
   }
 }

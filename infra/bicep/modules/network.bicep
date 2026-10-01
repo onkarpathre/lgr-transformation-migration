@@ -32,7 +32,9 @@ resource links 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01
   tags: tags
   properties: {
     registrationEnabled: false
-    virtualNetwork: { id: vnet.id }
+    virtualNetwork: {
+      id: vnet.id
+    }
   }
 }]
 output integrationSubnetId string = integrationSubnet.id

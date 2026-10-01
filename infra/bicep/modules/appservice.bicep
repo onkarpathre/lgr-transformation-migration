@@ -32,88 +32,168 @@ var commonSiteConfig = {
   remoteDebuggingEnabled: false
 }
 var commonWebSettings = [
-  { name: 'NODE_ENV'
-    value: 'production' }
-  { name: 'HOSTNAME'
-    value: '0.0.0.0' }
-  { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
-    value: 'false' }
-  { name: 'WEBSITE_HEALTHCHECK_MAXPINGFAILURES'
-    value: '3' }
-  { name: 'WEBSITE_SWAP_WARMUP_PING_PATH'
-    value: '/health' }
-  { name: 'WEBSITE_SWAP_WARMUP_PING_STATUSES'
-    value: '200' }
-  { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-    value: applicationInsightsConnectionString }
-  { name: 'ApplicationInsightsAgent_EXTENSION_VERSION'
-    value: '~3' }
-  { name: 'NEXT_PUBLIC_ENTRA_TENANT_ID'
-    value: entraTenantId }
-  { name: 'NEXT_PUBLIC_ENTRA_CLIENT_ID'
-    value: spaClientId }
-  { name: 'NEXT_PUBLIC_API_SCOPE'
-    value: apiScope }
-  { name: 'NEXT_PUBLIC_DEMO_LABEL'
-    value: 'Restricted synthetic non-production management demo' }
+  {
+    name: 'NODE_ENV'
+    value: 'production'
+  }
+  {
+    name: 'HOSTNAME'
+    value: '0.0.0.0'
+  }
+  {
+    name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+    value: 'false'
+  }
+  {
+    name: 'WEBSITE_HEALTHCHECK_MAXPINGFAILURES'
+    value: '3'
+  }
+  {
+    name: 'WEBSITE_SWAP_WARMUP_PING_PATH'
+    value: '/health'
+  }
+  {
+    name: 'WEBSITE_SWAP_WARMUP_PING_STATUSES'
+    value: '200'
+  }
+  {
+    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+    value: applicationInsightsConnectionString
+  }
+  {
+    name: 'ApplicationInsightsAgent_EXTENSION_VERSION'
+    value: '~3'
+  }
+  {
+    name: 'NEXT_PUBLIC_ENTRA_TENANT_ID'
+    value: entraTenantId
+  }
+  {
+    name: 'NEXT_PUBLIC_ENTRA_CLIENT_ID'
+    value: spaClientId
+  }
+  {
+    name: 'NEXT_PUBLIC_API_SCOPE'
+    value: apiScope
+  }
+  {
+    name: 'NEXT_PUBLIC_DEMO_LABEL'
+    value: 'Restricted synthetic non-production management demo'
+  }
 ]
 var apiCommon = [
-  { name: 'ASPNETCORE_ENVIRONMENT'
-    value: 'AzureDemo' }
-  { name: 'ASPNETCORE_FORWARDEDHEADERS_ENABLED'
-    value: 'true' }
-  { name: 'Authentication__Mode'
-    value: 'Entra' }
-  { name: 'Authentication__Entra__TenantId'
-    value: entraTenantId }
-  { name: 'Authentication__Entra__Issuer'
-    value: 'https://login.microsoftonline.com/${entraTenantId}/v2.0' }
-  { name: 'Authentication__Entra__Audience'
-    value: apiAudience }
-  { name: 'Authentication__Entra__AllowedClientIds__0'
-    value: spaClientId }
-  { name: 'Authentication__EntraDemoMemberships__SecretUri'
-    value: membershipSecretUri }
-  { name: 'Authentication__EntraDemoMemberships__CacheSeconds'
-    value: '300' }
-  { name: 'Features__SqlDiscoveryAssessment'
-    value: 'true' }
-  { name: 'Features__SqlDiscoveryImport'
-    value: 'true' }
-  { name: 'Features__SqlAssessment'
-    value: 'true' }
-  { name: 'Features__SqlBrowserJourneys'
-    value: 'true' }
-  { name: 'Features__DependencyRegister'
-    value: 'true' }
-  { name: 'DiscoveryImport__MaximumFileSizeBytes'
-    value: '26214400' }
-  { name: 'DiscoveryImport__StorageMode'
-    value: 'AzureBlob' }
-  { name: 'DiscoveryImport__StorageAccountUri'
-    value: storageAccountUri }
-  { name: 'DiscoveryImport__ContainerName'
-    value: 'discovery-imports' }
-  { name: 'DiscoveryImport__FreshnessThresholdDays'
-    value: '30' }
-  { name: 'DemoData__Enabled'
-    value: 'false' }
-  { name: 'DemoData__ManifestVersion'
-    value: 'azdemo-v1' }
-  { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-    value: applicationInsightsConnectionString }
-  { name: 'ApplicationInsightsAgent_EXTENSION_VERSION'
-    value: '~3' }
-  { name: 'Logging__LogLevel__Default'
-    value: 'Information' }
-  { name: 'Logging__LogLevel__Microsoft.AspNetCore'
-    value: 'Warning' }
-  { name: 'WEBSITE_SWAP_WARMUP_PING_PATH'
-    value: '/health/ready' }
-  { name: 'WEBSITE_SWAP_WARMUP_PING_STATUSES'
-    value: '200' }
-  { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
-    value: 'false' }
+  {
+    name: 'ASPNETCORE_ENVIRONMENT'
+    value: 'AzureDemo'
+  }
+  {
+    name: 'ASPNETCORE_FORWARDEDHEADERS_ENABLED'
+    value: 'true'
+  }
+  {
+    name: 'Authentication__Mode'
+    value: 'Entra'
+  }
+  {
+    name: 'Authentication__Entra__TenantId'
+    value: entraTenantId
+  }
+  {
+    name: 'Authentication__Entra__Issuer'
+    value: 'https://login.microsoftonline.com/${entraTenantId}/v2.0'
+  }
+  {
+    name: 'Authentication__Entra__Audience'
+    value: apiAudience
+  }
+  {
+    name: 'Authentication__Entra__AllowedClientIds__0'
+    value: spaClientId
+  }
+  {
+    name: 'Authentication__EntraDemoMemberships__SecretUri'
+    value: membershipSecretUri
+  }
+  {
+    name: 'Authentication__EntraDemoMemberships__CacheSeconds'
+    value: '300'
+  }
+  {
+    name: 'Features__SqlDiscoveryAssessment'
+    value: 'true'
+  }
+  {
+    name: 'Features__SqlDiscoveryImport'
+    value: 'true'
+  }
+  {
+    name: 'Features__SqlAssessment'
+    value: 'true'
+  }
+  {
+    name: 'Features__SqlBrowserJourneys'
+    value: 'true'
+  }
+  {
+    name: 'Features__DependencyRegister'
+    value: 'true'
+  }
+  {
+    name: 'DiscoveryImport__MaximumFileSizeBytes'
+    value: '26214400'
+  }
+  {
+    name: 'DiscoveryImport__StorageMode'
+    value: 'AzureBlob'
+  }
+  {
+    name: 'DiscoveryImport__StorageAccountUri'
+    value: storageAccountUri
+  }
+  {
+    name: 'DiscoveryImport__ContainerName'
+    value: 'discovery-imports'
+  }
+  {
+    name: 'DiscoveryImport__FreshnessThresholdDays'
+    value: '30'
+  }
+  {
+    name: 'DemoData__Enabled'
+    value: 'false'
+  }
+  {
+    name: 'DemoData__ManifestVersion'
+    value: 'azdemo-v1'
+  }
+  {
+    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+    value: applicationInsightsConnectionString
+  }
+  {
+    name: 'ApplicationInsightsAgent_EXTENSION_VERSION'
+    value: '~3'
+  }
+  {
+    name: 'Logging__LogLevel__Default'
+    value: 'Information'
+  }
+  {
+    name: 'Logging__LogLevel__Microsoft.AspNetCore'
+    value: 'Warning'
+  }
+  {
+    name: 'WEBSITE_SWAP_WARMUP_PING_PATH'
+    value: '/health/ready'
+  }
+  {
+    name: 'WEBSITE_SWAP_WARMUP_PING_STATUSES'
+    value: '200'
+  }
+  {
+    name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+    value: 'false'
+  }
 ]
 
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' existing = {
@@ -131,10 +211,14 @@ resource webConfiguration 'Microsoft.Web/sites/config@2023-12-01' = {
     healthCheckPath: '/health'
     vnetRouteAllEnabled: true
     appSettings: concat(commonWebSettings, [
-      { name: 'API_ORIGIN'
-        value: 'https://${apiAppName}.azurewebsites.net' }
-      { name: 'OTEL_SERVICE_NAME'
-        value: 'lgrtm-web-azdemo' }
+      {
+        name: 'API_ORIGIN'
+        value: 'https://${apiAppName}.azurewebsites.net'
+      }
+      {
+        name: 'OTEL_SERVICE_NAME'
+        value: 'lgrtm-web-azdemo'
+      }
     ])
   })
 }
@@ -153,10 +237,14 @@ resource webSlot 'Microsoft.Web/sites/slots@2023-12-01' = {
       appCommandLine: 'node server.js'
       healthCheckPath: '/health'
       appSettings: concat(commonWebSettings, [
-        { name: 'API_ORIGIN'
-          value: 'https://${apiAppName}-${stagingSlotName}.azurewebsites.net' }
-        { name: 'OTEL_SERVICE_NAME'
-          value: 'lgrtm-web-staging-azdemo' }
+        {
+          name: 'API_ORIGIN'
+          value: 'https://${apiAppName}-${stagingSlotName}.azurewebsites.net'
+        }
+        {
+          name: 'OTEL_SERVICE_NAME'
+          value: 'lgrtm-web-staging-azdemo'
+        }
       ])
     })
   }
@@ -173,16 +261,26 @@ resource apiConfiguration 'Microsoft.Web/sites/config@2023-12-01' = {
     virtualNetworkSubnetId: integrationSubnetId
     vnetRouteAllEnabled: true
     appSettings: concat(apiCommon, [
-      { name: 'AllowedHosts'
-        value: '${apiAppName}.azurewebsites.net' }
-      { name: 'AllowedOrigins__0'
-        value: 'https://${webAppName}.azurewebsites.net' }
-      { name: 'AzureIdentity__ManagedIdentityClientId'
-        value: apiMainIdentityClientId }
-      { name: 'ConnectionStrings__LgrDatabase'
-        value: '${sqlBase}${apiMainIdentityClientId}' }
-      { name: 'OTEL_SERVICE_NAME'
-        value: 'lgrtm-api-azdemo' }
+      {
+        name: 'AllowedHosts'
+        value: '${apiAppName}.azurewebsites.net'
+      }
+      {
+        name: 'AllowedOrigins__0'
+        value: 'https://${webAppName}.azurewebsites.net'
+      }
+      {
+        name: 'AzureIdentity__ManagedIdentityClientId'
+        value: apiMainIdentityClientId
+      }
+      {
+        name: 'ConnectionStrings__LgrDatabase'
+        value: '${sqlBase}${apiMainIdentityClientId}'
+      }
+      {
+        name: 'OTEL_SERVICE_NAME'
+        value: 'lgrtm-api-azdemo'
+      }
     ])
   })
 }
@@ -193,7 +291,9 @@ resource apiSlot 'Microsoft.Web/sites/slots@2023-12-01' = {
   tags: tags
   identity: {
     type: 'UserAssigned'
-    userAssignedIdentities: { '${apiStagingIdentityId}': {} }
+    userAssignedIdentities: {
+      '${apiStagingIdentityId}': {}
+    }
   }
   properties: {
     serverFarmId: plan.id
@@ -205,16 +305,26 @@ resource apiSlot 'Microsoft.Web/sites/slots@2023-12-01' = {
       linuxFxVersion: apiLinuxFxVersion
       healthCheckPath: '/health/ready'
       appSettings: concat(apiCommon, [
-        { name: 'AllowedHosts'
-          value: '${apiAppName}-${stagingSlotName}.azurewebsites.net' }
-        { name: 'AllowedOrigins__0'
-          value: 'https://${webAppName}-${stagingSlotName}.azurewebsites.net' }
-        { name: 'AzureIdentity__ManagedIdentityClientId'
-          value: apiStagingIdentityClientId }
-        { name: 'ConnectionStrings__LgrDatabase'
-          value: '${sqlBase}${apiStagingIdentityClientId}' }
-        { name: 'OTEL_SERVICE_NAME'
-          value: 'lgrtm-api-staging-azdemo' }
+        {
+          name: 'AllowedHosts'
+          value: '${apiAppName}-${stagingSlotName}.azurewebsites.net'
+        }
+        {
+          name: 'AllowedOrigins__0'
+          value: 'https://${webAppName}-${stagingSlotName}.azurewebsites.net'
+        }
+        {
+          name: 'AzureIdentity__ManagedIdentityClientId'
+          value: apiStagingIdentityClientId
+        }
+        {
+          name: 'ConnectionStrings__LgrDatabase'
+          value: '${sqlBase}${apiStagingIdentityClientId}'
+        }
+        {
+          name: 'OTEL_SERVICE_NAME'
+          value: 'lgrtm-api-staging-azdemo'
+        }
       ])
     })
   }
@@ -247,42 +357,58 @@ resource apiSlots 'Microsoft.Web/sites/config@2023-12-01' = {
 resource webFtp 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2023-12-01' = {
   parent: web
   name: 'ftp'
-  properties: { allow: false }
+  properties: {
+    allow: false
+  }
 }
 resource webScm 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2023-12-01' = {
   parent: web
   name: 'scm'
-  properties: { allow: false }
+  properties: {
+    allow: false
+  }
 }
 resource apiFtp 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2023-12-01' = {
   parent: api
   name: 'ftp'
-  properties: { allow: false }
+  properties: {
+    allow: false
+  }
 }
 resource apiScm 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2023-12-01' = {
   parent: api
   name: 'scm'
-  properties: { allow: false }
+  properties: {
+    allow: false
+  }
 }
 resource webSlotFtp 'Microsoft.Web/sites/slots/basicPublishingCredentialsPolicies@2023-12-01' = {
   parent: webSlot
   name: 'ftp'
-  properties: { allow: false }
+  properties: {
+    allow: false
+  }
 }
 resource webSlotScm 'Microsoft.Web/sites/slots/basicPublishingCredentialsPolicies@2023-12-01' = {
   parent: webSlot
   name: 'scm'
-  properties: { allow: false }
+  properties: {
+    allow: false
+  }
 }
 resource apiSlotFtp 'Microsoft.Web/sites/slots/basicPublishingCredentialsPolicies@2023-12-01' = {
   parent: apiSlot
   name: 'ftp'
-  properties: { allow: false }
+  properties: {
+    allow: false
+  }
 }
 resource apiSlotScm 'Microsoft.Web/sites/slots/basicPublishingCredentialsPolicies@2023-12-01' = {
   parent: apiSlot
   name: 'scm'
-  properties: { allow: false }
+  properties: {
+    allow: false
+  }
 }
 resource siteDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = [for site in [
   web

@@ -57,6 +57,9 @@ $requiredFragments = @(
     'Invoke-AzureDemoSmokeTests.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
+    "New-AzureDemoSboms.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom'",
+    'publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom',
+    'artifact: dependency-sboms',
     'az webapp deployment slot swap'
 )
 foreach ($fragment in $requiredFragments) {
@@ -72,6 +75,10 @@ $deployParameter = [regex]::Match($text, '(?ms)- name: deployAzureDemo\s+type: b
 $rollbackParameter = [regex]::Match($text, '(?ms)- name: rollbackAzureDemo\s+type: boolean\s+default: false')
 if (-not $deployParameter.Success -or -not $rollbackParameter.Success) {
     throw 'Azure deployment and rollback parameters must both default to false.'
+}
+
+if ($text.Contains("New-AzureDemoSboms.ps1 -OutputDirectory '`$(Build.ArtifactStagingDirectory)")) {
+    throw 'SBOM generation must not use the artifact staging directory outside the repository workspace.'
 }
 
 $swap = $text.Substring($text.IndexOf('- stage: SwapAndVerify', [StringComparison]::Ordinal),

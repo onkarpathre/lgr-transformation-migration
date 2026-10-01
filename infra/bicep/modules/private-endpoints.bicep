@@ -38,7 +38,9 @@ resource endpoints 'Microsoft.Network/privateEndpoints@2024-05-01' = [for target
   location: location
   tags: tags
   properties: {
-    subnet: { id: privateEndpointSubnetId }
+    subnet: {
+      id: privateEndpointSubnetId
+    }
     privateLinkServiceConnections: [
       {
         name: '${target.name}-connection'
@@ -61,7 +63,9 @@ resource zoneGroups 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@202
     privateDnsZoneConfigs: [
       {
         name: 'zone'
-        properties: { privateDnsZoneId: target.zoneId }
+        properties: {
+          privateDnsZoneId: target.zoneId
+        }
       }
     ]
   }
@@ -73,7 +77,9 @@ resource sqlZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2
     privateDnsZoneConfigs: [
       {
         name: 'zone'
-        properties: { privateDnsZoneId: privateDnsZoneIds.sql }
+        properties: {
+          privateDnsZoneId: privateDnsZoneIds.sql
+        }
       }
     ]
   }

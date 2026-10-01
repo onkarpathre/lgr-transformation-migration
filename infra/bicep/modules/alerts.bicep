@@ -266,7 +266,11 @@ resource webHttpFailures 'Microsoft.Insights/metricAlerts@2018-03-01' = {
         }
       ]
     }
-    actions: [{ actionGroupId: actionGroupId }]
+    actions: [
+      {
+        actionGroupId: actionGroupId
+      }
+    ]
   }
 }
 
@@ -295,7 +299,11 @@ resource apiHttpFailures 'Microsoft.Insights/metricAlerts@2018-03-01' = {
         }
       ]
     }
-    actions: [{ actionGroupId: actionGroupId }]
+    actions: [
+      {
+        actionGroupId: actionGroupId
+      }
+    ]
   }
 }
 
@@ -324,7 +332,11 @@ resource sqlSaturation 'Microsoft.Insights/metricAlerts@2018-03-01' = {
         }
       ]
     }
-    actions: [{ actionGroupId: actionGroupId }]
+    actions: [
+      {
+        actionGroupId: actionGroupId
+      }
+    ]
   }
 }
 
@@ -353,7 +365,11 @@ resource webSlotHealth 'Microsoft.Insights/metricAlerts@2018-03-01' = {
         }
       ]
     }
-    actions: [{ actionGroupId: actionGroupId }]
+    actions: [
+      {
+        actionGroupId: actionGroupId
+      }
+    ]
   }
 }
 
@@ -382,7 +398,11 @@ resource apiSlotHealth 'Microsoft.Insights/metricAlerts@2018-03-01' = {
         }
       ]
     }
-    actions: [{ actionGroupId: actionGroupId }]
+    actions: [
+      {
+        actionGroupId: actionGroupId
+      }
+    ]
   }
 }
 
