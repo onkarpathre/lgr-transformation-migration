@@ -45,10 +45,10 @@ var sql = new SqlConnectionStringBuilder(connectionString);
 var sqlHost = NormalizedSqlHost(sql.DataSource);
 if (!string.Equals(sqlHost, "sql-mtp-dev-uks-001.database.windows.net", StringComparison.OrdinalIgnoreCase)
     || sql.InitialCatalog != Required("--database")
-    || sql.Authentication != SqlAuthenticationMethod.ActiveDirectoryManagedIdentity
+    || sql.Authentication != SqlAuthenticationMethod.ActiveDirectoryWorkloadIdentity
     || !sql.Encrypt || sql.TrustServerCertificate || !string.IsNullOrEmpty(sql.Password)
-    || !Guid.TryParse(sql.UserID, out var managedIdentityClientId) || managedIdentityClientId == Guid.Empty)
-    throw new InvalidOperationException("The seed tool requires the exact passwordless Azure SQL demo database.");
+    || !string.Equals(sql.UserID, "f77b1931-0954-4ae9-8f6b-de5f9cfdb2e7", StringComparison.OrdinalIgnoreCase))
+    throw new InvalidOperationException("The seed tool requires the exact passwordless workload-identity-authenticated SQL demo database.");
 
 var context = new SyntheticContext();
 var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(connectionString).Options;

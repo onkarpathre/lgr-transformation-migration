@@ -37,6 +37,12 @@ $requiredParameterAssignments = @{
     AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID = "param migrationPrincipalObjectId = readEnvironmentVariable('AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID')"
     AZDEMO_ALERT_EMAIL = "param alertEmailAddress = readEnvironmentVariable('AZDEMO_ALERT_EMAIL')"
 }
+$approvedMigrationVariables = [ordered]@{
+    AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID = 'f77b1931-0954-4ae9-8f6b-de5f9cfdb2e7'
+    AZDEMO_MIGRATION_PRINCIPAL_NAME = 'id-mtp-migration-dev-uks-001'
+    AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID = '9b984b84-7ebe-45ca-9441-7b2f41fd8f6c'
+    AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION = 'sc-mtp-azure-demo-migration-dev'
+}
 
 $expectedStages = @(
     'Validate',
@@ -77,6 +83,7 @@ $requiredFragments = @(
     'environment: mtp-azure-demo-dev',
     'pool: { name: mdp-mtp-dev-uks-001 }',
     'azureSubscription: sc-mtp-azure-demo-dev',
+    'azureSubscription: sc-mtp-azure-demo-migration-dev',
     'deployToSlotOrASE: true',
     'slotName: staging',
     'ManualValidation@0',
@@ -85,6 +92,11 @@ $requiredFragments = @(
     'Invoke-AzureDemoSmokeTests.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
+    'Assert-AzureDemoMigrationIdentity.ps1',
+    'Assert-AzureDemoSqlBootstrapEvidence.ps1',
+    'Test-AzureDemoSqlBootstrapEvidence.ps1',
+    'id-mtp-migration-dev-uks-001',
+    'Authentication=Active Directory Workload Identity',
     'Test-AzureDemoSboms.ps1',
     "New-AzureDemoSboms.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom'",
     'publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom',
@@ -151,8 +163,18 @@ foreach ($step in $parameterConsumerSteps) {
 foreach ($name in $requiredParameterVariables) {
     $namedVariablePattern = "(?ms)^\s*-\s+name:\s*$([regex]::Escape($name))\s*\r?`n\s+value:"
     $hardCodedEnvironmentPattern = "(?m)^\s+$([regex]::Escape($name)):\s+(?!\$\($([regex]::Escape($name))\)\s*$).+$"
-    if ($text -match $namedVariablePattern -or $text -match $hardCodedEnvironmentPattern) {
+    $approvedLockedObjectId = $name -eq 'AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID' -and
+        $text -match "(?ms)^\s*-\s+name:\s+AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID\s*\r?`n\s+value:\s+9b984b84-7ebe-45ca-9441-7b2f41fd8f6c\s*\r?`n\s+readonly:\s+true\s*$"
+    if ((($text -match $namedVariablePattern) -and -not $approvedLockedObjectId) -or $text -match $hardCodedEnvironmentPattern) {
         throw "Azure Pipelines YAML must source $name from the variable group without a hard-coded override."
+    }
+}
+
+foreach ($name in $approvedMigrationVariables.Keys) {
+    $expectedValue = $approvedMigrationVariables[$name]
+    $lockedVariablePattern = "(?ms)^\s*-\s+name:\s+$([regex]::Escape($name))\s*\r?`n\s+value:\s+$([regex]::Escape($expectedValue))\s*\r?`n\s+readonly:\s+true\s*$"
+    if ($text -notmatch $lockedVariablePattern) {
+        throw "Azure Pipelines YAML must retain exact read-only migration variable $name."
     }
 }
 
@@ -250,6 +272,52 @@ $deployParameter = [regex]::Match($text, '(?ms)- name: deployAzureDemo\s+type: b
 $rollbackParameter = [regex]::Match($text, '(?ms)- name: rollbackAzureDemo\s+type: boolean\s+default: false')
 if (-not $deployParameter.Success -or -not $rollbackParameter.Success) {
     throw 'Azure deployment and rollback parameters must both default to false.'
+}
+
+$migrationStep = Get-YamlStepBlock $lines "lgrtm-efbundle-linux-x64' --connection"
+$seedStep = Get-YamlStepBlock $lines 'Invoke-AzureDemoSeed\.ps1 -Environment AzureDemo'
+foreach ($step in @($migrationStep, $seedStep)) {
+    if ($step -notmatch '^\s*- task: AzureCLI@2' -or
+        $step -notmatch '(?m)^\s+azureSubscription:\s+sc-mtp-azure-demo-migration-dev\s*$' -or
+        $step -notmatch '(?m)^\s+addSpnToEnvironment:\s+true\s*$' -or
+        -not $step.Contains('Assert-AzureDemoMigrationIdentity.ps1') -or
+        -not $step.Contains('az account get-access-token --resource https://database.windows.net/') -or
+        -not $step.Contains('az account show --query tenantId') -or
+        -not $step.Contains("Join-Path '`$(Agent.TempDirectory)'") -or
+        -not $step.Contains('[IO.File]::WriteAllText($federatedTokenFile, $env:idToken') -or
+        -not $step.Contains('Remove-Item -LiteralPath $federatedTokenFile -Force') -or
+        -not $step.Contains('$env:AZURE_FEDERATED_TOKEN_FILE = $federatedTokenFile') -or
+        $step.Contains('azureSubscription: sc-mtp-azure-demo-dev')) {
+        throw 'Migration and seed must each authenticate and validate inside AzureCLI@2 using only the exact dedicated migration service connection.'
+    }
+    foreach ($name in $approvedMigrationVariables.Keys) {
+        if (-not $step.Contains("${name}: `$(${name})")) {
+            throw "Migration or seed task does not map approved identity variable $name."
+        }
+    }
+    if ($step.IndexOf('chmod 600 $federatedTokenFile', [StringComparison]::Ordinal) -ge
+        $step.IndexOf('[IO.File]::WriteAllText($federatedTokenFile, $env:idToken', [StringComparison]::Ordinal)) {
+        throw 'The task-local federated-token file must be permission-restricted before the assertion is written.'
+    }
+}
+
+if ([regex]::Matches($text, '(?m)^\s+addSpnToEnvironment:\s+true\s*$').Count -ne 2) {
+    throw 'addSpnToEnvironment must be enabled only for the independently authenticated migration and seed tasks.'
+}
+if ($text -match '(?i)\bsqlcmd\b' -or $text.Contains('Configure-AzureDemoDatabasePrincipals.sql -v') -or $text.Contains('AZDEMO_MIGRATION_CONNECTION_STRING')) {
+    throw 'The pipeline must not automate SQL principal bootstrap or use an ambient migration connection string.'
+}
+if (-not $text.Contains("sql-bootstrap.json' -ExpectedSourceCommit '`$(Build.SourceVersion)'")) {
+    throw 'The pipeline must require independently produced, commit-bound SQL bootstrap evidence.'
+}
+if ($text -match '(?im)^\s*(?:Write-(?:Host|Output)|echo)\b[^\r\n]*(?:access.?token|idtoken|authorization)' -or
+    $text -match '(?i)##vso\[task\.setvariable[^\]]*(?:token|credential|secret)') {
+    throw 'The pipeline contains a command that could log or export a token or credential.'
+}
+if ([regex]::Matches($text, '(?i)\[IO\.File\]::WriteAllText\(\$federatedTokenFile, \$env:idToken').Count -ne 2 -or
+    [regex]::Matches($text, '(?m)^\s+Remove-Item Env:idToken -ErrorAction SilentlyContinue').Count -ne 2 -or
+    [regex]::Matches($text, '(?m)^\s+Remove-Item -LiteralPath \$federatedTokenFile -Force').Count -ne 2) {
+    throw 'The federated idToken must be written only to two task-local restricted files and deleted in both tasks.'
 }
 
 if ($text.Contains("New-AzureDemoSboms.ps1 -OutputDirectory '`$(Build.ArtifactStagingDirectory)")) {

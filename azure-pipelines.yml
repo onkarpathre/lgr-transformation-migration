@@ -53,6 +53,18 @@ variables:
   value: sql-mtp-dev-uks-001.database.windows.net
 - name: AZDEMO_SQL_DATABASE_NAME
   value: sqldb-mtp-dev-uks-001
+- name: AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID
+  value: f77b1931-0954-4ae9-8f6b-de5f9cfdb2e7
+  readonly: true
+- name: AZDEMO_MIGRATION_PRINCIPAL_NAME
+  value: id-mtp-migration-dev-uks-001
+  readonly: true
+- name: AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID
+  value: 9b984b84-7ebe-45ca-9441-7b2f41fd8f6c
+  readonly: true
+- name: AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION
+  value: sc-mtp-azure-demo-migration-dev
+  readonly: true
 
 stages:
 - stage: Validate
@@ -109,6 +121,10 @@ stages:
       displayName: Fail-closed Azure demo rollback guard tests
     - pwsh: ./scripts/build/Test-AzureDemoMigrationTarget.ps1
       displayName: Fail-closed Azure demo migration target guard tests
+    - pwsh: ./scripts/build/Test-AzureDemoMigrationIdentity.ps1
+      displayName: Valid and invalid migration workload-identity guard tests
+    - pwsh: ./scripts/build/Test-AzureDemoSqlBootstrapEvidence.ps1
+      displayName: Valid and invalid independent SQL bootstrap evidence tests
     - pwsh: ./scripts/build/Test-AzureDemoSboms.ps1
       displayName: Cross-platform locked dependency SBOM regression
     - pwsh: ./scripts/build/New-AzureDemoSboms.ps1 -OutputDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom'
@@ -304,10 +320,8 @@ stages:
               AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID: $(AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID)
               AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
               AZDEMO_ALERT_EMAIL: $(AZDEMO_ALERT_EMAIL)
-          - pwsh: |
-              sqlcmd -G -S 'tcp:$(AZDEMO_SQL_SERVER_FQDN),1433' -d '$(AZDEMO_SQL_DATABASE_NAME)' -b -i scripts/database/Configure-AzureDemoDatabasePrincipals.sql -v DatabaseName='$(AZDEMO_SQL_DATABASE_NAME)' ApiMainPrincipalName='$(AZDEMO_API_MAIN_PRINCIPAL_NAME)' ApiStagingPrincipalName='$(AZDEMO_API_STAGING_PRINCIPAL_NAME)' MigrationPrincipalName='id-mtp-migration-dev-uks-001' ApiMainPrincipalObjectId='$(AZDEMO_API_MAIN_PRINCIPAL_OBJECT_ID)' ApiStagingPrincipalObjectId='$(AZDEMO_API_STAGING_PRINCIPAL_OBJECT_ID)' MigrationPrincipalObjectId='$(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)'
-              if ($LASTEXITCODE) { throw 'Database workload-identity bootstrap failed.' }
-            displayName: Apply reviewed contained-user least-privilege grants
+          - pwsh: ./scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1 -EvidencePath '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)/sql-bootstrap.json' -ExpectedSourceCommit '$(Build.SourceVersion)' -GrantsScriptPath 'scripts/database/Configure-AzureDemoDatabasePrincipals.sql'
+            displayName: Require independently produced SQL Entra bootstrap evidence
           - task: AzureCLI@2
             displayName: Record pre-migration PITR and schema checkpoint
             inputs:
@@ -317,19 +331,91 @@ stages:
               inlineScript: |
                 $checkpoint = [ordered]@{ capturedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); database = '$(AZDEMO_SQL_DATABASE_NAME)'; state = (az sql db show -g '$(AZDEMO_RESOURCE_GROUP_NAME)' -s '$(AZDEMO_SQL_SERVER_NAME)' -n '$(AZDEMO_SQL_DATABASE_NAME)' --query '{status:status,earliestRestoreDate:earliestRestoreDate,resourceId:id}' -o json | ConvertFrom-Json) }
                 $checkpoint | ConvertTo-Json -Depth 5 | Set-Content '$(Pipeline.Workspace)/pre-migration-checkpoint.json'
-          - pwsh: |
-              $manifest = Get-Content '$(Pipeline.Workspace)/azure-demo-immutable/migration/migration-manifest.json' -Raw | ConvertFrom-Json
-              if ($manifest.startupMigration -ne $false) { throw 'Migration manifest permits startup migration.' }
-              ./scripts/database/Assert-AzureDemoMigrationTarget.ps1
-              & '$(Pipeline.Workspace)/azure-demo-immutable/migration/lgrtm-efbundle-linux-x64' --connection '$(AZDEMO_MIGRATION_CONNECTION_STRING)'
-              if ($LASTEXITCODE) { throw 'Reviewed EF bundle failed.' }
-            displayName: Execute reviewed EF bundle with migration workload identity
+          - task: AzureCLI@2
+            displayName: Execute reviewed EF bundle with dedicated migration workload identity
+            inputs:
+              azureSubscription: sc-mtp-azure-demo-migration-dev
+              addSpnToEnvironment: true
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $sqlAccessToken = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv --only-show-errors
+                if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($sqlAccessToken)) { throw 'Dedicated migration identity could not acquire an Azure SQL access token.' }
+                $accountTenantId = az account show --query tenantId -o tsv --only-show-errors
+                if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($accountTenantId)) { throw 'Dedicated migration identity tenant could not be established.' }
+                if (-not [string]::Equals($env:tenantId, $accountTenantId, [StringComparison]::OrdinalIgnoreCase)) { throw 'Federated and authenticated Azure tenants differ.' }
+                if ([string]::IsNullOrWhiteSpace($env:idToken)) { throw 'Azure DevOps did not supply the federated assertion to the dedicated migration task.' }
+                $federatedTokenFile = Join-Path '$(Agent.TempDirectory)' ("azdemo-migration-{0}.jwt" -f [Guid]::NewGuid().ToString('N'))
+                try {
+                  ./scripts/database/Assert-AzureDemoMigrationIdentity.ps1 -AuthenticatedClientId $env:servicePrincipalId -AuthenticatedObjectId '$(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)' -AuthenticatedTenantId $accountTenantId -AccessToken $sqlAccessToken -ExpectedTenantId '$(AZDEMO_ENTRA_TENANT_ID)' -ServiceConnectionName '$(AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION)' -SourceBranch '$(Build.SourceBranch)' -ReleaseCommit '$(Build.SourceVersion)' -MigrationManifestPath '$(Pipeline.Workspace)/azure-demo-immutable/migration/migration-manifest.json' -SqlServerFqdn '$(AZDEMO_SQL_SERVER_FQDN)' -DatabaseName '$(AZDEMO_SQL_DATABASE_NAME)' -ResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)'
+                  New-Item -ItemType File -Path $federatedTokenFile -ErrorAction Stop | Out-Null
+                  chmod 600 $federatedTokenFile
+                  if ($LASTEXITCODE) { throw 'Could not restrict the federated-token file permissions.' }
+                  [IO.File]::WriteAllText($federatedTokenFile, $env:idToken, [Text.UTF8Encoding]::new($false))
+                  Remove-Item Env:idToken -ErrorAction SilentlyContinue
+                  $env:AZURE_CLIENT_ID = $env:servicePrincipalId
+                  $env:AZURE_TENANT_ID = $env:tenantId
+                  $env:AZURE_FEDERATED_TOKEN_FILE = $federatedTokenFile
+                  $env:LGR_AZURE_DEMO_SQL_CONNECTION_STRING = 'Server=tcp:$(AZDEMO_SQL_SERVER_FQDN),1433;Database=$(AZDEMO_SQL_DATABASE_NAME);Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Workload Identity;User Id=$(AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID)'
+                  ./scripts/database/Assert-AzureDemoMigrationTarget.ps1
+                  & '$(Pipeline.Workspace)/azure-demo-immutable/migration/lgrtm-efbundle-linux-x64' --connection $env:LGR_AZURE_DEMO_SQL_CONNECTION_STRING
+                  if ($LASTEXITCODE) { throw 'Reviewed EF bundle failed.' }
+                }
+                finally {
+                  Remove-Variable sqlAccessToken -ErrorAction SilentlyContinue
+                  Remove-Item -LiteralPath $federatedTokenFile -Force -ErrorAction SilentlyContinue
+                  Remove-Item Env:AZURE_CLIENT_ID -ErrorAction SilentlyContinue
+                  Remove-Item Env:AZURE_TENANT_ID -ErrorAction SilentlyContinue
+                  Remove-Item Env:AZURE_FEDERATED_TOKEN_FILE -ErrorAction SilentlyContinue
+                  Remove-Item Env:LGR_AZURE_DEMO_SQL_CONNECTION_STRING -ErrorAction SilentlyContinue
+                }
             env:
-              LGR_AZURE_DEMO_SQL_CONNECTION_STRING: $(AZDEMO_MIGRATION_CONNECTION_STRING)
-          - pwsh: ./scripts/data/Invoke-AzureDemoSeed.ps1 -Environment AzureDemo -DatabaseName '$(AZDEMO_SQL_DATABASE_NAME)' -ResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)'
-            displayName: Reconcile approved synthetic seed
+              AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID)
+              AZDEMO_MIGRATION_PRINCIPAL_NAME: $(AZDEMO_MIGRATION_PRINCIPAL_NAME)
+              AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
+              AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION: $(AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION)
+          - task: AzureCLI@2
+            displayName: Reconcile approved synthetic seed with dedicated migration workload identity
+            inputs:
+              azureSubscription: sc-mtp-azure-demo-migration-dev
+              addSpnToEnvironment: true
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $sqlAccessToken = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv --only-show-errors
+                if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($sqlAccessToken)) { throw 'Dedicated migration identity could not acquire an Azure SQL access token for seed reconciliation.' }
+                $accountTenantId = az account show --query tenantId -o tsv --only-show-errors
+                if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($accountTenantId)) { throw 'Dedicated migration identity tenant could not be established for seed reconciliation.' }
+                if (-not [string]::Equals($env:tenantId, $accountTenantId, [StringComparison]::OrdinalIgnoreCase)) { throw 'Federated and authenticated Azure tenants differ for seed reconciliation.' }
+                if ([string]::IsNullOrWhiteSpace($env:idToken)) { throw 'Azure DevOps did not supply the federated assertion to the dedicated seed task.' }
+                $federatedTokenFile = Join-Path '$(Agent.TempDirectory)' ("azdemo-seed-{0}.jwt" -f [Guid]::NewGuid().ToString('N'))
+                try {
+                  ./scripts/database/Assert-AzureDemoMigrationIdentity.ps1 -AuthenticatedClientId $env:servicePrincipalId -AuthenticatedObjectId '$(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)' -AuthenticatedTenantId $accountTenantId -AccessToken $sqlAccessToken -ExpectedTenantId '$(AZDEMO_ENTRA_TENANT_ID)' -ServiceConnectionName '$(AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION)' -SourceBranch '$(Build.SourceBranch)' -ReleaseCommit '$(Build.SourceVersion)' -MigrationManifestPath '$(Pipeline.Workspace)/azure-demo-immutable/migration/migration-manifest.json' -SqlServerFqdn '$(AZDEMO_SQL_SERVER_FQDN)' -DatabaseName '$(AZDEMO_SQL_DATABASE_NAME)' -ResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)'
+                  New-Item -ItemType File -Path $federatedTokenFile -ErrorAction Stop | Out-Null
+                  chmod 600 $federatedTokenFile
+                  if ($LASTEXITCODE) { throw 'Could not restrict the seed federated-token file permissions.' }
+                  [IO.File]::WriteAllText($federatedTokenFile, $env:idToken, [Text.UTF8Encoding]::new($false))
+                  Remove-Item Env:idToken -ErrorAction SilentlyContinue
+                  $env:AZURE_CLIENT_ID = $env:servicePrincipalId
+                  $env:AZURE_TENANT_ID = $env:tenantId
+                  $env:AZURE_FEDERATED_TOKEN_FILE = $federatedTokenFile
+                  $env:LGR_AZURE_DEMO_SQL_CONNECTION_STRING = 'Server=tcp:$(AZDEMO_SQL_SERVER_FQDN),1433;Database=$(AZDEMO_SQL_DATABASE_NAME);Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Workload Identity;User Id=$(AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID)'
+                  ./scripts/database/Assert-AzureDemoMigrationTarget.ps1
+                  ./scripts/data/Invoke-AzureDemoSeed.ps1 -Environment AzureDemo -DatabaseName '$(AZDEMO_SQL_DATABASE_NAME)' -ResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)'
+                }
+                finally {
+                  Remove-Variable sqlAccessToken -ErrorAction SilentlyContinue
+                  Remove-Item -LiteralPath $federatedTokenFile -Force -ErrorAction SilentlyContinue
+                  Remove-Item Env:AZURE_CLIENT_ID -ErrorAction SilentlyContinue
+                  Remove-Item Env:AZURE_TENANT_ID -ErrorAction SilentlyContinue
+                  Remove-Item Env:AZURE_FEDERATED_TOKEN_FILE -ErrorAction SilentlyContinue
+                  Remove-Item Env:LGR_AZURE_DEMO_SQL_CONNECTION_STRING -ErrorAction SilentlyContinue
+                }
             env:
-              LGR_AZURE_DEMO_SQL_CONNECTION_STRING: $(AZDEMO_MIGRATION_CONNECTION_STRING)
+              AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID)
+              AZDEMO_MIGRATION_PRINCIPAL_NAME: $(AZDEMO_MIGRATION_PRINCIPAL_NAME)
+              AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
+              AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION: $(AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION)
           - task: AzureWebApp@1
             displayName: Deploy API ZIP to staging only
             inputs: { azureSubscription: sc-mtp-azure-demo-dev, appType: webAppLinux, appName: $(AZDEMO_API_APP_NAME), resourceGroupName: $(AZDEMO_RESOURCE_GROUP_NAME), deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/api.zip', deploymentMethod: zipDeploy }

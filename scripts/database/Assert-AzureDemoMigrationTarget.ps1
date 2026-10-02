@@ -41,17 +41,15 @@ $encrypt = Get-ConnectionValue @('Encrypt')
 $trustServerCertificate = Get-ConnectionValue @('TrustServerCertificate')
 $userId = Get-ConnectionValue @('User ID', 'UID')
 $password = Get-ConnectionValue @('Password', 'PWD')
-$parsedUserId = [Guid]::Empty
 
 if (-not [string]::Equals($server, 'sql-mtp-dev-uks-001.database.windows.net', [StringComparison]::OrdinalIgnoreCase) -or
     -not [string]::Equals($database, 'sqldb-mtp-dev-uks-001', [StringComparison]::Ordinal) -or
-    -not [string]::Equals($authentication, 'Active Directory Managed Identity', [StringComparison]::OrdinalIgnoreCase) -or
+    -not [string]::Equals($authentication, 'Active Directory Workload Identity', [StringComparison]::OrdinalIgnoreCase) -or
     -not [string]::Equals($encrypt, 'True', [StringComparison]::OrdinalIgnoreCase) -or
     -not [string]::Equals($trustServerCertificate, 'False', [StringComparison]::OrdinalIgnoreCase) -or
-    -not [Guid]::TryParse($userId, [ref] $parsedUserId) -or
-    $parsedUserId -eq [Guid]::Empty -or
+    -not [string]::Equals($userId, 'f77b1931-0954-4ae9-8f6b-de5f9cfdb2e7', [StringComparison]::OrdinalIgnoreCase) -or
     -not [string]::IsNullOrEmpty($password)) {
-    throw 'Migration target guard rejected a connection that was not the exact passwordless MTP Azure SQL database.'
+    throw 'Migration target guard rejected a connection that was not the exact passwordless workload-identity-authenticated MTP Azure SQL database.'
 }
 
 Write-Output 'Migration target guard accepted the exact approved MTP Azure SQL database.'
