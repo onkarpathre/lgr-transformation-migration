@@ -5,11 +5,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$output = [IO.Path]::GetFullPath($OutputDirectory)
-if (-not $output.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'OutputDirectory must be within the repository workspace.'
-}
+$utilities = Join-Path $PSScriptRoot 'AzureDemoPackageUtilities.ps1'
+. $utilities
+$repo = (Resolve-Path (Join-Path (Join-Path $PSScriptRoot '..') '..')).ProviderPath
+$output = Assert-AzureDemoRepositoryOutputPath -RepositoryPath $repo -OutputPath $OutputDirectory
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 $apiLock = Join-Path $repo 'src/api/packages.lock.json'
 $lockBackup = [IO.Path]::GetTempFileName()

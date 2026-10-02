@@ -101,6 +101,11 @@ $requiredFragments = @(
     "New-AzureDemoSboms.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom'",
     'publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom',
     'artifact: dependency-sboms',
+    "New-AzureDemoPackages.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'",
+    "New-EfMigrationArtifacts.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/migration'",
+    "Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'",
+    "Test-AzureDemoPackageGeneration.ps1 -PackageDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'",
+    'publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages',
     'az webapp deployment slot swap'
 )
 foreach ($fragment in $requiredFragments) {
@@ -322,6 +327,25 @@ if ([regex]::Matches($text, '(?i)\[IO\.File\]::WriteAllText\(\$federatedTokenFil
 
 if ($text.Contains("New-AzureDemoSboms.ps1 -OutputDirectory '`$(Build.ArtifactStagingDirectory)")) {
     throw 'SBOM generation must not use the artifact staging directory outside the repository workspace.'
+}
+
+$packageStageStart = $text.IndexOf('- stage: Package', [StringComparison]::Ordinal)
+$packageStageEnd = $text.IndexOf('- stage: PreDeploymentGate', [StringComparison]::Ordinal)
+if ($packageStageStart -lt 0 -or $packageStageEnd -le $packageStageStart) {
+    throw 'The Package stage boundaries could not be identified.'
+}
+$packageStage = $text.Substring($packageStageStart, $packageStageEnd - $packageStageStart)
+$packageRoot = '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'
+if ($packageStage.Contains('$(Build.ArtifactStagingDirectory)')) {
+    throw 'Package generation and publication must not use Build.ArtifactStagingDirectory outside the repository workspace.'
+}
+if ([regex]::Matches($packageStage, "(?m)^\s*- publish: $([regex]::Escape($packageRoot))\s*$").Count -ne 1) {
+    throw 'The immutable package must be published exactly once from the repository-contained package directory.'
+}
+foreach ($relativePath in @('application', 'migration')) {
+    if (-not $packageStage.Contains("$packageRoot/$relativePath")) {
+        throw "Package generation is missing repository-contained $relativePath output."
+    }
 }
 
 $swap = $text.Substring($text.IndexOf('- stage: SwapAndVerify', [StringComparison]::Ordinal),

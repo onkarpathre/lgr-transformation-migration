@@ -6,11 +6,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$output = [IO.Path]::GetFullPath($OutputDirectory)
-if (-not $output.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'OutputDirectory must be within the repository workspace.'
-}
+$utilities = Join-Path $PSScriptRoot 'AzureDemoPackageUtilities.ps1'
+. $utilities
+$repo = (Resolve-Path (Join-Path (Join-Path $PSScriptRoot '..') '..')).ProviderPath
+$output = Assert-AzureDemoRepositoryOutputPath -RepositoryPath $repo -OutputPath $OutputDirectory
+$npmCommand = if ([IO.Path]::DirectorySeparatorChar -eq '\') { 'npm.cmd' } else { 'npm' }
 
 $nodeMajor = [int]((node --version).TrimStart('v').Split('.')[0])
 if ($nodeMajor -ne 24) { throw 'Azure demo web packaging requires Node.js 24.' }
@@ -28,7 +28,7 @@ try {
         dotnet restore LgrTransformationMigration.sln --locked-mode
         if ($LASTEXITCODE) { throw 'Locked .NET restore failed.' }
         Push-Location 'src/web'
-        try { npm.cmd ci --ignore-scripts; if ($LASTEXITCODE) { throw 'npm ci failed.' } }
+        try { & $npmCommand ci --ignore-scripts; if ($LASTEXITCODE) { throw 'npm ci failed.' } }
         finally { Pop-Location }
     }
     if (-not $SkipTests) {
@@ -36,8 +36,8 @@ try {
         if ($LASTEXITCODE) { throw '.NET tests failed.' }
         Push-Location 'src/web'
         try {
-            npm.cmd run lint; if ($LASTEXITCODE) { throw 'Frontend lint failed.' }
-            npm.cmd run test:component; if ($LASTEXITCODE) { throw 'Frontend tests failed.' }
+            & $npmCommand run lint; if ($LASTEXITCODE) { throw 'Frontend lint failed.' }
+            & $npmCommand run test:component; if ($LASTEXITCODE) { throw 'Frontend tests failed.' }
         } finally { Pop-Location }
     }
 
@@ -59,7 +59,7 @@ try {
     Push-Location 'src/web'
     try {
         $env:NODE_ENV = 'production'
-        npm.cmd run build
+        & $npmCommand run build
         if ($LASTEXITCODE) { throw 'Next.js production build failed.' }
         $webStage = Join-Path $stage 'web'
         Copy-Item -LiteralPath '.next/standalone' -Destination $webStage -Recurse
@@ -107,9 +107,8 @@ try {
 
     $apiZip = Join-Path $output 'api.zip'
     $webZip = Join-Path $output 'web.zip'
-    foreach ($zip in @($apiZip, $webZip)) { if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force } }
-    Compress-Archive -Path (Join-Path $apiStage '*') -DestinationPath $apiZip -CompressionLevel Optimal
-    Compress-Archive -Path (Join-Path $webStage '*') -DestinationPath $webZip -CompressionLevel Optimal
+    New-AzureDemoDeterministicZip -SourceDirectory $apiStage -DestinationPath $apiZip
+    New-AzureDemoDeterministicZip -SourceDirectory $webStage -DestinationPath $webZip
 
     $manifest = [ordered]@{
         schemaVersion = '1'
@@ -123,6 +122,7 @@ try {
         )
     }
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'application-artifact-manifest.json') -Encoding UTF8
+    Remove-Item -LiteralPath $stage -Recurse -Force
 } finally {
     Pop-Location
 }

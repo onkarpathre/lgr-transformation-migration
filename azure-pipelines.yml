@@ -188,26 +188,29 @@ stages:
       inputs: { packageType: sdk, version: 10.0.x }
     - task: NodeTool@0
       inputs: { versionSpec: 24.x }
-    - pwsh: ./scripts/build/New-AzureDemoPackages.ps1 -OutputDirectory '$(Build.ArtifactStagingDirectory)/application' -SkipTests
+    - pwsh: ./scripts/build/New-AzureDemoPackages.ps1 -OutputDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application' -SkipTests
       displayName: Create web and API ZIP artifacts
       env:
         NEXT_PUBLIC_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)
         NEXT_PUBLIC_ENTRA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
         NEXT_PUBLIC_API_SCOPE: $(AZDEMO_API_SCOPE)
         NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production management demo
-    - pwsh: ./scripts/build/New-EfMigrationArtifacts.ps1 -OutputDirectory '$(Build.ArtifactStagingDirectory)/migration'
+    - pwsh: ./scripts/build/New-EfMigrationArtifacts.ps1 -OutputDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/migration'
       displayName: Create controlled Linux EF bundle, SQL and manifest
-    - pwsh: ./scripts/build/Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '$(Build.ArtifactStagingDirectory)/application'
+    - pwsh: ./scripts/build/Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'
       displayName: Verify hashes, ZIP roots and prohibited-file absence
+    - pwsh: ./scripts/build/Test-AzureDemoPackageGeneration.ps1 -PackageDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'
+      displayName: Regress package path boundary and deterministic ZIP evidence
     - pwsh: |
-        Copy-Item infra/bicep -Destination '$(Build.ArtifactStagingDirectory)/infrastructure' -Recurse
-        Copy-Item demo-data -Destination '$(Build.ArtifactStagingDirectory)/demo-data' -Recurse
-        Copy-Item scripts/smoke -Destination '$(Build.ArtifactStagingDirectory)/smoke' -Recurse
-        Get-ChildItem '$(Build.ArtifactStagingDirectory)' -Recurse -File | ForEach-Object {
-          [pscustomobject]@{ path = $_.FullName.Substring('$(Build.ArtifactStagingDirectory)'.Length + 1).Replace('\','/'); sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
-        } | ConvertTo-Json | Set-Content '$(Build.ArtifactStagingDirectory)/deployment-artifact-manifest.json'
+        $packageDirectory = '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'
+        Copy-Item infra/bicep -Destination (Join-Path $packageDirectory 'infrastructure') -Recurse
+        Copy-Item demo-data -Destination (Join-Path $packageDirectory 'demo-data') -Recurse
+        Copy-Item scripts/smoke -Destination (Join-Path $packageDirectory 'smoke') -Recurse
+        Get-ChildItem $packageDirectory -Recurse -File | ForEach-Object {
+          [pscustomobject]@{ path = $_.FullName.Substring($packageDirectory.Length + 1).Replace('\','/'); sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+        } | ConvertTo-Json | Set-Content (Join-Path $packageDirectory 'deployment-artifact-manifest.json')
       displayName: Assemble deployment evidence manifest
-    - publish: $(Build.ArtifactStagingDirectory)
+    - publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages
       artifact: azure-demo-immutable
 
 - stage: PreDeploymentGate
