@@ -195,6 +195,8 @@ stages:
         NEXT_PUBLIC_ENTRA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
         NEXT_PUBLIC_API_SCOPE: $(AZDEMO_API_SCOPE)
         NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production management demo
+    - pwsh: ./scripts/build/Test-EfMigrationArtifactParsing.ps1
+      displayName: Regress fail-closed EF migration-list JSON parsing
     - pwsh: ./scripts/build/New-EfMigrationArtifacts.ps1 -OutputDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/migration'
       displayName: Create controlled Linux EF bundle, SQL and manifest
     - pwsh: ./scripts/build/Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'

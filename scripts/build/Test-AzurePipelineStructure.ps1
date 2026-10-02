@@ -7,6 +7,7 @@ $pipelinePath = (Resolve-Path (Join-Path $repo $Path)).Path
 $text = Get-Content -LiteralPath $pipelinePath -Raw
 $lines = Get-Content -LiteralPath $pipelinePath
 $parameterEnvironmentScript = Join-Path $repo 'scripts\build\Test-AzureDemoParameterEnvironment.ps1'
+$efArtifactScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-EfMigrationArtifacts.ps1') -Raw
 
 if ($text.Contains("`t")) { throw 'Azure Pipelines YAML contains tab indentation.' }
 if ($lines | Where-Object { $_ -match '\s+$' }) { throw 'Azure Pipelines YAML contains trailing whitespace.' }
@@ -102,6 +103,7 @@ $requiredFragments = @(
     'publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom',
     'artifact: dependency-sboms',
     "New-AzureDemoPackages.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'",
+    'Test-EfMigrationArtifactParsing.ps1',
     "New-EfMigrationArtifacts.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/migration'",
     "Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'",
     "Test-AzureDemoPackageGeneration.ps1 -PackageDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'",
@@ -338,6 +340,23 @@ $packageStage = $text.Substring($packageStageStart, $packageStageEnd - $packageS
 $packageRoot = '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'
 if ($packageStage.Contains('$(Build.ArtifactStagingDirectory)')) {
     throw 'Package generation and publication must not use Build.ArtifactStagingDirectory outside the repository workspace.'
+}
+if ($packageStage.IndexOf('Test-EfMigrationArtifactParsing.ps1', [StringComparison]::Ordinal) -gt
+    $packageStage.IndexOf('publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages', [StringComparison]::Ordinal)) {
+    throw 'The EF migration-list parsing regression must run before artifact publication.'
+}
+foreach ($fragment in @(
+        '$project = ''src/api/LgrTransformationMigration.Api.csproj''',
+        '$startupProject = ''src/api/LgrTransformationMigration.Api.csproj''',
+        '$dbContext = ''LgrTransformationMigration.Api.Infrastructure.AppDbContext''',
+        'dotnet build $project --configuration Release --no-restore',
+        'ConvertFrom-EfMigrationListNativeResult')) {
+    if (-not $efArtifactScript.Contains($fragment)) {
+        throw "The EF migration artifact generator is missing its fail-closed contract fragment: $fragment"
+    }
+}
+if ($efArtifactScript -notmatch "(?s)'migrations', 'list'.{0,500}'--no-build'.{0,200}'--no-connect'.{0,200}'--json'") {
+    throw 'EF migration enumeration must use --no-build, --no-connect and --json after its explicit build.'
 }
 if ([regex]::Matches($packageStage, "(?m)^\s*- publish: $([regex]::Escape($packageRoot))\s*$").Count -ne 1) {
     throw 'The immutable package must be published exactly once from the repository-contained package directory.'
