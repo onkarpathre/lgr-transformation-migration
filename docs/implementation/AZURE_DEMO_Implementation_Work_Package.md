@@ -31,9 +31,10 @@ traceability:
 - **Final monitoring evidence:** `3a017ccc44e3603c23d54d4c27469cacf0cda1d2`.
 - **Evidence-status correction:** `c69508ca66c05ddcf8bb09d384cdb49051be30ba`.
 - **Migration workload-identity repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `7f8f8b5978420e21adefdf0051d9726bc7c7b031`, initially clean on 2026-10-02.
-- **Final repair scope:** commit `1ae167d` resolves the final Tester monitoring defect `AZD-TST-001`; `AZD-TST-003` is limited to stable reconciliation wording in this evidence document and does not change the technical implementation or results.
+- **SQLCMD variable-precedence repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `523ff0a365018652d26db4ea80681bd321c53455`, initially clean on 2026-10-02.
+- **Previous repair scope:** commit `1ae167d` resolves the final Tester monitoring defect `AZD-TST-001`; `AZD-TST-003` is limited to stable reconciliation wording in this evidence document and does not change that earlier technical implementation or its results.
 - **Data/environment boundary:** local and isolated validation using synthetic data only.
-- **Developer state:** `READY_FOR_MIGRATION_IDENTITY_RETEST`.
+- **Developer state:** `READY_FOR_SQLCMD_VARIABLE_RETEST`.
 
 ```yaml
 candidate_reconciliation:
@@ -59,7 +60,28 @@ The four exact-package decisions authorise controlled implementation and local o
 
 ### Mandatory external SQL bootstrap prerequisite
 
-The pipeline no longer executes `Configure-AzureDemoDatabasePrincipals.sql`. The migration identity cannot create its own contained user before it has database access. Before deployment, an independently approved Entra SQL administrator/bootstrap identity must execute the unchanged reviewed script and publish protected `sql-bootstrap.json` evidence. The evidence must be bound to the exact release commit, SQL server/database, migration identity name/client/object IDs, executing administrator object ID, named approval reference, UTC timestamp and SHA-256 of `Configure-AzureDemoDatabasePrincipals.sql`. Missing, stale, substituted or hash-mismatched evidence fails before migration. This remains an external DBA/human pre-deployment action; it is not claimed as automated.
+The pipeline does not execute `Configure-AzureDemoDatabasePrincipals.sql`. The migration identity cannot create its own contained user before it has database access. Before deployment, an independently approved Entra SQL administrator/bootstrap identity must execute the exact reviewed script and publish protected `sql-bootstrap.json` evidence. The evidence must be bound to the exact release commit, SQL server/database, migration identity name/client/object IDs, executing administrator object ID, named approval reference, UTC timestamp and SHA-256 of `Configure-AzureDemoDatabasePrincipals.sql`. Missing, stale, substituted or hash-mismatched evidence fails before migration. This remains an external DBA/human pre-deployment action; it is not claimed as automated.
+
+### SQLCMD variable-precedence repair
+
+The seven internal `:setvar <name> "REQUIRED"` assignments were removed because SQLCMD gives script-level assignments precedence over values supplied with `-v`. Each of the seven externally supplied variables is now bound exactly once at the start of the SQL guard. The guard verifies the connected and supplied database names, exact physical principal names, and three non-empty, non-zero, distinct GUID object IDs before any contained-user or permission statement can execute. The object IDs remain externally supplied; no identity object ID is hard-coded in the grants script. The exact existing MTP names and least-privilege `GRANT`/`DENY` statements are unchanged.
+
+The prior grants-script SHA-256 `9e3dc3c4cb947e35613fef0d29c80d92689f13abf803267ed8dd0023c97c55e3` is superseded by `ce2557aa39f939c634d94c2776d673426b85b807619a4d52e336c2e15620c790`. Existing bootstrap evidence bound to the prior hash is intentionally invalid for the repaired script and must not be reused. `Assert-AzureDemoSqlBootstrapEvidence.ps1` and its regression test calculate the hash from the supplied grants-script path, so no hard-coded hash contract required a code change.
+
+| SQLCMD repair verification | Result |
+|---|---|
+| Exact baseline | PASS: branch `fix/mtp-azure-demo-reconciliation`, HEAD `523ff0a365018652d26db4ea80681bd321c53455`, initially clean. |
+| SQLCMD/guard regression | PASS: all seven supplied values reached the guard unchanged; exact database accepted; wrong connected/supplied databases, missing/unresolved/empty/`REQUIRED` values, wrong principal names, malformed/zero/overlength/duplicate object IDs rejected across 30 negative cases. |
+| Override regression | PASS: zero `:setvar` statements remain; the contract checks every named `:setvar ... REQUIRED` override cannot return and each required SQLCMD token is bound exactly once. |
+| Principal/permission contract | PASS: exact MTP database and three principal names, contained-user statements, API grants/denials and migration grants/denials retained; object IDs remain external. |
+| Bootstrap evidence/hash | PASS: one current-hash evidence record accepted and six stale/substituted records rejected; repaired SHA-256 recorded above. |
+| Pipeline and safety | PASS: seven ordered stages; offline SQLCMD contract executes exactly once; SQL bootstrap remains external; deployment and rollback remain `default: false`. |
+| Diff and PowerShell | PASS: `git diff --check`; 24/24 PowerShell files parse under Windows PowerShell 5.1. |
+| Locked restore and Release build | Initial restore using the incomplete sandbox cache failed with `NU1101`; exact rerun from the complete read-only local cache PASS. The first no-restore build consequently failed, then the post-restore Release build PASS with 0 errors and four `NU1900` warnings because online vulnerability advisory retrieval is unavailable. |
+| Focused and complete .NET tests | PASS: 27/27 focused Azure-demo tests; 350/350 complete tests (205 unit, 145 integration). |
+| SBOM and source/security | PASS: deterministic 107-package NuGet and 522-package npm SBOM regression; source/security boundary scan passed 170 files. |
+
+No Azure, SQL or Azure DevOps service was accessed. Successful dependency restore/build work used only the local package cache; attempted NuGet advisory retrieval was blocked by the restricted environment. Nothing was staged, committed, pushed, deployed, migrated, seeded, provisioned or rolled back. Independent execution against the controlled Azure SQL target remains the requested next action.
 
 ### Migration-identity repair verification
 
@@ -187,7 +209,7 @@ These five paths comprise immutable technical monitoring repair commit `1ae167d7
 
 ### Build, database, data and smoke tooling
 
-- `scripts/build/Assert-AzureDemoRollbackTarget.ps1`; `scripts/build/New-AzureDemoPackages.ps1`; `scripts/build/New-AzureDemoSboms.ps1`; `scripts/build/New-EfMigrationArtifacts.ps1`; `scripts/build/Test-AzureDemoArtifacts.ps1`; `scripts/build/Test-AzureDemoMonitoringAlerts.ps1`; `scripts/build/Test-AzureDemoRollbackSafeguards.ps1`; `scripts/build/Test-AzureDemoSourceBoundaries.ps1`; `scripts/build/Test-AzurePipelineStructure.ps1`.
+- `scripts/build/Assert-AzureDemoRollbackTarget.ps1`; `scripts/build/New-AzureDemoPackages.ps1`; `scripts/build/New-AzureDemoSboms.ps1`; `scripts/build/New-EfMigrationArtifacts.ps1`; `scripts/build/Test-AzureDemoArtifacts.ps1`; `scripts/build/Test-AzureDemoDatabasePrincipalSql.ps1`; `scripts/build/Test-AzureDemoMonitoringAlerts.ps1`; `scripts/build/Test-AzureDemoRollbackSafeguards.ps1`; `scripts/build/Test-AzureDemoSourceBoundaries.ps1`; `scripts/build/Test-AzurePipelineStructure.ps1`.
 - `scripts/data/Invoke-AzureDemoReset.ps1`; `scripts/data/Invoke-AzureDemoSeed.ps1`.
 - `scripts/smoke/Invoke-AzureDemoSmokeTests.ps1`; `scripts/smoke/README.md`; `scripts/smoke/smoke-checks.json`.
 
@@ -284,3 +306,55 @@ handoff:
 ```
 
 READY_FOR_MIGRATION_IDENTITY_RETEST
+
+## SQLCMD variable-precedence repair hand-off
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_SQLCMD_VARIABLE_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_523ff0a365018652d26db4ea80681bd321c53455"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals:
+      - "Four exact-package implementation/local-test approvals at b8800e1eda014eef1421a1af5427aaea41393496."
+  artefacts:
+    - "scripts/database/Configure-AzureDemoDatabasePrincipals.sql"
+    - "scripts/build/Test-AzureDemoDatabasePrincipalSql.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "azure-pipelines.yml"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Seven supplied SQLCMD variables preserved; exact database accepted; 30 invalid cases rejected."
+    - "Zero internal :setvar statements; exact MTP principal and least-privilege contracts retained."
+    - "Grants-script SHA-256 ce2557aa39f939c634d94c2776d673426b85b807619a4d52e336c2e15620c790."
+    - "24/24 PowerShell parses; 27/27 focused Azure-demo tests; 350/350 complete .NET tests."
+    - "Seven-stage pipeline, bootstrap-evidence, SBOM and source/security contracts passed."
+  decisions:
+    - "SQL principal bootstrap remains an external approved DBA action and is not automated by the pipeline."
+    - "Deployment and rollback remain disabled by default."
+  assumptions:
+    - "The independent retest supplies the seven reviewed values through SQLCMD -v and runs against only the approved controlled Azure SQL target."
+  risks:
+    - "Online NuGet vulnerability advisory retrieval was unavailable; the locked local restore and build emitted NU1900 only."
+  defects: []
+  blockers:
+    - "Independent controlled Azure SQL retest and all existing human deployment/release approvals remain required."
+  approvals:
+    - "Azure Platform/Operations remains PENDING_PRE_DEPLOYMENT."
+  requested_action: "Independent Tester must rerun the reviewed grants script with externally supplied SQLCMD values and confirm the controlled database guard before any separately approved deployment activity."
+```
+
+READY_FOR_SQLCMD_VARIABLE_RETEST

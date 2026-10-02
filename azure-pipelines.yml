@@ -125,6 +125,8 @@ stages:
       displayName: Valid and invalid migration workload-identity guard tests
     - pwsh: ./scripts/build/Test-AzureDemoSqlBootstrapEvidence.ps1
       displayName: Valid and invalid independent SQL bootstrap evidence tests
+    - pwsh: ./scripts/build/Test-AzureDemoDatabasePrincipalSql.ps1
+      displayName: SQLCMD variable precedence and principal guard contract
     - pwsh: ./scripts/build/Test-AzureDemoSboms.ps1
       displayName: Cross-platform locked dependency SBOM regression
     - pwsh: ./scripts/build/New-AzureDemoSboms.ps1 -OutputDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/sbom'

@@ -96,6 +96,7 @@ $requiredFragments = @(
     'Assert-AzureDemoMigrationIdentity.ps1',
     'Assert-AzureDemoSqlBootstrapEvidence.ps1',
     'Test-AzureDemoSqlBootstrapEvidence.ps1',
+    'Test-AzureDemoDatabasePrincipalSql.ps1',
     'id-mtp-migration-dev-uks-001',
     'Authentication=Active Directory Workload Identity',
     'Test-AzureDemoSboms.ps1',
@@ -311,8 +312,11 @@ foreach ($step in @($migrationStep, $seedStep)) {
 if ([regex]::Matches($text, '(?m)^\s+addSpnToEnvironment:\s+true\s*$').Count -ne 2) {
     throw 'addSpnToEnvironment must be enabled only for the independently authenticated migration and seed tasks.'
 }
-if ($text -match '(?i)\bsqlcmd\b' -or $text.Contains('Configure-AzureDemoDatabasePrincipals.sql -v') -or $text.Contains('AZDEMO_MIGRATION_CONNECTION_STRING')) {
+if ($text -match '(?im)^\s*(?:[-&]\s*)?sqlcmd(?:\.exe)?(?:\s|$)' -or $text.Contains('Configure-AzureDemoDatabasePrincipals.sql -v') -or $text.Contains('AZDEMO_MIGRATION_CONNECTION_STRING')) {
     throw 'The pipeline must not automate SQL principal bootstrap or use an ambient migration connection string.'
+}
+if ([regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoDatabasePrincipalSql\.ps1\s*$').Count -ne 1) {
+    throw 'The pipeline must run the SQLCMD variable-precedence and database-principal guard contract exactly once.'
 }
 if (-not $text.Contains("sql-bootstrap.json' -ExpectedSourceCommit '`$(Build.SourceVersion)'")) {
     throw 'The pipeline must require independently produced, commit-bound SQL bootstrap evidence.'
