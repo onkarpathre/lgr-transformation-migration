@@ -17,18 +17,18 @@ $requiredVariables = @(
 )
 $expectedNames = [ordered]@{
     DatabaseName = 'sqldb-mtp-dev-uks-001'
-    ApiMainPrincipalName = 'id-mtp-api-dev-uks-001'
-    ApiStagingPrincipalName = 'id-mtp-api-staging-dev-uks-001'
-    MigrationPrincipalName = 'id-mtp-migration-dev-uks-001'
+    ApiMainPrincipalName = 'app-mtp-api-dev-uks-001-c55a4'
+    ApiStagingPrincipalName = 'app-mtp-api-dev-uks-001/slots/staging-dbc2a'
+    MigrationPrincipalName = 'id-mtp-migration-dev-uks-001-9b984'
 }
 $validVariables = [ordered]@{
     DatabaseName = $expectedNames.DatabaseName
     ApiMainPrincipalName = $expectedNames.ApiMainPrincipalName
     ApiStagingPrincipalName = $expectedNames.ApiStagingPrincipalName
     MigrationPrincipalName = $expectedNames.MigrationPrincipalName
-    ApiMainPrincipalObjectId = '11111111-1111-4111-8111-111111111111'
-    ApiStagingPrincipalObjectId = '22222222-2222-4222-8222-222222222222'
-    MigrationPrincipalObjectId = '33333333-3333-4333-8333-333333333333'
+    ApiMainPrincipalObjectId = 'c55a4218-b20f-474b-879a-64ffb528a4ad'
+    ApiStagingPrincipalObjectId = 'dbc2a0d6-d84f-4813-914f-4cd2ab63ae3e'
+    MigrationPrincipalObjectId = '9b984b84-7ebe-45ca-9441-7b2f41fd8f6c'
 }
 
 function Expand-SqlCmdVariables([string] $Text, [Collections.IDictionary] $Variables) {
@@ -104,7 +104,7 @@ foreach ($name in $requiredVariables) {
 foreach ($name in @('ApiMainPrincipalName', 'ApiStagingPrincipalName', 'MigrationPrincipalName')) {
     $wrongName = Copy-Variables $validVariables; $wrongName[$name] = "wrong-$name"; $invalidCases.Add([pscustomobject]@{ Name = "wrong $name"; Variables = $wrongName })
 }
-foreach ($invalidObjectId in @('not-a-guid', '00000000-0000-0000-0000-000000000000', '11111111-1111-4111-8111-111111111111-extra')) {
+foreach ($invalidObjectId in @('not-a-guid', '00000000-0000-0000-0000-000000000000', 'c55a4218-b20f-474b-879a-64ffb528a4ad-extra')) {
     $invalidId = Copy-Variables $validVariables; $invalidId.ApiMainPrincipalObjectId = $invalidObjectId; $invalidCases.Add([pscustomobject]@{ Name = "invalid object ID $invalidObjectId"; Variables = $invalidId })
 }
 $duplicateIds = Copy-Variables $validVariables; $duplicateIds.ApiStagingPrincipalObjectId = $duplicateIds.ApiMainPrincipalObjectId; $invalidCases.Add([pscustomobject]@{ Name = 'duplicate object IDs'; Variables = $duplicateIds })
@@ -121,12 +121,12 @@ $requiredSqlFragments = @(
     "IF DB_NAME() <> N'sqldb-mtp-dev-uks-001'",
     "DATALENGTH(@DatabaseName) <> DATALENGTH(N'sqldb-mtp-dev-uks-001')",
     "@DatabaseName COLLATE Latin1_General_100_BIN2 <> N'sqldb-mtp-dev-uks-001' COLLATE Latin1_General_100_BIN2",
-    "DATALENGTH(@ApiMainPrincipalName) <> DATALENGTH(N'id-mtp-api-dev-uks-001')",
-    "@ApiMainPrincipalName COLLATE Latin1_General_100_BIN2 <> N'id-mtp-api-dev-uks-001' COLLATE Latin1_General_100_BIN2",
-    "DATALENGTH(@ApiStagingPrincipalName) <> DATALENGTH(N'id-mtp-api-staging-dev-uks-001')",
-    "@ApiStagingPrincipalName COLLATE Latin1_General_100_BIN2 <> N'id-mtp-api-staging-dev-uks-001' COLLATE Latin1_General_100_BIN2",
-    "DATALENGTH(@MigrationPrincipalName) <> DATALENGTH(N'id-mtp-migration-dev-uks-001')",
-    "@MigrationPrincipalName COLLATE Latin1_General_100_BIN2 <> N'id-mtp-migration-dev-uks-001' COLLATE Latin1_General_100_BIN2",
+    "DATALENGTH(@ApiMainPrincipalName) <> DATALENGTH(N'app-mtp-api-dev-uks-001-c55a4')",
+    "@ApiMainPrincipalName COLLATE Latin1_General_100_BIN2 <> N'app-mtp-api-dev-uks-001-c55a4' COLLATE Latin1_General_100_BIN2",
+    "DATALENGTH(@ApiStagingPrincipalName) <> DATALENGTH(N'app-mtp-api-dev-uks-001/slots/staging-dbc2a')",
+    "@ApiStagingPrincipalName COLLATE Latin1_General_100_BIN2 <> N'app-mtp-api-dev-uks-001/slots/staging-dbc2a' COLLATE Latin1_General_100_BIN2",
+    "DATALENGTH(@MigrationPrincipalName) <> DATALENGTH(N'id-mtp-migration-dev-uks-001-9b984')",
+    "@MigrationPrincipalName COLLATE Latin1_General_100_BIN2 <> N'id-mtp-migration-dev-uks-001-9b984' COLLATE Latin1_General_100_BIN2",
     'DECLARE @ApiMainPrincipalObjectId uniqueidentifier = TRY_CONVERT(uniqueidentifier, @ApiMainPrincipalObjectIdText);',
     'DECLARE @ApiStagingPrincipalObjectId uniqueidentifier = TRY_CONVERT(uniqueidentifier, @ApiStagingPrincipalObjectIdText);',
     'DECLARE @MigrationPrincipalObjectId uniqueidentifier = TRY_CONVERT(uniqueidentifier, @MigrationPrincipalObjectIdText);',
@@ -149,16 +149,16 @@ $requiredSqlFragments = @(
     'DECLARE @ApiMainPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @ApiMainPrincipalObjectId);',
     'DECLARE @ApiStagingPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @ApiStagingPrincipalObjectId);',
     'DECLARE @MigrationPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @MigrationPrincipalObjectId);',
-    "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'id-mtp-api-dev-uks-001')",
-    "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'id-mtp-api-staging-dev-uks-001')",
-    "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'id-mtp-migration-dev-uks-001')",
-    'GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO [id-mtp-api-dev-uks-001];',
-    'GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO [id-mtp-api-staging-dev-uks-001];',
-    'DENY ALTER, CONTROL ON SCHEMA::dbo TO [id-mtp-api-dev-uks-001];',
-    'DENY ALTER, CONTROL ON SCHEMA::dbo TO [id-mtp-api-staging-dev-uks-001];',
-    'GRANT ALTER, CONTROL, REFERENCES ON SCHEMA::dbo TO [id-mtp-migration-dev-uks-001];',
-    'GRANT CREATE TABLE, CREATE VIEW, CREATE PROCEDURE, CREATE FUNCTION, CREATE TYPE TO [id-mtp-migration-dev-uks-001];',
-    'DENY BACKUP DATABASE, BACKUP LOG TO [id-mtp-migration-dev-uks-001];'
+    "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'app-mtp-api-dev-uks-001-c55a4')",
+    "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'app-mtp-api-dev-uks-001/slots/staging-dbc2a')",
+    "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'id-mtp-migration-dev-uks-001-9b984')",
+    'GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO [app-mtp-api-dev-uks-001-c55a4];',
+    'GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO [app-mtp-api-dev-uks-001/slots/staging-dbc2a];',
+    'DENY ALTER, CONTROL ON SCHEMA::dbo TO [app-mtp-api-dev-uks-001-c55a4];',
+    'DENY ALTER, CONTROL ON SCHEMA::dbo TO [app-mtp-api-dev-uks-001/slots/staging-dbc2a];',
+    'GRANT ALTER, CONTROL, REFERENCES ON SCHEMA::dbo TO [id-mtp-migration-dev-uks-001-9b984];',
+    'GRANT CREATE TABLE, CREATE VIEW, CREATE PROCEDURE, CREATE FUNCTION, CREATE TYPE TO [id-mtp-migration-dev-uks-001-9b984];',
+    'DENY BACKUP DATABASE, BACKUP LOG TO [id-mtp-migration-dev-uks-001-9b984];'
 )
 foreach ($fragment in $requiredSqlFragments) {
     if ([regex]::Matches($sql, [regex]::Escape($fragment)).Count -ne 1) {
@@ -166,9 +166,9 @@ foreach ($fragment in $requiredSqlFragments) {
     }
 }
 $expectedCreateUserStatements = @(
-    "EXEC(N'CREATE USER [id-mtp-api-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @ApiMainPrincipalObjectIdGuidText + N''';');",
-    "EXEC(N'CREATE USER [id-mtp-api-staging-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @ApiStagingPrincipalObjectIdGuidText + N''';');",
-    "EXEC(N'CREATE USER [id-mtp-migration-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @MigrationPrincipalObjectIdGuidText + N''';');"
+    "EXEC(N'CREATE USER [app-mtp-api-dev-uks-001-c55a4] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @ApiMainPrincipalObjectIdGuidText + N''';');",
+    "EXEC(N'CREATE USER [app-mtp-api-dev-uks-001/slots/staging-dbc2a] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @ApiStagingPrincipalObjectIdGuidText + N''';');",
+    "EXEC(N'CREATE USER [id-mtp-migration-dev-uks-001-9b984] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @MigrationPrincipalObjectIdGuidText + N''';');"
 )
 $execStatements = @([regex]::Matches($sql, '(?im)^\s*EXEC\s*\([^\r\n]+\);\s*$') | ForEach-Object { $_.Value.Trim() })
 if ($execStatements.Count -ne $expectedCreateUserStatements.Count) {
