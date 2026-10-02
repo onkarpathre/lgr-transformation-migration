@@ -39,12 +39,16 @@ IF @ApiMainPrincipalObjectId = @ApiStagingPrincipalObjectId
    OR @ApiStagingPrincipalObjectId = @MigrationPrincipalObjectId
     THROW 51003, 'Workload identity object IDs must be distinct.', 1;
 
+DECLARE @ApiMainPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @ApiMainPrincipalObjectId);
+DECLARE @ApiStagingPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @ApiStagingPrincipalObjectId);
+DECLARE @MigrationPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @MigrationPrincipalObjectId);
+
 IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'id-mtp-api-dev-uks-001')
-    EXEC(N'CREATE USER [id-mtp-api-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + CONVERT(nvarchar(36), @ApiMainPrincipalObjectId) + N''';');
+    EXEC(N'CREATE USER [id-mtp-api-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @ApiMainPrincipalObjectIdGuidText + N''';');
 IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'id-mtp-api-staging-dev-uks-001')
-    EXEC(N'CREATE USER [id-mtp-api-staging-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + CONVERT(nvarchar(36), @ApiStagingPrincipalObjectId) + N''';');
+    EXEC(N'CREATE USER [id-mtp-api-staging-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @ApiStagingPrincipalObjectIdGuidText + N''';');
 IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'id-mtp-migration-dev-uks-001')
-    EXEC(N'CREATE USER [id-mtp-migration-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + CONVERT(nvarchar(36), @MigrationPrincipalObjectId) + N''';');
+    EXEC(N'CREATE USER [id-mtp-migration-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @MigrationPrincipalObjectIdGuidText + N''';');
 
 GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO [id-mtp-api-dev-uks-001];
 GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO [id-mtp-api-staging-dev-uks-001];

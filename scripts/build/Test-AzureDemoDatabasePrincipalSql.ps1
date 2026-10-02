@@ -136,6 +136,9 @@ $requiredSqlFragments = @(
     '@ApiMainPrincipalObjectId IS NULL',
     '@ApiStagingPrincipalObjectId IS NULL',
     '@MigrationPrincipalObjectId IS NULL',
+    '@ApiMainPrincipalObjectId = CAST(0x00000000000000000000000000000000 AS uniqueidentifier)',
+    '@ApiStagingPrincipalObjectId = CAST(0x00000000000000000000000000000000 AS uniqueidentifier)',
+    '@MigrationPrincipalObjectId = CAST(0x00000000000000000000000000000000 AS uniqueidentifier)',
     '@ApiMainPrincipalObjectId = @ApiStagingPrincipalObjectId',
     '@ApiMainPrincipalObjectId = @MigrationPrincipalObjectId',
     '@ApiStagingPrincipalObjectId = @MigrationPrincipalObjectId',
@@ -143,6 +146,12 @@ $requiredSqlFragments = @(
     "THROW 51001, 'AzureDemo principal bootstrap refuses unexpected physical principal names.', 1;",
     "THROW 51002, 'All workload identity object IDs must be non-empty, non-zero GUIDs.', 1;",
     "THROW 51003, 'Workload identity object IDs must be distinct.', 1;",
+    'DECLARE @ApiMainPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @ApiMainPrincipalObjectId);',
+    'DECLARE @ApiStagingPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @ApiStagingPrincipalObjectId);',
+    'DECLARE @MigrationPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @MigrationPrincipalObjectId);',
+    "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'id-mtp-api-dev-uks-001')",
+    "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'id-mtp-api-staging-dev-uks-001')",
+    "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'id-mtp-migration-dev-uks-001')",
     'GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO [id-mtp-api-dev-uks-001];',
     'GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO [id-mtp-api-staging-dev-uks-001];',
     'DENY ALTER, CONTROL ON SCHEMA::dbo TO [id-mtp-api-dev-uks-001];',
@@ -156,13 +165,43 @@ foreach ($fragment in $requiredSqlFragments) {
         throw "The exact reviewed principal or least-privilege SQL contract changed: $fragment"
     }
 }
+$expectedCreateUserStatements = @(
+    "EXEC(N'CREATE USER [id-mtp-api-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @ApiMainPrincipalObjectIdGuidText + N''';');",
+    "EXEC(N'CREATE USER [id-mtp-api-staging-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @ApiStagingPrincipalObjectIdGuidText + N''';');",
+    "EXEC(N'CREATE USER [id-mtp-migration-dev-uks-001] FROM EXTERNAL PROVIDER WITH OBJECT_ID=''' + @MigrationPrincipalObjectIdGuidText + N''';');"
+)
+$execStatements = @([regex]::Matches($sql, '(?im)^\s*EXEC\s*\([^\r\n]+\);\s*$') | ForEach-Object { $_.Value.Trim() })
+if ($execStatements.Count -ne $expectedCreateUserStatements.Count) {
+    throw "The grants script must contain exactly $($expectedCreateUserStatements.Count) structurally reviewed EXEC statements; found $($execStatements.Count)."
+}
+foreach ($statement in $execStatements) {
+    if ($statement -match '(?i)\b(?:CONVERT|CAST)\s*\(') {
+        throw "CONVERT or CAST function calls are prohibited inside EXEC concatenation: $statement"
+    }
+}
+for ($index = 0; $index -lt $expectedCreateUserStatements.Count; $index++) {
+    if ($execStatements[$index] -cne $expectedCreateUserStatements[$index]) {
+        throw "CREATE USER EXEC statement $($index + 1) does not use the exact supported literal-plus-precomputed-GUID-text expression shape."
+    }
+}
 $firstMutation = $sql.IndexOf('IF NOT EXISTS (SELECT 1 FROM sys.database_principals', [StringComparison]::Ordinal)
 $lastGuard = $sql.IndexOf("THROW 51003, 'Workload identity object IDs must be distinct.', 1;", [StringComparison]::Ordinal)
 if ($firstMutation -lt 0 -or $lastGuard -lt 0 -or $lastGuard -ge $firstMutation) {
     throw 'Every database, principal-name and object-ID guard must precede the first contained-user mutation.'
 }
+$precomputedGuidDeclarations = @(
+    'DECLARE @ApiMainPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @ApiMainPrincipalObjectId);',
+    'DECLARE @ApiStagingPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @ApiStagingPrincipalObjectId);',
+    'DECLARE @MigrationPrincipalObjectIdGuidText nvarchar(36) = CONVERT(nvarchar(36), @MigrationPrincipalObjectId);'
+)
+foreach ($declaration in $precomputedGuidDeclarations) {
+    $declarationPosition = $sql.IndexOf($declaration, [StringComparison]::Ordinal)
+    if ($declarationPosition -le $lastGuard -or $declarationPosition -ge $firstMutation) {
+        throw "Validated GUID text must be precomputed after all guards and before the first contained-user mutation: $declaration"
+    }
+}
 if ($sql -match "(?i)OBJECT_ID\s*=\s*'?[0-9a-f]{8}-[0-9a-f-]{27}") {
     throw 'The grants script contains a hard-coded identity object ID.'
 }
 
-Write-Output "Azure demo database-principal SQLCMD contract passed: seven external variables preserved, correct database accepted, and $($invalidCases.Count + 1) invalid guard cases rejected."
+Write-Output "Azure demo database-principal SQLCMD contract passed: seven external variables preserved, correct database accepted, $($invalidCases.Count + 1) invalid guard cases rejected, and three CREATE USER statements use precomputed GUID text in the supported EXEC expression shape."

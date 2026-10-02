@@ -32,9 +32,10 @@ traceability:
 - **Evidence-status correction:** `c69508ca66c05ddcf8bb09d384cdb49051be30ba`.
 - **Migration workload-identity repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `7f8f8b5978420e21adefdf0051d9726bc7c7b031`, initially clean on 2026-10-02.
 - **SQLCMD variable-precedence repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `523ff0a365018652d26db4ea80681bd321c53455`, initially clean on 2026-10-02.
+- **Azure SQL EXEC compilation repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `208b80580329e0e88407e1c8d4886a356cf20ff3`, initially clean on 2026-10-02.
 - **Previous repair scope:** commit `1ae167d` resolves the final Tester monitoring defect `AZD-TST-001`; `AZD-TST-003` is limited to stable reconciliation wording in this evidence document and does not change that earlier technical implementation or its results.
 - **Data/environment boundary:** local and isolated validation using synthetic data only.
-- **Developer state:** `READY_FOR_SQLCMD_VARIABLE_RETEST`.
+- **Developer state:** `READY_FOR_SQL_EXEC_COMPILE_RETEST`.
 
 ```yaml
 candidate_reconciliation:
@@ -82,6 +83,29 @@ The prior grants-script SHA-256 `9e3dc3c4cb947e35613fef0d29c80d92689f13abf803267
 | SBOM and source/security | PASS: deterministic 107-package NuGet and 522-package npm SBOM regression; source/security boundary scan passed 170 files. |
 
 No Azure, SQL or Azure DevOps service was accessed. Successful dependency restore/build work used only the local package cache; attempted NuGet advisory retrieval was blocked by the restricted environment. Nothing was staged, committed, pushed, deployed, migrated, seeded, provisioned or rolled back. Independent execution against the controlled Azure SQL target remains the requested next action.
+
+### Azure SQL EXEC compilation repair
+
+The controlled Azure SQL bootstrap failed with error 156, `Incorrect syntax near the keyword CONVERT`, because each of the three `EXEC` character-string expressions called `CONVERT(nvarchar(36), <validated uniqueidentifier>)` inline. T-SQL's `EXECUTE` character-string grammar supports concatenated constants and local variables for this shape, but not a function call in that concatenation position.
+
+The repair converts each already validated `uniqueidentifier` into its own `nvarchar(36)` local variable after the database, exact principal-name, GUID-format, non-zero and distinct-ID guards and before the first `CREATE USER`. Each `EXEC` now concatenates only its exact `CREATE USER ... FROM EXTERNAL PROVIDER WITH OBJECT_ID` literal, the corresponding precomputed GUID-text variable and its closing literal. The three exact MTP principal names, external SQLCMD object IDs, all `IF NOT EXISTS` checks, grants and denials are unchanged. No object ID is hard-coded.
+
+The prior grants-script SHA-256 `ce2557aa39f939c634d94c2776d673426b85b807619a4d52e336c2e15620c790` is superseded by `749e6631e15afe0613114529e2dd2a21e39b0c582ab5af0fecca586c41d47402`. Existing bootstrap evidence bound to the prior hash is intentionally invalid for this repaired script and must not be reused.
+
+| Azure SQL EXEC repair verification | Result |
+|---|---|
+| Exact baseline | PASS: branch `fix/mtp-azure-demo-reconciliation`, HEAD `208b80580329e0e88407e1c8d4886a356cf20ff3`, initially clean. |
+| Defect removal | PASS: zero `CAST` or `CONVERT` calls occur inside `EXEC` concatenation; three dedicated `nvarchar(36)` variables are computed from the validated `uniqueidentifier` values. |
+| Structural syntax regression | PASS: exactly three `EXEC` statements match the supported `EXEC(N'literal' + @precomputedGuidText + N'literal')` expression shape and exact physical principals. Missing/substituted principals, missing precomputed variables, inline function calls, or additional/substituted `EXEC` statements fail the regression. |
+| Fail-closed/least-privilege contract | PASS: exact database and principal-name guards, GUID parsing/length/null/non-zero/distinct guards, three `IF NOT EXISTS` checks, API grants/denials and migration grants/denials are pinned. The last guard precedes GUID-text precomputation, which precedes the first mutation. |
+| True engine compilation | NOT RUN and not claimed: the repair was explicitly prohibited from accessing Azure or SQL, and no compatible standalone T-SQL parser is installed. Independent controlled Azure SQL compile/execute retest remains required. |
+| Pipeline and safety | PASS: seven ordered stages retained; `deployAzureDemo` and `rollbackAzureDemo` remain `default: false`; SQL bootstrap remains an external approved DBA action. |
+| Diff and PowerShell | PASS: `git diff --check`; 24/24 PowerShell scripts parse under Windows PowerShell 5.1. |
+| Locked restore and Release build | PASS: locked restore succeeded; Release build succeeded with 0 errors. Each emitted four `NU1900` warnings because the restricted environment could not retrieve online NuGet vulnerability data. |
+| Focused and complete .NET tests | PASS: 27/27 focused Azure-demo tests; 350/350 complete tests (205 unit, 145 integration), with 0 failed or skipped. |
+| SBOM and source/security | PASS: deterministic 107-package NuGet and 522-package npm SBOM regression; source/security boundary scan passed 170 files. |
+
+No Azure, Azure SQL, other SQL engine or Azure DevOps connection was made. Nothing was staged, committed, pushed, deployed, migrated, seeded, provisioned or rolled back.
 
 ### Migration-identity repair verification
 
@@ -358,3 +382,55 @@ handoff:
 ```
 
 READY_FOR_SQLCMD_VARIABLE_RETEST
+
+## Azure SQL EXEC compilation repair hand-off
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_SQL_EXEC_COMPILE_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_208b80580329e0e88407e1c8d4886a356cf20ff3"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals:
+      - "Four exact-package implementation/local-test approvals at b8800e1eda014eef1421a1af5427aaea41393496."
+  artefacts:
+    - "scripts/database/Configure-AzureDemoDatabasePrincipals.sql"
+    - "scripts/build/Test-AzureDemoDatabasePrincipalSql.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Inline CONVERT calls removed from all three EXEC expressions; three validated GUIDs are precomputed as dedicated nvarchar(36) variables."
+    - "Exact physical principals, CREATE USER FROM EXTERNAL PROVIDER WITH OBJECT_ID, fail-closed guards, grants and denials retained; no object ID hard-coded."
+    - "Grants-script SHA-256 749e6631e15afe0613114529e2dd2a21e39b0c582ab5af0fecca586c41d47402."
+    - "Strict structural T-SQL regression enforces exactly three literal-plus-precomputed-variable EXEC expressions; true engine compilation was unavailable and is not claimed."
+    - "git diff --check; 24/24 PowerShell parses; SQL principal regression; seven-stage pipeline contract; locked restore; Release build; 27/27 focused tests; 350/350 full tests; SBOM and 170-file source/security scan passed."
+  decisions:
+    - "SQL principal bootstrap remains an external approved DBA action and is not automated by the pipeline."
+    - "Deployment and rollback remain disabled by default."
+  assumptions:
+    - "The independent retest supplies the seven reviewed values through SQLCMD -v and targets only the approved controlled Azure SQL database."
+  risks:
+    - "True Azure SQL engine compilation/execution remains unverified until the independent controlled retest."
+    - "Online NuGet vulnerability advisory retrieval was unavailable; locked restore and build emitted NU1900 warnings only."
+  defects:
+    - "REPAIRED: Azure SQL error 156 caused by inline CONVERT calls inside the three EXEC concatenations."
+  blockers:
+    - "Independent controlled Azure SQL compile/execute retest and all existing human deployment/release approvals remain required."
+  approvals:
+    - "Azure Platform/Operations remains PENDING_PRE_DEPLOYMENT."
+  requested_action: "Independent Tester must compile and execute the reviewed grants script against only the approved controlled Azure SQL target, verify all three contained users and permissions, and publish bootstrap evidence bound to the new script hash before any separately approved deployment activity."
+```
+
+READY_FOR_SQL_EXEC_COMPILE_RETEST
