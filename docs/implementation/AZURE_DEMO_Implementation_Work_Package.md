@@ -33,9 +33,10 @@ traceability:
 - **Migration workload-identity repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `7f8f8b5978420e21adefdf0051d9726bc7c7b031`, initially clean on 2026-10-02.
 - **SQLCMD variable-precedence repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `523ff0a365018652d26db4ea80681bd321c53455`, initially clean on 2026-10-02.
 - **Azure SQL EXEC compilation repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `208b80580329e0e88407e1c8d4886a356cf20ff3`, initially clean on 2026-10-02.
+- **Secure evidence-delivery repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `85ddcec346e5b322420e7749cb840f740b977731`, initially clean and aligned with local GitHub/Azure DevOps refs on 2026-10-02.
 - **Previous repair scope:** commit `1ae167d` resolves the final Tester monitoring defect `AZD-TST-001`; `AZD-TST-003` is limited to stable reconciliation wording in this evidence document and does not change that earlier technical implementation or its results.
 - **Data/environment boundary:** local and isolated validation using synthetic data only.
-- **Developer state:** `READY_FOR_SQL_EXEC_COMPILE_RETEST`.
+- **Developer state:** `READY_FOR_SECURE_EVIDENCE_RETEST`.
 
 ```yaml
 candidate_reconciliation:
@@ -62,6 +63,8 @@ The four exact-package decisions authorise controlled implementation and local o
 ### Mandatory external SQL bootstrap prerequisite
 
 The pipeline does not execute `Configure-AzureDemoDatabasePrincipals.sql`. The migration identity cannot create its own contained user before it has database access. Before deployment, an independently approved Entra SQL administrator/bootstrap identity must execute the exact reviewed script and publish protected `sql-bootstrap.json` evidence. The evidence must be bound to the exact release commit, SQL server/database, migration identity name/client/object IDs, executing administrator object ID, named approval reference, UTC timestamp and SHA-256 of `Configure-AzureDemoDatabasePrincipals.sql`. Missing, stale, substituted or hash-mismatched evidence fails before migration. This remains an external DBA/human pre-deployment action; it is not claimed as automated.
+
+`sql-bootstrap.json` is supplied to `mtp-azure-demo-deploy` as the Azure DevOps Secure File named exactly `sql-bootstrap.json`. Every pipeline job that consumes the file or `AZDEMO_SMOKE_PREREQUISITE_EVIDENCE` independently downloads the Secure File, copies it as `sql-bootstrap.json` into a job-local directory beneath `$(Agent.TempDirectory)`, binds the job-scoped evidence-directory variable, and removes only that directory under `condition: always()`. The evidence remains validated against the exact `Build.SourceVersion`; any new pipeline commit invalidates previously generated evidence. After this secure-delivery repair is committed and validated, the Secure File must be replaced with freshly approved evidence bound to that new commit before any migration or smoke execution.
 
 ### SQLCMD variable-precedence repair
 
@@ -434,3 +437,63 @@ handoff:
 ```
 
 READY_FOR_SQL_EXEC_COMPILE_RETEST
+
+## Azure DevOps Secure File delivery repair hand-off
+
+The `DatabaseAndSlots` and `Swap` deployment jobs are the only jobs that consume `sql-bootstrap.json` or `AZDEMO_SMOKE_PREREQUISITE_EVIDENCE`. Each now independently uses `DownloadSecureFile@1` with `secureFile: sql-bootstrap.json`, copies the result to the exact filename in a job-local directory beneath `$(Agent.TempDirectory)`, applies Linux owner read/write permissions, sets the subsequent job-scoped evidence-directory variable, and removes only that directory in an `always()` cleanup step. The migration assertion, pre-swap smoke and post-swap smoke uses all follow their job's preparation step. The evidence is neither copied into the repository nor published.
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_SECURE_EVIDENCE_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_85ddcec346e5b322420e7749cb840f740b977731"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals:
+      - "Four exact-package implementation/local-test approvals at b8800e1eda014eef1421a1af5427aaea41393496."
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Initial branch and HEAD matched the request; the worktree and index were clean; local origin and azure branch refs matched the exact HEAD."
+    - "git diff --check passed."
+    - "PowerShell 5.1 parsed 29 tracked scripts and 17 pipeline inline PowerShell blocks."
+    - "Pipeline structure passed for exactly seven ordered stages and independently validated both evidence-consuming jobs."
+    - "SQL bootstrap evidence accepted 1 valid and rejected 6 invalid cases; database-principal SQL accepted the approved contract and rejected 30 invalid cases."
+    - "Migration identity accepted 1 valid and rejected 14 invalid cases; migration target accepted 1 valid and rejected 7 invalid cases."
+    - "Rollback accepted 1 valid and rejected 12 invalid targets; monitoring validated 17 alert resources."
+    - "SBOM regression validated 107 API and 522 web components; the source/security boundary scan passed for 170 files."
+    - "Locked restore and Release build passed; 27/27 focused Azure-demo, 205/205 unit and 145/145 integration tests passed."
+  decisions:
+    - "Deployment and rollback remain default-disabled."
+    - "The existing seven stages, exact MTP names/service connections, workload identity, immutable package flow, commit binding and migration/rollback safeguards are unchanged."
+    - "A new pipeline commit invalidates the current Secure File; freshly approved exact-commit sql-bootstrap.json evidence must replace it after this repair is committed and validated."
+  assumptions:
+    - "Azure DevOps DownloadSecureFile@1 supplies its documented task-scoped secureFilePath output on the managed deployment agents."
+  risks:
+    - "Protected Azure DevOps task execution was prohibited and not run; runtime Secure File download/permission/cleanup evidence remains for the independent controlled retest."
+    - "NuGet vulnerability advisory retrieval was unavailable in the restricted environment; locked restore and build emitted NU1900 warnings only."
+  defects:
+    - "REPAIRED: managed ephemeral jobs had no step that downloaded protected sql-bootstrap.json evidence."
+  blockers:
+    - "PowerShell 7 is not installed locally; Windows PowerShell 5.1 supplied parsing and executable regression evidence."
+    - "Azure Platform/Operations and all existing human deployment/release approvals remain required before any pipeline deployment action."
+  approvals:
+    - "Azure Platform/Operations remains PENDING_PRE_DEPLOYMENT."
+  requested_action: "Independent Tester must replace the Azure DevOps Secure File with freshly approved evidence bound to the repair commit, then retest job-local delivery and cleanup without granting open access or bypassing protected approvals."
+```
+
+READY_FOR_SECURE_EVIDENCE_RETEST

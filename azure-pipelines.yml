@@ -293,6 +293,22 @@ stages:
           - checkout: self
           - download: current
             artifact: azure-demo-immutable
+          - task: DownloadSecureFile@1
+            name: downloadSqlBootstrapEvidence
+            displayName: Download protected SQL bootstrap evidence
+            inputs:
+              secureFile: sql-bootstrap.json
+          - pwsh: |
+              $evidenceDirectory = Join-Path '$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'
+              New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+              $evidencePath = Join-Path $evidenceDirectory 'sql-bootstrap.json'
+              Copy-Item -LiteralPath '$(downloadSqlBootstrapEvidence.secureFilePath)' -Destination $evidencePath -Force
+              if ($IsLinux) {
+                chmod 600 -- $evidencePath
+                if ($LASTEXITCODE) { throw 'Could not restrict SQL bootstrap evidence permissions.' }
+              }
+              Write-Host "##vso[task.setvariable variable=AZDEMO_SMOKE_PREREQUISITE_EVIDENCE]$evidenceDirectory"
+            displayName: Prepare job-local SQL bootstrap evidence
           - task: AzureCLI@2
             displayName: Deploy approved resource-group Bicep with workload identity
             inputs:
@@ -433,6 +449,13 @@ stages:
             displayName: Run staging smoke checks
           - publish: $(Pipeline.Workspace)/smoke-evidence
             artifact: staging-smoke-evidence
+          - pwsh: |
+              $evidenceDirectory = Join-Path '$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'
+              if (Test-Path -LiteralPath $evidenceDirectory -PathType Container) {
+                Remove-Item -LiteralPath $evidenceDirectory -Recurse -Force -ErrorAction SilentlyContinue
+              }
+            displayName: Remove job-local SQL bootstrap evidence
+            condition: always()
 
 - stage: ReleaseApproval
   displayName: Independent test, quality and human release approval
@@ -467,6 +490,22 @@ stages:
           - checkout: self
           - download: current
             artifact: azure-demo-immutable
+          - task: DownloadSecureFile@1
+            name: downloadSqlBootstrapEvidence
+            displayName: Download protected SQL bootstrap evidence
+            inputs:
+              secureFile: sql-bootstrap.json
+          - pwsh: |
+              $evidenceDirectory = Join-Path '$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'
+              New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+              $evidencePath = Join-Path $evidenceDirectory 'sql-bootstrap.json'
+              Copy-Item -LiteralPath '$(downloadSqlBootstrapEvidence.secureFilePath)' -Destination $evidencePath -Force
+              if ($IsLinux) {
+                chmod 600 -- $evidencePath
+                if ($LASTEXITCODE) { throw 'Could not restrict SQL bootstrap evidence permissions.' }
+              }
+              Write-Host "##vso[task.setvariable variable=AZDEMO_SMOKE_PREREQUISITE_EVIDENCE]$evidenceDirectory"
+            displayName: Prepare job-local SQL bootstrap evidence
           - task: AzureCLI@2
             inputs:
               azureSubscription: sc-mtp-azure-demo-dev
@@ -478,6 +517,13 @@ stages:
           - pwsh: ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/post-swap-smoke-evidence' -PrerequisiteEvidenceDirectory '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)' -WebBaseUri 'https://$(AZDEMO_WEB_APP_NAME).azurewebsites.net' -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -Execute
           - publish: $(Pipeline.Workspace)/post-swap-smoke-evidence
             artifact: post-swap-smoke-evidence
+          - pwsh: |
+              $evidenceDirectory = Join-Path '$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'
+              if (Test-Path -LiteralPath $evidenceDirectory -PathType Container) {
+                Remove-Item -LiteralPath $evidenceDirectory -Recurse -Force -ErrorAction SilentlyContinue
+              }
+            displayName: Remove job-local SQL bootstrap evidence
+            condition: always()
 
 - stage: Rollback
   displayName: Human-authorised application slot swap-back

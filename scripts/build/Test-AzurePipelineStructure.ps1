@@ -151,6 +151,105 @@ function Get-YamlStepBlock([string[]] $PipelineLines, [string] $CommandPattern) 
     return ($PipelineLines[$stepStart..($stepEnd - 1)] -join "`n")
 }
 
+function Get-YamlJobBlocks([string[]] $PipelineLines) {
+    $jobStarts = @(for ($index = 0; $index -lt $PipelineLines.Count; $index++) {
+            if ($PipelineLines[$index] -match '^  - (?:job|deployment):\s+([A-Za-z][A-Za-z0-9_]*)\s*$') {
+                [pscustomobject]@{ Index = $index; Name = $Matches[1] }
+            }
+        })
+    $blocks = @()
+    for ($jobIndex = 0; $jobIndex -lt $jobStarts.Count; $jobIndex++) {
+        $start = $jobStarts[$jobIndex].Index
+        $end = $PipelineLines.Count
+        if ($jobIndex + 1 -lt $jobStarts.Count) { $end = $jobStarts[$jobIndex + 1].Index }
+        for ($index = $start + 1; $index -lt $end; $index++) {
+            if ($PipelineLines[$index] -match '^- stage:') {
+                $end = $index
+                break
+            }
+        }
+        $blockLines = @($PipelineLines[$start..($end - 1)])
+        $blocks += [pscustomobject]@{
+            Name = $jobStarts[$jobIndex].Name
+            Lines = $blockLines
+            Text = $blockLines -join "`n"
+        }
+    }
+    return $blocks
+}
+
+function Assert-SqlBootstrapEvidenceDelivery([string[]] $PipelineLines) {
+    $jobBlocks = @(Get-YamlJobBlocks $PipelineLines)
+    $consumerJobs = @($jobBlocks | Where-Object {
+            $_.Text.Contains('sql-bootstrap.json') -or
+            $_.Text.Contains('$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)')
+        })
+    $consumerNames = @($consumerJobs | ForEach-Object { $_.Name })
+    if (($consumerNames -join '|') -ne 'DatabaseAndSlots|Swap') {
+        throw "SQL bootstrap evidence consumers are invalid: $($consumerNames -join ', ')."
+    }
+
+    foreach ($job in $consumerJobs) {
+        $downloadStep = Get-YamlStepBlock $job.Lines 'DownloadSecureFile@1'
+        $prepareStep = Get-YamlStepBlock $job.Lines 'Copy-Item -LiteralPath'
+        $cleanupStep = Get-YamlStepBlock $job.Lines 'Remove-Item -LiteralPath \$evidenceDirectory -Recurse'
+        if ([regex]::Matches($job.Text, '(?m)^\s*- task: DownloadSecureFile@1\s*$').Count -ne 1 -or
+            [regex]::Matches($downloadStep, '(?m)^\s+name:\s+downloadSqlBootstrapEvidence\s*$').Count -ne 1 -or
+            [regex]::Matches($downloadStep, '(?m)^\s+secureFile:\s+sql-bootstrap\.json\s*$').Count -ne 1) {
+            throw "Evidence-consuming job $($job.Name) must independently download exactly Secure File sql-bootstrap.json."
+        }
+        foreach ($fragment in @(
+                "`$evidenceDirectory = Join-Path '`$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'",
+                "`$evidencePath = Join-Path `$evidenceDirectory 'sql-bootstrap.json'",
+                "Copy-Item -LiteralPath '`$(downloadSqlBootstrapEvidence.secureFilePath)' -Destination `$evidencePath -Force",
+                'if ($IsLinux)',
+                'chmod 600 -- $evidencePath',
+                "if (`$LASTEXITCODE) { throw 'Could not restrict SQL bootstrap evidence permissions.' }",
+                '##vso[task.setvariable variable=AZDEMO_SMOKE_PREREQUISITE_EVIDENCE]$evidenceDirectory')) {
+            if (-not $prepareStep.Contains($fragment)) {
+                throw "Evidence-consuming job $($job.Name) does not securely prepare job-local evidence: $fragment"
+            }
+        }
+        foreach ($fragment in @(
+                "`$evidenceDirectory = Join-Path '`$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'",
+                'Remove-Item -LiteralPath $evidenceDirectory -Recurse -Force -ErrorAction SilentlyContinue',
+                'condition: always()')) {
+            if (-not $cleanupStep.Contains($fragment)) {
+                throw "Evidence-consuming job $($job.Name) does not always remove only its job-local evidence directory: $fragment"
+            }
+        }
+
+        $downloadIndex = $job.Text.IndexOf('DownloadSecureFile@1', [StringComparison]::Ordinal)
+        $variableIndex = $job.Text.IndexOf('##vso[task.setvariable variable=AZDEMO_SMOKE_PREREQUISITE_EVIDENCE]', [StringComparison]::Ordinal)
+        $cleanupIndex = $job.Text.IndexOf('Remove-Item -LiteralPath $evidenceDirectory -Recurse', [StringComparison]::Ordinal)
+        $consumerIndexes = @(for ($index = 0; $index -lt $job.Lines.Count; $index++) {
+                if ($job.Lines[$index] -match 'Assert-AzureDemoSqlBootstrapEvidence\.ps1|Invoke-AzureDemoSmokeTests\.ps1') { $index }
+            })
+        if ($consumerIndexes.Count -eq 0) {
+            throw "Evidence-consuming job $($job.Name) has no protected-evidence consumer."
+        }
+        $firstConsumerIndex = $job.Text.IndexOf($job.Lines[($consumerIndexes | Measure-Object -Minimum).Minimum].Trim(), [StringComparison]::Ordinal)
+        $lastConsumerIndex = $job.Text.LastIndexOf($job.Lines[($consumerIndexes | Measure-Object -Maximum).Maximum].Trim(), [StringComparison]::Ordinal)
+        if ($downloadIndex -lt 0 -or $variableIndex -le $downloadIndex -or $firstConsumerIndex -le $variableIndex -or $cleanupIndex -le $lastConsumerIndex) {
+            throw "Evidence-consuming job $($job.Name) must download, prepare and bind evidence before every use, then clean it up."
+        }
+    }
+
+    $pipelineText = $PipelineLines -join "`n"
+    if ($pipelineText -match '(?im)^\s*- publish:\s*[^\r\n]*(?:sql-bootstrap|AZDEMO_SMOKE_PREREQUISITE_EVIDENCE|azdemo-sql-bootstrap-evidence|downloadSqlBootstrapEvidence|Agent\.TempDirectory)' -or
+        $pipelineText -match '(?im)^\s+artifact:\s*[^\r\n]*sql-bootstrap' -or
+        $pipelineText -match '(?im)^\s*Copy-Item[^\r\n]*(?:sql-bootstrap|downloadSqlBootstrapEvidence|AZDEMO_SMOKE_PREREQUISITE_EVIDENCE|azdemo-sql-bootstrap-evidence)[^\r\n]*(?:Build\.SourcesDirectory|System\.DefaultWorkingDirectory|Build\.ArtifactStagingDirectory|Pipeline\.Workspace)' -or
+        $pipelineText -match '(?im)^\s*Copy-Item[^\r\n]*(?:Build\.SourcesDirectory|System\.DefaultWorkingDirectory|Build\.ArtifactStagingDirectory|Pipeline\.Workspace)[^\r\n]*(?:sql-bootstrap|downloadSqlBootstrapEvidence|AZDEMO_SMOKE_PREREQUISITE_EVIDENCE|azdemo-sql-bootstrap-evidence)') {
+        throw 'SQL bootstrap evidence must not be published or copied into a repository or artifact workspace.'
+    }
+    if ($pipelineText -match '(?ms)^\s*-\s+name:\s+AZDEMO_SMOKE_PREREQUISITE_EVIDENCE\s*\r?\n\s+value:') {
+        throw 'The SQL bootstrap evidence directory must be job-scoped and must not be stored as a pipeline variable.'
+    }
+    if ($pipelineText -match '(?im)^\s*(?:Write-Host|Write-Output|echo)\b[^\r\n]*(?:sql-bootstrap\.json|downloadSqlBootstrapEvidence\.secureFilePath)') {
+        throw 'SQL bootstrap evidence content or downloaded Secure File path must not be written to pipeline logs.'
+    }
+}
+
 $parameterConsumerSteps = @(
     (Get-YamlStepBlock $lines 'az bicep build-params --file infra/bicep/parameters/azure-demo\.bicepparam')
     (Get-YamlStepBlock $lines 'az deployment group what-if .*infra/bicep/parameters/azure-demo\.bicepparam')
@@ -281,6 +380,8 @@ $rollbackParameter = [regex]::Match($text, '(?ms)- name: rollbackAzureDemo\s+typ
 if (-not $deployParameter.Success -or -not $rollbackParameter.Success) {
     throw 'Azure deployment and rollback parameters must both default to false.'
 }
+
+Assert-SqlBootstrapEvidenceDelivery $lines
 
 $migrationStep = Get-YamlStepBlock $lines "lgrtm-efbundle-linux-x64' --connection"
 $seedStep = Get-YamlStepBlock $lines 'Invoke-AzureDemoSeed\.ps1 -Environment AzureDemo'
