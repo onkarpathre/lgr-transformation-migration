@@ -8,6 +8,7 @@ $text = Get-Content -LiteralPath $pipelinePath -Raw
 $lines = Get-Content -LiteralPath $pipelinePath
 $parameterEnvironmentScript = Join-Path $repo 'scripts\build\Test-AzureDemoParameterEnvironment.ps1'
 $efArtifactScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-EfMigrationArtifacts.ps1') -Raw
+$runtimeValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureAppServiceNativeRuntimes.ps1') -Raw
 
 if ($text.Contains("`t")) { throw 'Azure Pipelines YAML contains tab indentation.' }
 if ($lines | Where-Object { $_ -match '\s+$' }) { throw 'Azure Pipelines YAML contains trailing whitespace.' }
@@ -97,6 +98,8 @@ $requiredFragments = @(
     'Assert-AzureDemoSqlBootstrapEvidence.ps1',
     'Test-AzureDemoSqlBootstrapEvidence.ps1',
     'Test-AzureDemoDatabasePrincipalSql.ps1',
+    'Test-AzureAppServiceNativeRuntimes.ps1',
+    'Assert-AzureAppServiceNativeRuntimes.ps1',
     'id-mtp-migration-dev-uks-001',
     'Authentication=Active Directory Workload Identity',
     'Test-AzureDemoSboms.ps1',
@@ -113,6 +116,55 @@ $requiredFragments = @(
 )
 foreach ($fragment in $requiredFragments) {
     if (-not $text.Contains($fragment)) { throw "Azure Pipelines YAML is missing required structure: $fragment" }
+}
+
+$preDeploymentGateStart = $text.IndexOf('- stage: PreDeploymentGate', [StringComparison]::Ordinal)
+$preDeploymentGateEnd = $text.IndexOf('- stage: MigrateAndDeploySlots', [StringComparison]::Ordinal)
+if ($preDeploymentGateStart -lt 0 -or $preDeploymentGateEnd -le $preDeploymentGateStart) {
+    throw 'The PreDeploymentGate stage boundaries could not be identified.'
+}
+$preDeploymentGate = $text.Substring($preDeploymentGateStart, $preDeploymentGateEnd - $preDeploymentGateStart)
+$runtimeCommand = '$runtimeRows = @(az webapp list-runtimes --os linux --output tsv 2>&1)'
+$runtimeExitCapture = '$runtimeCommandExitCode = $LASTEXITCODE'
+$runtimeValidatorInvocation = '& ./scripts/build/Assert-AzureAppServiceNativeRuntimes.ps1 @runtimeValidation'
+foreach ($fragment in @(
+        $runtimeCommand,
+        $runtimeExitCapture,
+        'RuntimeRows = [string[]] $runtimeRows',
+        'CommandExitCode = $runtimeCommandExitCode',
+        $runtimeValidatorInvocation)) {
+    if (-not $preDeploymentGate.Contains($fragment)) {
+        throw "The PreDeploymentGate native-runtime contract is missing: $fragment"
+    }
+}
+if ($preDeploymentGate.IndexOf($runtimeCommand, [StringComparison]::Ordinal) -ge
+    $preDeploymentGate.IndexOf($runtimeExitCapture, [StringComparison]::Ordinal) -or
+    $preDeploymentGate.IndexOf($runtimeExitCapture, [StringComparison]::Ordinal) -ge
+    $preDeploymentGate.IndexOf($runtimeValidatorInvocation, [StringComparison]::Ordinal)) {
+    throw 'Native-runtime output and exit status must be captured before fail-closed validation.'
+}
+$colonRuntimeIdentifierPattern = '(?:NODE|DOTNETCORE):(?:24-lts|10\.0)'
+if ($preDeploymentGate -match $colonRuntimeIdentifierPattern -or
+    $preDeploymentGate -match '(?i)\$runtimes?\s+-notmatch') {
+    throw 'PreDeploymentGate must not use colon-form runtime identifiers or array -notmatch validation.'
+}
+foreach ($fragment in @(
+        "'NODE|24-lts'",
+        "'DOTNETCORE|10.0'",
+        '$CommandExitCode -ne 0',
+        '$runtimeRow.IndexOf("`t", [StringComparison]::Ordinal)',
+        '$runtimeRow.Substring(0, $tabIndex).Trim()',
+        '$runtimeIdentifiers -notcontains $requiredRuntime')) {
+    if (-not $runtimeValidatorScript.Contains($fragment)) {
+        throw "The native-runtime validator is missing its fail-closed normalization contract: $fragment"
+    }
+}
+if ($runtimeValidatorScript -match $colonRuntimeIdentifierPattern -or
+    $runtimeValidatorScript -match '(?i)\$runtimes?\s+-notmatch') {
+    throw 'The native-runtime validator must use pipe-form identifiers and exact membership, not array -notmatch.'
+}
+if ([regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureAppServiceNativeRuntimes\.ps1\s*$').Count -ne 1) {
+    throw 'The executable native-runtime regression must run exactly once in pipeline validation.'
 }
 
 $stagesIndex = $text.IndexOf("`nstages:", [StringComparison]::Ordinal)

@@ -34,9 +34,10 @@ traceability:
 - **SQLCMD variable-precedence repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `523ff0a365018652d26db4ea80681bd321c53455`, initially clean on 2026-10-02.
 - **Azure SQL EXEC compilation repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `208b80580329e0e88407e1c8d4886a356cf20ff3`, initially clean on 2026-10-02.
 - **Secure evidence-delivery repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `85ddcec346e5b322420e7749cb840f740b977731`, initially clean and aligned with local GitHub/Azure DevOps refs on 2026-10-02.
+- **App Service native-runtime repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `8f10616a7325ba0808370bd3f711bb34314059ce`, initially clean with an empty index and aligned local `origin`/`azure` remote-tracking refs on 2026-10-03.
 - **Previous repair scope:** commit `1ae167d` resolves the final Tester monitoring defect `AZD-TST-001`; `AZD-TST-003` is limited to stable reconciliation wording in this evidence document and does not change that earlier technical implementation or its results.
 - **Data/environment boundary:** local and isolated validation using synthetic data only.
-- **Developer state:** `READY_FOR_SECURE_EVIDENCE_RETEST`.
+- **Developer state:** `READY_FOR_APP_SERVICE_RUNTIME_RETEST`.
 
 ```yaml
 candidate_reconciliation:
@@ -236,7 +237,7 @@ These five paths comprise immutable technical monitoring repair commit `1ae167d7
 
 ### Build, database, data and smoke tooling
 
-- `scripts/build/Assert-AzureDemoRollbackTarget.ps1`; `scripts/build/New-AzureDemoPackages.ps1`; `scripts/build/New-AzureDemoSboms.ps1`; `scripts/build/New-EfMigrationArtifacts.ps1`; `scripts/build/Test-AzureDemoArtifacts.ps1`; `scripts/build/Test-AzureDemoDatabasePrincipalSql.ps1`; `scripts/build/Test-AzureDemoMonitoringAlerts.ps1`; `scripts/build/Test-AzureDemoRollbackSafeguards.ps1`; `scripts/build/Test-AzureDemoSourceBoundaries.ps1`; `scripts/build/Test-AzurePipelineStructure.ps1`.
+- `scripts/build/Assert-AzureAppServiceNativeRuntimes.ps1`; `scripts/build/Assert-AzureDemoRollbackTarget.ps1`; `scripts/build/New-AzureDemoPackages.ps1`; `scripts/build/New-AzureDemoSboms.ps1`; `scripts/build/New-EfMigrationArtifacts.ps1`; `scripts/build/Test-AzureAppServiceNativeRuntimes.ps1`; `scripts/build/Test-AzureDemoArtifacts.ps1`; `scripts/build/Test-AzureDemoDatabasePrincipalSql.ps1`; `scripts/build/Test-AzureDemoMonitoringAlerts.ps1`; `scripts/build/Test-AzureDemoRollbackSafeguards.ps1`; `scripts/build/Test-AzureDemoSourceBoundaries.ps1`; `scripts/build/Test-AzurePipelineStructure.ps1`.
 - `scripts/data/Invoke-AzureDemoReset.ps1`; `scripts/data/Invoke-AzureDemoSeed.ps1`.
 - `scripts/smoke/Invoke-AzureDemoSmokeTests.ps1`; `scripts/smoke/README.md`; `scripts/smoke/smoke-checks.json`.
 
@@ -497,3 +498,86 @@ handoff:
 ```
 
 READY_FOR_SECURE_EVIDENCE_RETEST
+
+## Azure App Service native-runtime validation repair hand-off
+
+The `PreDeploymentGate` previously captured complete `az webapp list-runtimes --os linux` TSV rows and applied PowerShell array `-notmatch` checks to colon-form values. Azure CLI 2.90 returns pipe-delimited LinuxFxVersion identifiers in the first TSV field, and array `-notmatch` returns every nonmatching catalogue row. The old expression could therefore reject an available approved runtime and could never prove exact membership of `NODE|24-lts` and `DOTNETCORE|10.0`.
+
+The repair captures `az webapp list-runtimes --os linux --output tsv` output without writing the catalogue to the log, immediately captures `$LASTEXITCODE`, and passes both to a fail-closed validator. The validator rejects a non-zero command result, empty output, rows without a tab-delimited first field, empty or malformed identifiers, and missing exact approved identifiers. It trims only the first TSV field and uses `-notcontains` for exact membership. Successful output names only the two required runtimes. The Bicep runtime values remain unchanged.
+
+The executable regression includes the supplied Azure CLI 2.90 rows, a minimal exact-runtime case, and unrelated valid catalogue rows. It separately rejects missing Node, missing .NET, malformed output, empty output, a non-zero native-command exit, and similarly named preview identifiers. `Test-AzurePipelineStructure.ps1` additionally pins the exact Azure CLI invocation, immediate exit-code capture, validator wiring, pipe-form identifiers, tab-field normalization, exact membership, regression execution, and absence of the former colon/array-`-notmatch` contract.
+
+### Local verification
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS: branch `fix/mtp-azure-demo-reconciliation`, HEAD `8f10616a7325ba0808370bd3f711bb34314059ce`, initially clean; index empty; local `origin` and `azure` branch refs both matched HEAD. |
+| Native-runtime regression | PASS: 3 positive cases and 6 fail-closed cases. The observed Azure CLI 2.90 TSV catalogue passed with both exact approved identifiers; unrelated rows caused no false failure. |
+| Pipeline structure | PASS: exactly 7 ordered stages; corrected runtime command/exit/normalization/membership contract; deployment and rollback defaults, release-branch restriction, service connections, protected evidence, migration, smoke, swap and rollback safeguards retained. |
+| PowerShell 5.1 | PASS: 31 repository PowerShell scripts and 17 pipeline inline PowerShell blocks parsed with zero errors under Windows PowerShell 5.1.26100.9444. |
+| Deployment/security guards | PASS: 11 required Bicep environment variables; 17 monitoring alerts; rollback 1 valid/12 rejected; migration target 1/7; migration identity 1/14; SQL bootstrap evidence 1/6; SQLCMD 7 external values, correct database and 30 rejected invalid cases; EF parsing 20 fail-closed checks. |
+| Smoke safeguards | PASS plan-only: all 22 smoke contracts enumerated and the script confirmed that no endpoint, Azure, SQL, Key Vault, Storage, Entra or Azure DevOps call was made. |
+| Locked restore | PASS: all projects up to date under `--locked-mode`; four `NU1900` warnings because the restricted environment could not retrieve the NuGet vulnerability service index. |
+| Release build | PASS: 0 errors and 4 `NU1900` advisory-feed warnings. |
+| Focused Azure Demo tests | PASS: 27/27, 0 failed, 0 skipped. |
+| Unit tests | PASS: 205/205, 0 failed, 0 skipped. |
+| Integration tests | PASS: 145/145, 0 failed, 0 skipped. |
+| SBOM | PASS: deterministic regression for 107 NuGet and 522 npm components. |
+| Source/security boundaries | PASS: 172 source/configuration files. |
+| Bicep preservation | PASS: no Bicep file changed; `webLinuxFxVersion = NODE|24-lts` and `apiLinuxFxVersion = DOTNETCORE|10.0` remain exact. |
+| Protected runtime | NOT RUN and not claimed: the work item prohibits Azure, Azure DevOps and pipeline access. The corrected gate still requires independent execution with Azure CLI 2.90 in the protected environment. |
+| Online advisory gates | UNAVAILABLE and not passed: restricted network access prevented NuGet vulnerability-service retrieval; `NU1900` was reported accurately. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_APP_SERVICE_RUNTIME_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_8f10616a7325ba0808370bd3f711bb34314059ce"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals:
+      - "Four exact-package implementation/local-test approvals at b8800e1eda014eef1421a1af5427aaea41393496."
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/build/Assert-AzureAppServiceNativeRuntimes.ps1"
+    - "scripts/build/Test-AzureAppServiceNativeRuntimes.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Exact branch/HEAD, clean worktree, empty index and aligned local origin/azure refs were confirmed before editing."
+    - "The observed Azure CLI 2.90 TSV output and two other valid catalogues passed; 6 invalid/native-failure cases were rejected."
+    - "31 PowerShell scripts and 17 pipeline inline blocks parsed under PowerShell 5.1; the seven-stage pipeline contract passed."
+    - "Locked restore and Release build passed; 27/27 focused Azure Demo, 205/205 unit and 145/145 integration tests passed."
+    - "SBOM regression validated 107 API and 522 web components; the 172-file source/security boundary scan passed."
+    - "No Bicep file changed and the exact approved pipe-form runtime settings remain pinned."
+  decisions:
+    - "Runtime discovery fails closed on non-zero native exit, empty/malformed TSV, or absent exact required identifiers."
+    - "Deployment and rollback remain default-disabled and release-branch restricted."
+    - "No Azure, Azure DevOps, deployment, migration, seed, swap or rollback action was performed."
+  assumptions:
+    - "Azure CLI 2.90 emits the supplied tab-separated runtime rows in the protected managed deployment job."
+  risks:
+    - "Protected Azure CLI execution remains independently unverified until the controlled retest."
+    - "Online NuGet vulnerability advisory retrieval was unavailable; locked restore and build emitted NU1900 warnings only."
+  defects:
+    - "REPAIRED: colon-form identifiers and array -notmatch incorrectly validated the complete Azure CLI runtime rows."
+  blockers:
+    - "Independent protected Azure CLI 2.90 gate execution and all existing Azure Platform/Operations and human deployment/release approvals remain required."
+  approvals:
+    - "Azure Platform/Operations remains PENDING_PRE_DEPLOYMENT."
+  requested_action: "Independent Tester must run the corrected PreDeploymentGate in the protected Azure CLI 2.90 environment and confirm both exact approved native runtimes pass without catalogue disclosure."
+```
+
+READY_FOR_APP_SERVICE_RUNTIME_RETEST

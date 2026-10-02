@@ -113,6 +113,8 @@ stages:
       displayName: Enforce approved frontend remediation versions
     - pwsh: ./scripts/build/Test-AzureDemoSourceBoundaries.ps1
       displayName: Secret, LocalTest, header and prohibited-capability boundaries
+    - pwsh: ./scripts/build/Test-AzureAppServiceNativeRuntimes.ps1
+      displayName: Azure App Service native-runtime regression
     - pwsh: ./scripts/build/Test-AzurePipelineStructure.ps1
       displayName: Azure Pipelines structural contract
     - pwsh: ./scripts/build/Test-AzureDemoMonitoringAlerts.ps1
@@ -259,8 +261,13 @@ stages:
                 }
                 az sql db show --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --server '$(AZDEMO_SQL_SERVER_NAME)' --name '$(AZDEMO_SQL_DATABASE_NAME)' --only-show-errors | Out-Null
                 if ($LASTEXITCODE) { throw 'Required existing MTP SQL database was not found.' }
-                $runtimes = az webapp list-runtimes --os linux -o tsv
-                if ($runtimes -notmatch 'NODE:24-lts' -or $runtimes -notmatch 'DOTNETCORE:10.0') { throw 'Approved native App Service runtimes are unavailable.' }
+                $runtimeRows = @(az webapp list-runtimes --os linux --output tsv 2>&1)
+                $runtimeCommandExitCode = $LASTEXITCODE
+                $runtimeValidation = @{
+                  RuntimeRows = [string[]] $runtimeRows
+                  CommandExitCode = $runtimeCommandExitCode
+                }
+                & ./scripts/build/Assert-AzureAppServiceNativeRuntimes.ps1 @runtimeValidation
                 az deployment group what-if --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --no-pretty-print > $(Pipeline.Workspace)/bicep-what-if.json
             env:
               AZDEMO_OWNER: $(AZDEMO_OWNER)
