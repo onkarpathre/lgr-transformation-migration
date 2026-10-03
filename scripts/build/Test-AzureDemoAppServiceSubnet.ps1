@@ -114,6 +114,171 @@ function Assert-Contains([string] $Text, [string] $Fragment, [string] $Message) 
     }
 }
 
+$compiledAppServiceResourceNames = @('webConfiguration', 'webSlot', 'apiConfiguration', 'apiSlot')
+$compiledSubnetReference = "[parameters('integrationSubnetId')]"
+$compiledSubnetKeyPattern = "'virtualNetworkSubnetId'\s*,"
+$compiledSubnetAssignmentPattern = "'virtualNetworkSubnetId'\s*,\s*parameters\(\s*'integrationSubnetId'\s*\)"
+
+function Get-ExactProperties([object] $InputObject, [string] $Name) {
+    if ($null -eq $InputObject) {
+        return @()
+    }
+    return @($InputObject.PSObject.Properties | Where-Object { $_.Name -ceq $Name })
+}
+
+function Get-CompiledIntegrationAssignmentCount([object] $CompiledResource) {
+    $propertiesMatches = @(Get-ExactProperties $CompiledResource 'properties')
+    if ($propertiesMatches.Count -ne 1) {
+        return 0
+    }
+
+    $compiledProperties = $propertiesMatches[0].Value
+    if ($compiledProperties -is [string]) {
+        if ($compiledProperties -cnotmatch '^\[\s*union\(' -or $compiledProperties -cnotmatch '\]\s*$') {
+            return 0
+        }
+        $subnetKeys = [regex]::Matches($compiledProperties, $compiledSubnetKeyPattern)
+        $approvedAssignments = [regex]::Matches($compiledProperties, $compiledSubnetAssignmentPattern)
+        if ($subnetKeys.Count -ne 1 -or $approvedAssignments.Count -ne 1) {
+            return 0
+        }
+        return 1
+    }
+
+    $subnetProperties = @(Get-ExactProperties $compiledProperties 'virtualNetworkSubnetId')
+    if ($subnetProperties.Count -ne 1 -or [string] $subnetProperties[0].Value -cne $compiledSubnetReference) {
+        return 0
+    }
+    return 1
+}
+
+function Assert-CompiledAppServiceTemplate([object] $CompiledAppsTemplate) {
+    $resourcesMatches = @(Get-ExactProperties $CompiledAppsTemplate 'resources')
+    if ($resourcesMatches.Count -ne 1) {
+        throw 'The compiled App Service template must expose one symbolic resources collection.'
+    }
+    $compiledResources = $resourcesMatches[0].Value
+
+    foreach ($resourceName in $compiledAppServiceResourceNames) {
+        $resourceMatches = @(Get-ExactProperties $compiledResources $resourceName)
+        if ($resourceMatches.Count -ne 1) {
+            throw "Compiled App Service resource '$resourceName' must exist uniquely."
+        }
+        if ((Get-CompiledIntegrationAssignmentCount $resourceMatches[0].Value) -ne 1) {
+            throw "Compiled App Service resource '$resourceName' does not assign virtualNetworkSubnetId to parameters('integrationSubnetId')."
+        }
+    }
+
+    $approvedAssignmentCount = 0
+    foreach ($resourceProperty in @($compiledResources.PSObject.Properties)) {
+        $approvedAssignmentCount += Get-CompiledIntegrationAssignmentCount $resourceProperty.Value
+    }
+    if ($approvedAssignmentCount -ne $compiledAppServiceResourceNames.Count) {
+        throw "The compiled App Service template contains $approvedAssignmentCount approved integration-subnet assignments instead of exactly four."
+    }
+}
+
+function New-CompiledAppServiceFixture([bool] $UseUnionExpressions = $false) {
+    $resources = [ordered]@{}
+    foreach ($resourceName in $compiledAppServiceResourceNames) {
+        $resources[$resourceName] = [pscustomobject]@{
+            type = 'Microsoft.Web/sites/slots'
+            properties = [pscustomobject]@{
+                virtualNetworkSubnetId = $compiledSubnetReference
+            }
+        }
+    }
+    if ($UseUnionExpressions) {
+        foreach ($resourceName in @('webConfiguration', 'apiConfiguration')) {
+            $resources[$resourceName].type = 'Microsoft.Web/sites/config'
+            $resources[$resourceName].properties = "[union(variables('commonSiteConfig'), createObject('linuxFxVersion', parameters('linuxFxVersion'), 'virtualNetworkSubnetId', parameters('integrationSubnetId'), 'vnetRouteAllEnabled', true()))]"
+        }
+    }
+    return [pscustomobject]@{ resources = [pscustomobject] $resources }
+}
+
+function Copy-CompiledAppServiceFixture([object] $Fixture) {
+    return ConvertTo-Json -InputObject $Fixture -Depth 20 | ConvertFrom-Json
+}
+
+function Assert-CompiledFixtureAccepted([object] $Fixture, [string] $Name) {
+    try {
+        Assert-CompiledAppServiceTemplate $Fixture
+    }
+    catch {
+        throw "Compiled App Service fixture rejected $Name`: $($_.Exception.Message)"
+    }
+}
+
+function Assert-CompiledFixtureRejected([object] $Fixture, [string] $Name) {
+    $accepted = $false
+    try {
+        Assert-CompiledAppServiceTemplate $Fixture
+        $accepted = $true
+    }
+    catch {
+        if ([string]::IsNullOrWhiteSpace($_.Exception.Message)) {
+            throw "Compiled App Service fixture did not explain its rejection of $Name."
+        }
+    }
+    if ($accepted) {
+        throw "Compiled App Service fixture accepted $Name."
+    }
+}
+
+$directCompiledFixture = New-CompiledAppServiceFixture
+$unionCompiledFixture = New-CompiledAppServiceFixture $true
+Assert-CompiledFixtureAccepted $directCompiledFixture 'direct structured virtualNetworkSubnetId properties'
+Assert-CompiledFixtureAccepted $unionCompiledFixture 'scoped union-expression virtualNetworkSubnetId properties'
+
+$compiledFixtureNegativeCases = @()
+
+$fixture = Copy-CompiledAppServiceFixture $unionCompiledFixture
+$fixture.resources.webConfiguration.properties = "[union(variables('commonSiteConfig'), createObject('linuxFxVersion', parameters('linuxFxVersion')))]"
+$compiledFixtureNegativeCases += @{ Name = 'a missing integrationSubnetId reference'; Fixture = $fixture }
+
+$fixture = Copy-CompiledAppServiceFixture $unionCompiledFixture
+$fixture.resources.webConfiguration.properties = "[union(variables('commonSiteConfig'), createObject('virtualNetworkSubnetId', parameters('privateEndpointSubnetId')))]"
+$compiledFixtureNegativeCases += @{ Name = 'a substituted subnet parameter'; Fixture = $fixture }
+
+$fixture = Copy-CompiledAppServiceFixture $directCompiledFixture
+$fixture.resources.webSlot.properties.virtualNetworkSubnetId = '/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/vnet-mtp-dev-uks-001/subnets/snet-appsvc-integration'
+$compiledFixtureNegativeCases += @{ Name = 'a literal stale subnet ID'; Fixture = $fixture }
+
+$fixture = Copy-CompiledAppServiceFixture $directCompiledFixture
+$fixture.resources.webConfiguration.PSObject.Properties.Remove('properties')
+$fixture.resources | Add-Member -NotePropertyName 'unrelatedResource' -NotePropertyValue ([pscustomobject]@{
+        type = 'Microsoft.Web/sites/config'
+        properties = [pscustomobject]@{ virtualNetworkSubnetId = $compiledSubnetReference }
+    })
+$compiledFixtureNegativeCases += @{ Name = 'the approved reference present only in another resource'; Fixture = $fixture }
+
+$fixture = Copy-CompiledAppServiceFixture $directCompiledFixture
+$fixture.resources.webConfiguration.PSObject.Properties.Remove('properties')
+$fixture | Add-Member -NotePropertyName 'parameters' -NotePropertyValue ([pscustomobject]@{
+        integrationSubnetId = [pscustomobject]@{ type = 'string' }
+    })
+$compiledFixtureNegativeCases += @{ Name = 'integrationSubnetId present only in the parameter declaration'; Fixture = $fixture }
+
+$fixture = Copy-CompiledAppServiceFixture $directCompiledFixture
+$fixture.resources.PSObject.Properties.Remove('apiSlot')
+$compiledFixtureNegativeCases += @{ Name = 'a missing exact symbolic resource'; Fixture = $fixture }
+
+$fixture = Copy-CompiledAppServiceFixture $directCompiledFixture
+$fixture.resources.apiSlot.properties.PSObject.Properties.Remove('virtualNetworkSubnetId')
+$compiledFixtureNegativeCases += @{ Name = 'fewer than four approved integrations'; Fixture = $fixture }
+
+$fixture = Copy-CompiledAppServiceFixture $directCompiledFixture
+$fixture.resources | Add-Member -NotePropertyName 'extraIntegratedSite' -NotePropertyValue ([pscustomobject]@{
+        type = 'Microsoft.Web/sites'
+        properties = [pscustomobject]@{ virtualNetworkSubnetId = $compiledSubnetReference }
+    })
+$compiledFixtureNegativeCases += @{ Name = 'more than four approved integrations'; Fixture = $fixture }
+
+foreach ($case in $compiledFixtureNegativeCases) {
+    Assert-CompiledFixtureRejected $case.Fixture $case.Name
+}
+
 $validArguments = New-ValidArguments
 Assert-Accepted $validArguments 'the exact existing subnet with provider-managed App Service association metadata'
 
@@ -280,18 +445,7 @@ if (-not [string]::IsNullOrWhiteSpace($CompiledTemplatePath)) {
     if (-not ([string] $compiledNetwork.outputs.integrationSubnetId.value).Contains("parameters('integrationSubnetName')")) {
         throw 'The compiled integration-subnet output must be derived from the symbolic existing subnet name.'
     }
-    foreach ($resourceName in @('webConfiguration', 'webSlot', 'apiConfiguration', 'apiSlot')) {
-        $compiledResource = $compiledApps.resources.$resourceName
-        $compiledSubnetId = if ($resourceName -in @('webConfiguration', 'apiConfiguration')) {
-            $compiledResource.properties.virtualNetworkSubnetId
-        }
-        else {
-            $compiledResource.properties.virtualNetworkSubnetId
-        }
-        if ([string] $compiledSubnetId -cne "[parameters('integrationSubnetId')]") {
-            throw "Compiled App Service resource '$resourceName' does not use the integrationSubnetId parameter."
-        }
-    }
+    Assert-CompiledAppServiceTemplate $compiledApps
 }
 
-Write-Output "Azure App Service integration-subnet regression passed: 1 exact inventory accepted; $($negativeCases.Count) fail-closed inventories rejected; four site/slot integrations and two existing-subnet contracts verified."
+Write-Output "Azure App Service integration-subnet regression passed: 1 exact inventory and 2 compiled shapes accepted; $($negativeCases.Count) inventory and $($compiledFixtureNegativeCases.Count) compiled-shape cases rejected; four site/slot integrations and two existing-subnet contracts verified."

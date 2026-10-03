@@ -37,7 +37,7 @@ traceability:
 - **App Service native-runtime repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `8f10616a7325ba0808370bd3f711bb34314059ce`, initially clean with an empty index and aligned local `origin`/`azure` remote-tracking refs on 2026-10-03.
 - **Previous repair scope:** commit `1ae167d` resolves the final Tester monitoring defect `AZD-TST-001`; `AZD-TST-003` is limited to stable reconciliation wording in this evidence document and does not change that earlier technical implementation or its results.
 - **Data/environment boundary:** local and isolated validation using synthetic data only.
-- **Developer state:** `READY_FOR_APP_SERVICE_RUNTIME_RETEST`.
+- **Developer state:** `READY_FOR_COMPILED_SUBNET_REGRESSION_RETEST`.
 
 ```yaml
 candidate_reconciliation:
@@ -869,3 +869,73 @@ handoff:
 ```
 
 READY_FOR_DURABLE_SQL_EVIDENCE_RETEST
+
+## Compiled App Service subnet regression repair hand-off
+
+### Root cause and bounded repair
+
+The Bicep 0.47.16 build succeeded, but the compiled regression then assumed that every symbolic App Service resource exposed `properties.virtualNetworkSubnetId` as a directly addressable PowerShell property. `webConfiguration` and `apiConfiguration` use `properties: union(...)`; their legitimate compiled ARM representation can therefore be a scoped expression string containing `createObject('virtualNetworkSubnetId', parameters('integrationSubnetId'))`. Strict-mode property access failed before the validator could prove the subnet reference.
+
+`Test-AzureDemoAppServiceSubnet.ps1` now validates each of the four exact symbolic compiled resource nodes independently. It accepts either one direct structured property with the exact value `[parameters('integrationSubnetId')]` or one scoped `union(...)` expression that pairs the exact `virtualNetworkSubnetId` key with the exact `integrationSubnetId` parameter. Each symbolic resource must exist uniquely, and the resource collection must contain exactly four approved assignments. The validator does not search the complete nested template and does not accept a parameter declaration or a reference in another resource as evidence.
+
+Fixtures accept the direct and union-expression shapes and reject missing, substituted, stale-literal, other-resource-only, declaration-only, missing-symbol, fewer-than-four and more-than-four cases. No Bicep, pipeline, network, deployment, SQL or runtime file changed. The source contract remains exactly four assignments across `webConfiguration`, `webSlot`, `apiConfiguration` and `apiSlot`; both subnets remain symbolic `existing` resources with the approved names and shapes.
+
+### Local verification
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `08e8d8f3cef4412a58c6366807e4c1e0a37e9c07`; clean worktree; empty staged index; local, `origin` and `azure` branch refs aligned. |
+| PowerShell 5.1 | PASS under `5.1.26100.9444`: all 35 tracked PowerShell scripts parsed with zero errors. |
+| App Service subnet regression | PASS: one exact existing-subnet inventory and two compiled shapes accepted; 24 inventory and eight compiled-shape cases rejected; exactly four source site/slot assignments and both symbolic existing-subnet contracts verified. |
+| Pipeline structure | PASS: exactly seven ordered stages; compiled subnet and private-DNS regressions remain after Bicep build; default-disabled deployment/rollback, release restriction, Secure File, migration, smoke, swap and rollback controls retained. |
+| Private DNS | PASS: one valid inventory accepted; six invalid inventories rejected; four deterministic parent/link and zone-group contracts retained. |
+| Durable SQL-bootstrap evidence | PASS: four accepted and 24 fail-closed cases; descendant reuse remains bound to ancestry, age, target, identity, executor and exact grants-script hash. |
+| Bicep 0.47.16 compiled-template execution | UNAVAILABLE, not passed: neither `bicep` nor `az` is installed or available on local `PATH`. No real compiled `main.json` pass is claimed; `mtp-azure-demo-deploy` must independently retest the compiled template. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, pipeline, deployment, SQL, migration, seed, smoke, swap or rollback action was performed. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_COMPILED_SUBNET_REGRESSION_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_08e8d8f3cef4412a58c6366807e4c1e0a37e9c07"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals:
+      - "Four exact-package implementation/local-test approvals at b8800e1eda014eef1421a1af5427aaea41393496."
+  artefacts:
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+    - "scripts/build/Test-AzureDemoAppServiceSubnet.ps1"
+  evidence:
+    - "Exact clean baseline, empty index and aligned local/origin/azure refs were confirmed before editing."
+    - "Direct and union compiled fixtures pass; missing, substituted, literal, out-of-scope, missing-symbol and wrong-count fixtures fail closed."
+    - "PowerShell parsing, source subnet, pipeline structure, private-DNS and durable SQL-evidence regressions pass locally."
+  decisions:
+    - "Inspect only each exact compiled resource node and require the subnet key to bind to parameters('integrationSubnetId')."
+    - "Retain exactly four approved source and compiled VNet-integration assignments."
+    - "Do not change Bicep deployment semantics for a validator representation defect."
+  assumptions: []
+  risks:
+    - "Bicep CLI 0.47.16 and Azure CLI are unavailable locally; the real compiled main.json remains to be independently retested."
+  defects:
+    - "REPAIRED: compiled validation no longer dereferences a property that is legitimately represented by a scoped ARM union expression."
+    - "REPAIRED: compiled validation now rejects missing, substituted, literal, out-of-resource and wrong-count references."
+  blockers:
+    - "Independent pipeline retest with Bicep CLI 0.47.16 remains required."
+    - "Azure Platform/Operations remains PENDING_PRE_DEPLOYMENT."
+  approvals: []
+  requested_action: "Independent Tester must rerun mtp-azure-demo-deploy compilation with Bicep 0.47.16 and confirm the scoped four-resource validator passes while the existing protected gates remain unchanged."
+```
+
+READY_FOR_COMPILED_SUBNET_REGRESSION_RETEST
