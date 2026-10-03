@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -14,6 +15,23 @@ if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Te
 {
     builder.Configuration.AddJsonFile("appsettings.LocalTest.json", optional: false, reloadOnChange: false);
 }
+AzureDemoStartupGuard.Validate(builder);
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 2;
+    if (builder.Environment.IsEnvironment("AzureDemo"))
+    {
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    }
+});
+builder.Services.AddHttpClient("AzurePrivateDataPlane", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(150);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("lgrtm-azure-demo/1.0");
+});
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<RequestAuthorizationState>();
@@ -30,10 +48,28 @@ if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Te
 {
     builder.Services.AddSingleton<IProjectMembershipProvider>(services =>
         services.GetRequiredService<LocalTestIdentityProvider>());
+    builder.Services.AddSingleton<IProjectMembershipReadiness>(services =>
+        services.GetRequiredService<LocalTestIdentityProvider>());
+}
+else if (builder.Environment.IsEnvironment("AzureDemo"))
+{
+    builder.Services.Configure<AzureIdentityOptions>(builder.Configuration.GetSection(AzureIdentityOptions.SectionName));
+    builder.Services.Configure<EntraDemoMembershipOptions>(
+        builder.Configuration.GetSection("Authentication:EntraDemoMemberships"));
+    builder.Services.AddSingleton<IAzureAccessTokenProvider, ManagedIdentityAccessTokenProvider>();
+    builder.Services.AddSingleton<KeyVaultProjectMembershipProvider>();
+    builder.Services.AddSingleton<IProjectMembershipProvider>(services =>
+        services.GetRequiredService<KeyVaultProjectMembershipProvider>());
+    builder.Services.AddSingleton<IProjectMembershipReadiness>(services =>
+        services.GetRequiredService<KeyVaultProjectMembershipProvider>());
 }
 else
 {
-    builder.Services.AddSingleton<IProjectMembershipProvider, UnavailableProjectMembershipProvider>();
+    builder.Services.AddSingleton<UnavailableProjectMembershipProvider>();
+    builder.Services.AddSingleton<IProjectMembershipProvider>(services =>
+        services.GetRequiredService<UnavailableProjectMembershipProvider>());
+    builder.Services.AddSingleton<IProjectMembershipReadiness>(services =>
+        services.GetRequiredService<UnavailableProjectMembershipProvider>());
 }
 
 builder.Services.AddSingleton<IEntraOpenIdConfigurationProvider, MicrosoftEntraOpenIdConfigurationProvider>();
@@ -94,7 +130,18 @@ builder.Services.AddScoped<RunbookService>();
 builder.Services.Configure<DiscoveryImportOptions>(builder.Configuration.GetSection(DiscoveryImportOptions.SectionName));
 var discoveryOptions = builder.Configuration.GetSection(DiscoveryImportOptions.SectionName).Get<DiscoveryImportOptions>() ?? new();
 builder.Services.Configure<FormOptions>(form => form.MultipartBodyLengthLimit = discoveryOptions.MaximumFileSizeBytes + 65536);
-builder.Services.AddSingleton<IImportFileStorage, LocalImportFileStorage>();
+if (builder.Environment.IsEnvironment("AzureDemo"))
+{
+    builder.Services.AddScoped<AzureBlobImportFileStorage>();
+    builder.Services.AddScoped<IImportFileStorage>(services => services.GetRequiredService<AzureBlobImportFileStorage>());
+    builder.Services.AddScoped<IImportStorageReadiness>(services => services.GetRequiredService<AzureBlobImportFileStorage>());
+}
+else
+{
+    builder.Services.AddScoped<LocalImportFileStorage>();
+    builder.Services.AddScoped<IImportFileStorage>(services => services.GetRequiredService<LocalImportFileStorage>());
+    builder.Services.AddScoped<IImportStorageReadiness>(services => services.GetRequiredService<LocalImportFileStorage>());
+}
 builder.Services.AddSingleton<IDiscoveryFileReader, CsvDiscoveryFileReader>();
 builder.Services.AddSingleton<IDiscoverySourceMapper, AzureMigrateServerReportMapper>();
 builder.Services.AddSingleton<IDiscoverySourceMapper, AzureMigrateAllInventoryMapper>();
@@ -143,26 +190,38 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var origins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? ["http://localhost:3000"];
-builder.Services.AddCors(options => options.AddPolicy("Web", policy => policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod()));
+builder.Services.AddCors(options => options.AddPolicy("Web", policy => policy
+    .WithOrigins(origins)
+    .WithMethods("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+    .WithHeaders("Authorization", "Content-Type", "Accept", "X-Project-Id", "If-Match", "If-None-Match", "traceparent", "tracestate")
+    .WithExposedHeaders("ETag", "X-Correlation-Id", "traceparent")
+    .SetPreflightMaxAge(TimeSpan.FromMinutes(10))));
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
-app.UseCors("Web");
+app.UseForwardedHeaders();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
+{
+    app.UseHsts();
+}
 app.UseHttpsRedirection();
 app.UseRouting();
+app.UseMiddleware<TraceCorrelationMiddleware>();
+app.UseMiddleware<ApiSecurityHeadersMiddleware>();
+app.UseCors("Web");
 app.UseMiddleware<ProhibitedIdentityHeaderMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<AuthorizedAccessLoggingMiddleware>();
 app.MapControllers();
-app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).AllowAnonymous().ExcludeFromDescription();
+HealthEndpoints.Map(app);
 
 app.Run();
 

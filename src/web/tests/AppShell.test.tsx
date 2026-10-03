@@ -34,4 +34,14 @@ describe("permission-aware application navigation", () => {
     expect(screen.getByRole("link", { name: "Dependencies" })).toHaveAttribute("href", "/planning/dependencies");
     expect(screen.queryByRole("link", { name: "SQL instances" })).not.toBeInTheDocument();
   });
+
+  it("shows approved MTP branding without internal test-authentication details", () => {
+    const { container } = render(<AppShell><p>Content</p></AppShell>);
+
+    expect(screen.getByLabelText("MTP – Transformation & Migration Platform")).toBeInTheDocument();
+    expect(screen.getByText("MTP – Transformation & Migration Platform")).toBeVisible();
+    expect(screen.getAllByText("Restricted synthetic non-production management demo").length).toBeGreaterThan(0);
+    expect(container).toHaveTextContent("MTP");
+    expect(container.textContent).not.toMatch(/LocalTest|X-Lgr-Test-Principal|NEXT_PUBLIC_LGR_TEST_PRINCIPAL/);
+  });
 });
