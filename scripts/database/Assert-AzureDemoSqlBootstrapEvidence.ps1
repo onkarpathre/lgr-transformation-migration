@@ -45,19 +45,36 @@ function Invoke-GitValidation([string[]] $Arguments) {
         $git = Get-Command -Name $GitExecutablePath -CommandType Application -ErrorAction Stop
     }
     catch {
-        throw 'SQL bootstrap evidence ancestry validation requires an available native Git executable.'
+        throw 'SQL bootstrap evidence ancestry validation requires an available native Git executable. [GIT_EXECUTABLE_UNAVAILABLE]'
+    }
+
+    # ApplicationInfo.Path is the cross-platform executable contract. Source is
+    # command provenance and is not a portable native-process invocation path.
+    $resolvedGitExecutable = [string] $git.Path
+    if ([string]::IsNullOrWhiteSpace($resolvedGitExecutable) -or
+        -not [IO.Path]::IsPathRooted($resolvedGitExecutable)) {
+        throw 'SQL bootstrap evidence native Git executable resolution was invalid. [GIT_EXECUTABLE_RESOLUTION_INVALID]'
     }
 
     $previousErrorActionPreference = $ErrorActionPreference
+    $nativeErrorPreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+    $hasNativeErrorPreference = $null -ne $nativeErrorPreference
+    $previousNativeErrorPreference = if ($hasNativeErrorPreference) { $nativeErrorPreference.Value } else { $null }
     try {
         $ErrorActionPreference = 'Continue'
-        $output = @(& $git.Source @Arguments 2>&1)
+        if ($hasNativeErrorPreference) {
+            Set-Variable -Name PSNativeCommandUseErrorActionPreference -Value $false -Scope Local
+        }
+        $output = @(& $resolvedGitExecutable @Arguments 2>&1)
         $exitCode = $LASTEXITCODE
     }
     catch {
-        throw 'SQL bootstrap evidence Git validation could not be executed.'
+        throw 'SQL bootstrap evidence Git process could not be started. [GIT_PROCESS_START_FAILED]'
     }
     finally {
+        if ($hasNativeErrorPreference) {
+            Set-Variable -Name PSNativeCommandUseErrorActionPreference -Value $previousNativeErrorPreference -Scope Local
+        }
         $ErrorActionPreference = $previousErrorActionPreference
     }
 
@@ -69,10 +86,11 @@ function Invoke-GitValidation([string[]] $Arguments) {
 
 function Require-SuccessfulGit([string[]] $Arguments, [string] $FailureMessage) {
     $result = Invoke-GitValidation $Arguments
-    if ($result.ExitCode -ne 0) {
-        throw $FailureMessage
+    switch ($result.ExitCode) {
+        0 { return $result }
+        1 { throw "$FailureMessage [GIT_EXIT_1]" }
+        default { throw "$FailureMessage [GIT_EXIT_NONZERO]" }
     }
-    return $result
 }
 
 if ($ExpectedReleaseCommit -cnotmatch $fullCommitPattern) {
@@ -212,8 +230,8 @@ Require-SuccessfulGit @('-C', $resolvedRepository, 'cat-file', '-e', "$ExpectedR
 $ancestry = Invoke-GitValidation @('-C', $resolvedRepository, 'merge-base', '--is-ancestor', $sourceCommit, $ExpectedReleaseCommit)
 switch ($ancestry.ExitCode) {
     0 { }
-    1 { throw 'The SQL bootstrap evidence provenance commit is not an ancestor of the expected release commit.' }
-    default { throw 'SQL bootstrap evidence ancestry validation failed.' }
+    1 { throw 'The SQL bootstrap evidence provenance commit is not an ancestor of the expected release commit. [GIT_EXIT_1]' }
+    default { throw 'SQL bootstrap evidence ancestry validation failed. [GIT_EXIT_NONZERO]' }
 }
 
 Write-Output 'Independent durable SQL Entra-administrator bootstrap evidence passed.'

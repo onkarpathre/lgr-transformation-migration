@@ -1023,3 +1023,88 @@ handoff:
 ```
 
 READY_FOR_CROSS_PLATFORM_SQL_EVIDENCE_RETEST
+
+## Deterministic native-Git invocation repair hand-off
+
+### Latest pipeline failure and exact root cause
+
+After the timestamp repair reached commit `ba0729ef89e056c95c1bc33e0fbf3704ae900df6`, the Linux managed-agent task **Valid and invalid independent SQL bootstrap evidence tests** again rejected the first accepted fixture, **evidence commit equals release commit**. Metadata validation completed successfully and the failure occurred inside `Invoke-GitValidation`, where the broad catch reduced the underlying native-process failure to `SQL bootstrap evidence Git validation could not be executed.`
+
+The exact cross-platform invocation defect was using `ApplicationInfo.Source` as the native process target after `Get-Command -CommandType Application`. `Source` is command provenance and is not the deterministic cross-platform executable-path contract. `ApplicationInfo.Path` is the executable file path supported by both Windows PowerShell 5.1 and PowerShell 7. The validator therefore attempted to invoke a non-portable source value on Linux, and its broad catch hid the resolution/start distinction. A second portability gap was that the native-command block changed only `ErrorActionPreference`; it did not explicitly neutralise `PSNativeCommandUseErrorActionPreference` on PowerShell versions that expose it.
+
+### Bounded repair
+
+`Assert-AzureDemoSqlBootstrapEvidence.ps1` now resolves Git with `Get-Command -CommandType Application`, invokes the validated absolute `ApplicationInfo.Path`, and rejects a missing or non-rooted path as `GIT_EXECUTABLE_RESOLUTION_INVALID`. It does not invoke `ApplicationInfo.Source` and needs no fallback on either supported PowerShell model. An unavailable command is `GIT_EXECUTABLE_UNAVAILABLE`; a process that cannot start is `GIT_PROCESS_START_FAILED`; exit code 1 is `GIT_EXIT_1`; and any other non-zero exit code is `GIT_EXIT_NONZERO`. Captured standard output and standard error remain internal and are never included in failure messages.
+
+Immediately around each native invocation, the validator captures `ErrorActionPreference`, detects and captures `PSNativeCommandUseErrorActionPreference` when present, sets `ErrorActionPreference` to `Continue`, disables native non-zero exit promotion, invokes the absolute Git path, captures `LASTEXITCODE` immediately, and restores both preferences in `finally`. Windows PowerShell 5.1 remains compatible because the PowerShell 7 preference variable is read and written only when it exists.
+
+The Git contract remains fail-closed and unchanged: the repository must be a complete non-shallow worktree; checked-out `HEAD` must equal the expected release commit; both provenance and release objects must exist as commits; and `merge-base --is-ancestor` accepts only exit 0, rejects exit 1 as not-an-ancestor, and treats every other exit as validation failure. No fetch or pull was introduced.
+
+`Test-AzureDemoSqlBootstrapEvidence.ps1` now proves resolution through `ApplicationInfo.Path`, a real or synthetic executable path containing spaces, successful Git execution, exit 1, exit 2, unavailable executable, process-start failure, caller `ErrorActionPreference` restoration, and conditional `PSNativeCommandUseErrorActionPreference` restoration. Equal and ancestor evidence remain accepted; descendant and unrelated evidence remain rejected. The completed literal-`Z`, invariant-culture, one-through-seven fractional-digit timestamp repair and all stable metadata categories remain covered.
+
+No pipeline, Bicep, application, EF migration, SQL grant, SQL principal alias, Azure identity, runtime, service connection, variable-group value or protected `sql-bootstrap.json` change was made. The seven ordered stages, default-disabled deployment and rollback, release-branch restriction, Secure File delivery, App Service subnet repair, private-DNS reconciliation and workload identity remain unchanged.
+
+### Local verification evidence
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `ba0729ef89e056c95c1bc33e0fbf3704ae900df6`; clean worktree; empty staged index; local `origin` and `azure` tracking refs both exactly aligned with HEAD. |
+| Windows PowerShell 5.1 parsing | PASS under `5.1.26100.9444`: all 35 tracked PowerShell scripts parsed with zero errors. |
+| SQL-bootstrap evidence regression | PASS: 10 accepted and 35 fail-closed cases across all 17 safe metadata-rejection categories. Coverage includes deterministic `ApplicationInfo.Path`, a path containing spaces, successful execution, exit 1, exit 2, missing executable, process-start failure, preference restoration, equal/ancestor acceptance and descendant/unrelated rejection. |
+| Culture and timestamp determinism | PASS under Windows PowerShell 5.1 with `en-US`, `ar-SA` and `th-TH`: each run passed 10 accepted and 35 fail-closed cases. Literal `Z`, invariant parsing, accepted UTC precision, five-minute future tolerance and 90-day maximum age remain covered. |
+| Pipeline structural regression | PASS: exactly seven ordered stages. Existing default-disabled deploy/rollback, Secure File, release restriction, workload identity, migration, smoke, swap and rollback controls passed. |
+| App Service subnet regression | PASS: one exact inventory and two compiled shapes accepted; 24 inventory and eight compiled-shape cases rejected; four site/slot integrations and two existing-subnet contracts verified. |
+| Private-DNS regression | PASS: one valid inventory accepted; six invalid inventories rejected; four deterministic parent/link and zone-group contracts verified. |
+| Migration identity and target regressions | PASS: identity one valid/14 rejected; target one valid/seven rejected. |
+| Database-principal SQL regression | PASS: seven external variables retained, correct database accepted, 30 invalid cases rejected, and all three approved `CREATE USER` expressions retained. |
+| Rollback safeguards | PASS: one valid target and 12 fail-closed target cases. |
+| Source/security boundary scan | PASS: 176 source/configuration files scanned. |
+| PowerShell 7/Linux execution | UNAVAILABLE locally and not claimed: `pwsh` is absent; WSL reports that the Linux subsystem is not installed; Docker and Podman are absent. Conditional `PSNativeCommandUseErrorActionPreference` behaviour is implemented and covered by the regression when that variable exists, but could not execute locally. |
+| Managed Linux validation | BLOCKED pending an independent rerun of pipeline `mtp-azure-demo-deploy`; the managed-agent failure is not claimed fixed until that task passes. |
+| Protected/external actions | NOT RUN: no Azure, Azure DevOps, SQL, pipeline, deployment, migration, seed, swap or rollback access/action occurred. Protected `sql-bootstrap.json` was not accessed, regenerated or replaced. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_NATIVE_GIT_LINUX_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_ba0729ef89e056c95c1bc33e0fbf3704ae900df6"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals: []
+  artefacts:
+    - "scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1"
+    - "scripts/build/Test-AzureDemoSqlBootstrapEvidence.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Exact baseline, empty index and aligned local/origin/azure refs were confirmed before editing."
+    - "All locally available requested regressions passed under Windows PowerShell 5.1."
+    - "Native-Git resolution, invocation, exit classification and preference restoration are fail-closed without logging captured output."
+  decisions:
+    - "Invoke only a validated absolute ApplicationInfo.Path."
+    - "Disable PowerShell 7 native exit promotion only for the bounded Git call and restore it in finally."
+    - "Retain the durable ancestry, timestamp, target, identity, executor and exact grants-hash contracts."
+  assumptions: []
+  risks:
+    - "PowerShell 7/Linux execution is unavailable locally and requires the managed-agent retest."
+  defects:
+    - "REPAIRED LOCALLY: native Git no longer relies on ApplicationInfo.Source."
+    - "REPAIRED LOCALLY: native command preference handling and exit categories are deterministic and fail-closed."
+  blockers:
+    - "Independent PowerShell 7/Linux rerun of mtp-azure-demo-deploy remains required."
+  approvals: []
+  requested_action: "Independent Tester must rerun the SQL-bootstrap evidence task on the Linux managed agent and confirm the accepted equal/ancestor cases and fail-closed native-command cases pass without protected-value disclosure."
+```
+
+READY_FOR_NATIVE_GIT_LINUX_RETEST

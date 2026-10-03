@@ -6,6 +6,7 @@ Set-StrictMode -Version Latest
 
 $guard = Join-Path $PSScriptRoot '..\database\Assert-AzureDemoSqlBootstrapEvidence.ps1'
 $sourceGrantsScript = Join-Path $PSScriptRoot '..\database\Configure-AzureDemoDatabasePrincipals.sql'
+$guardSource = Get-Content -LiteralPath $guard -Raw
 $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("azdemo-bootstrap-evidence-{0}" -f [Guid]::NewGuid().ToString('N'))
 $repository = Join-Path $temporaryDirectory 'repository'
 $evidencePath = Join-Path $temporaryDirectory 'sql-bootstrap.json'
@@ -18,6 +19,11 @@ $invariantCulture = [Globalization.CultureInfo]::InvariantCulture
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
 $metadataFailurePrefix = 'Independent SQL bootstrap evidence rejected: '
 $observedMetadataReasons = @{}
+$expectedErrorActionPreference = $ErrorActionPreference
+$nativeErrorPreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+$nativeErrorPreferenceSupported = $null -ne $nativeErrorPreference
+$previousNativeErrorPreference = if ($nativeErrorPreferenceSupported) { $nativeErrorPreference.Value } else { $null }
+$expectedNativeErrorPreference = $true
 $requiredMetadataReasons = @(
     'METADATA_SCHEMA_VERSION',
     'METADATA_STATUS',
@@ -38,12 +44,52 @@ $requiredMetadataReasons = @(
     'METADATA_GRANTS_HASH_MISMATCH'
 )
 
+foreach ($fragment in @(
+        '$git.Path',
+        '[IO.Path]::IsPathRooted($resolvedGitExecutable)',
+        'PSNativeCommandUseErrorActionPreference',
+        '$exitCode = $LASTEXITCODE',
+        '[GIT_EXECUTABLE_UNAVAILABLE]',
+        '[GIT_EXECUTABLE_RESOLUTION_INVALID]',
+        '[GIT_PROCESS_START_FAILED]',
+        '[GIT_EXIT_1]',
+        '[GIT_EXIT_NONZERO]')) {
+    if (-not $guardSource.Contains($fragment)) {
+        throw "SQL bootstrap evidence guard is missing native-Git contract fragment: $fragment"
+    }
+}
+if ($guardSource -match '\$git\.Source') {
+    throw 'SQL bootstrap evidence guard must invoke ApplicationInfo.Path rather than ApplicationInfo.Source.'
+}
+
+$nativeGitCommand = Get-Command -Name git -CommandType Application -ErrorAction Stop
+$nativeGitPath = [string] $nativeGitCommand.Path
+if ([string]::IsNullOrWhiteSpace($nativeGitPath) -or -not [IO.Path]::IsPathRooted($nativeGitPath)) {
+    throw 'Test Git did not resolve through a deterministic ApplicationInfo.Path.'
+}
+
+if ($nativeErrorPreferenceSupported) {
+    Set-Variable -Name PSNativeCommandUseErrorActionPreference -Value $expectedNativeErrorPreference -Scope Script
+}
+
 function Invoke-TestGit([string[]] $Arguments) {
-    $output = @(& git -C $repository @Arguments 2>&1)
+    $output = @(& $nativeGitPath -C $repository @Arguments 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "Test Git setup failed: $($Arguments -join ' ')."
     }
     return @($output | ForEach-Object { [string] $_ })
+}
+
+function Assert-PreferenceRestoration([string] $Name) {
+    if ($ErrorActionPreference -ne $expectedErrorActionPreference) {
+        throw "SQL bootstrap evidence case '$Name' did not restore ErrorActionPreference."
+    }
+    if ($nativeErrorPreferenceSupported) {
+        $currentNativeErrorPreference = (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction Stop).Value
+        if ($currentNativeErrorPreference -ne $expectedNativeErrorPreference) {
+            throw "SQL bootstrap evidence case '$Name' did not restore PSNativeCommandUseErrorActionPreference."
+        }
+    }
 }
 
 function New-TestCommit([string] $Content, [string] $Message) {
@@ -89,15 +135,22 @@ function Invoke-Guard([string] $ExpectedReleaseCommit, [string] $GitExecutablePa
     & $guard -EvidencePath $evidencePath -ExpectedReleaseCommit $ExpectedReleaseCommit -RepositoryRoot $repository -GrantsScriptPath $grantsScript -ExpectedExecutorPrincipalObjectId $executorObjectId -MaximumEvidenceAgeDays 90 -GitExecutablePath $GitExecutablePath | Out-Null
 }
 
-function Assert-Accepted([string] $Name, [string] $SourceCommit, [string] $ExpectedReleaseCommit, [hashtable] $Overrides = @{}) {
+function Assert-Accepted(
+    [string] $Name,
+    [string] $SourceCommit,
+    [string] $ExpectedReleaseCommit,
+    [hashtable] $Overrides = @{},
+    [string] $GitExecutablePath = 'git'
+) {
     Write-Evidence $SourceCommit $Overrides
     try {
-        Invoke-Guard $ExpectedReleaseCommit
+        Invoke-Guard $ExpectedReleaseCommit $GitExecutablePath
         $script:acceptedCount++
     }
     catch {
         throw "Expected accepted SQL bootstrap evidence case '$Name' failed: $($_.Exception.Message)"
     }
+    Assert-PreferenceRestoration $Name
 }
 
 function Assert-SafeFailure([string] $Name, [string] $ActualMessage, [string] $ExpectedMessage, [hashtable] $Overrides) {
@@ -164,12 +217,13 @@ function Assert-CurrentEvidenceRejected(
         throw "SQL bootstrap evidence guard accepted invalid case '$Name'."
     }
     Assert-SafeFailure $Name $actualMessage $ExpectedMessage $ProtectedOverrides
+    Assert-PreferenceRestoration $Name
     $script:rejectedCount++
 }
 
 New-Item -ItemType Directory -Path $repository -Force | Out-Null
 try {
-    & git init --quiet $repository
+    & $nativeGitPath init --quiet $repository
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the isolated Git evidence-test repository.' }
     Invoke-TestGit @('config', 'user.email', 'sql-evidence@example.invalid') | Out-Null
     Invoke-TestGit @('config', 'user.name', 'SQL Evidence Regression') | Out-Null
@@ -188,8 +242,23 @@ try {
 
     Copy-Item -LiteralPath $sourceGrantsScript -Destination $grantsScript
 
-    Assert-Accepted 'evidence commit equals release commit' $releaseCommit $releaseCommit
-    Assert-Accepted 'evidence commit is an ancestor' $ancestorCommit $releaseCommit
+    $spacedExecutableDirectory = Join-Path $temporaryDirectory 'native Git path with spaces'
+    if ($isWindowsPlatform) {
+        # Git for Windows is normally installed below Program Files, so use the
+        # real native path without a batch wrapper that would consume the caret
+        # in revision expressions such as HEAD^{commit}.
+        $spacedGitExecutable = $nativeGitPath
+    }
+    else {
+        New-Item -ItemType Directory -Path $spacedExecutableDirectory -Force | Out-Null
+        $spacedGitExecutable = Join-Path $spacedExecutableDirectory 'git wrapper'
+        [IO.File]::WriteAllText($spacedGitExecutable, "#!/bin/sh`nexec `"$nativeGitPath`" `"`$@`"`n", $utf8NoBom)
+        & chmod 700 -- $spacedGitExecutable
+        if ($LASTEXITCODE -ne 0) { throw 'Could not permission the synthetic Git executable with spaces.' }
+    }
+
+    Assert-Accepted 'evidence commit equals release commit through ApplicationInfo.Path' $releaseCommit $releaseCommit @{} $nativeGitPath
+    Assert-Accepted 'evidence commit is an ancestor through executable path containing spaces' $ancestorCommit $releaseCommit @{} $spacedGitExecutable
     Assert-Accepted 'current schema and unchanged grants hash' $ancestorCommit $releaseCommit
     Assert-Accepted 'valid evidence inside age limit' $ancestorCommit $releaseCommit @{ recordedAtUtc = Format-TestTimestamp ([DateTimeOffset]::UtcNow.AddDays(-89)) 0 }
     foreach ($fractionalDigits in 1..6) {
@@ -198,11 +267,11 @@ try {
         }
     }
 
-    Assert-Rejected 'unrelated commit' $unrelatedCommit $releaseCommit 'The SQL bootstrap evidence provenance commit is not an ancestor of the expected release commit.'
-    Assert-Rejected 'descendant evidence commit' $descendantCommit $releaseCommit 'The SQL bootstrap evidence provenance commit is not an ancestor of the expected release commit.'
+    Assert-Rejected 'unrelated commit' $unrelatedCommit $releaseCommit 'The SQL bootstrap evidence provenance commit is not an ancestor of the expected release commit. [GIT_EXIT_1]'
+    Assert-Rejected 'descendant evidence commit' $descendantCommit $releaseCommit 'The SQL bootstrap evidence provenance commit is not an ancestor of the expected release commit. [GIT_EXIT_1]'
     Assert-Rejected 'malformed evidence commit' 'not-a-commit' $releaseCommit ($metadataFailurePrefix + 'METADATA_SOURCE_COMMIT_FORMAT.')
     Assert-Rejected 'uppercase evidence commit' $ancestorCommit.ToUpperInvariant() $releaseCommit ($metadataFailurePrefix + 'METADATA_SOURCE_COMMIT_FORMAT.')
-    Assert-Rejected 'missing evidence commit object' ('f' * 40) $releaseCommit 'The SQL bootstrap evidence provenance commit is missing from the checked-out repository.'
+    Assert-Rejected 'missing evidence commit object' ('f' * 40) $releaseCommit 'The SQL bootstrap evidence provenance commit is missing from the checked-out repository. [GIT_EXIT_NONZERO]'
     Assert-Rejected 'checked-out HEAD differs from expected release' $ancestorCommit $ancestorCommit 'The checked-out repository HEAD does not match the immutable expected release commit.'
     Assert-Rejected 'wrong schema version' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_SCHEMA_VERSION.') @{ schemaVersion = '2' }
     Assert-Rejected 'non-PASS status' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_STATUS.') @{ status = 'PENDING' }
@@ -232,17 +301,27 @@ try {
     Copy-Item -LiteralPath $sourceGrantsScript -Destination $grantsScript -Force
 
     if ($isWindowsPlatform) {
-        $failingGit = Join-Path $temporaryDirectory 'git-failure.cmd'
-        Set-Content -LiteralPath $failingGit -Value '@exit /b 2' -Encoding ASCII
+        $exitOneGit = Join-Path $temporaryDirectory 'git-exit-one.cmd'
+        $exitTwoGit = Join-Path $temporaryDirectory 'git-exit-two.cmd'
+        [IO.File]::WriteAllText($exitOneGit, "@exit /b 1`r`n", [Text.Encoding]::ASCII)
+        [IO.File]::WriteAllText($exitTwoGit, "@exit /b 2`r`n", [Text.Encoding]::ASCII)
+        $invalidExecutable = Join-Path $temporaryDirectory 'git-invalid.exe'
+        [IO.File]::WriteAllBytes($invalidExecutable, [byte[]] @(0, 1, 2, 3))
     }
     else {
-        $failingGit = Join-Path $temporaryDirectory 'git-failure'
-        Set-Content -LiteralPath $failingGit -Value "#!/bin/sh`nexit 2" -Encoding UTF8
-        & chmod 700 -- $failingGit
-        if ($LASTEXITCODE -ne 0) { throw 'Could not permission the synthetic failing Git executable.' }
+        $exitOneGit = Join-Path $temporaryDirectory 'git-exit-one'
+        $exitTwoGit = Join-Path $temporaryDirectory 'git-exit-two'
+        $invalidExecutable = Join-Path $temporaryDirectory 'git-invalid'
+        [IO.File]::WriteAllText($exitOneGit, "#!/bin/sh`nexit 1`n", $utf8NoBom)
+        [IO.File]::WriteAllText($exitTwoGit, "#!/bin/sh`nexit 2`n", $utf8NoBom)
+        [IO.File]::WriteAllText($invalidExecutable, "#!/definitely-missing-sql-evidence-interpreter`n", $utf8NoBom)
+        & chmod 700 -- $exitOneGit $exitTwoGit $invalidExecutable
+        if ($LASTEXITCODE -ne 0) { throw 'Could not permission the synthetic Git executables.' }
     }
-    Assert-Rejected 'Git command failure' $ancestorCommit $releaseCommit 'SQL bootstrap evidence ancestry validation requires a complete checked-out Git repository.' @{} $failingGit
-    Assert-Rejected 'missing Git executable' $ancestorCommit $releaseCommit 'SQL bootstrap evidence ancestry validation requires an available native Git executable.' @{} (Join-Path $temporaryDirectory 'missing-git')
+    Assert-Rejected 'Git command returns exit 1' $ancestorCommit $releaseCommit 'SQL bootstrap evidence ancestry validation requires a complete checked-out Git repository. [GIT_EXIT_1]' @{} $exitOneGit
+    Assert-Rejected 'Git command returns exit 2' $ancestorCommit $releaseCommit 'SQL bootstrap evidence ancestry validation requires a complete checked-out Git repository. [GIT_EXIT_NONZERO]' @{} $exitTwoGit
+    Assert-Rejected 'Git process cannot start' $ancestorCommit $releaseCommit 'SQL bootstrap evidence Git process could not be started. [GIT_PROCESS_START_FAILED]' @{} $invalidExecutable
+    Assert-Rejected 'missing Git executable' $ancestorCommit $releaseCommit 'SQL bootstrap evidence ancestry validation requires an available native Git executable. [GIT_EXECUTABLE_UNAVAILABLE]' @{} (Join-Path $temporaryDirectory 'missing-git')
 
     [IO.File]::WriteAllText($evidencePath, '{ invalid evidence JSON', $utf8NoBom)
     Assert-CurrentEvidenceRejected 'malformed evidence JSON' $releaseCommit ($metadataFailurePrefix + 'EVIDENCE_JSON_SYNTAX.')
@@ -252,7 +331,7 @@ try {
     $completeRepository = $repository
     $shallowRepository = Join-Path $temporaryDirectory 'shallow-repository'
     $repositoryUri = 'file:///' + ($completeRepository.Replace('\', '/'))
-    & git clone --quiet --depth 1 $repositoryUri $shallowRepository
+    & $nativeGitPath clone --quiet --depth 1 $repositoryUri $shallowRepository
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the isolated shallow Git evidence-test repository.' }
     try {
         $repository = $shallowRepository
@@ -272,6 +351,9 @@ try {
     }
 }
 finally {
+    if ($nativeErrorPreferenceSupported) {
+        Set-Variable -Name PSNativeCommandUseErrorActionPreference -Value $previousNativeErrorPreference -Scope Script
+    }
     if (Test-Path -LiteralPath $temporaryDirectory) {
         Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force
     }
