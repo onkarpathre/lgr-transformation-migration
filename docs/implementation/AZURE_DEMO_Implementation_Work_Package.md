@@ -939,3 +939,87 @@ handoff:
 ```
 
 READY_FOR_COMPILED_SUBNET_REGRESSION_RETEST
+
+## PowerShell 7/Linux SQL-bootstrap evidence regression repair hand-off
+
+### Pipeline failure and exact root cause
+
+On branch `fix/mtp-azure-demo-reconciliation` at release-test commit `847b68d8791876c63d486167293a86541dd44b8c`, the Linux managed-agent task **Valid and invalid independent SQL bootstrap evidence tests** rejected its first accepted fixture, where the evidence commit equals the release commit. The failure occurred before Git repository or ancestry validation and was reported only through the former compound metadata error.
+
+The cross-platform defect was the handling of `recordedAtUtc` after JSON deserialization. Windows PowerShell 5.1 leaves the ISO-8601 JSON value as a string, while PowerShell 7 recognizes it as a `DateTime`. The validator cast that runtime object back to string before applying its literal-`Z` regular expression. On PowerShell 7 this no longer represented the original JSON token, so valid synthetic evidence failed the UTC syntax branch of the compound predicate. Git identity was already configured and Git setup exit codes were already checked; neither was the defect.
+
+### Bounded repair
+
+`Assert-AzureDemoSqlBootstrapEvidence.ps1` now validates the original `recordedAtUtc` JSON token before PowerShell can change its runtime type. It requires exactly one top-level evidence property and one unescaped string token, a literal trailing `Z`, seconds with either no fractional part or exactly one through seven fractional digits, invariant-culture `DateTimeOffset.TryParseExact`, and `AssumeUniversal -bor AdjustToUniversal`. Future evidence still permits only five minutes of clock skew and evidence still expires after 90 days.
+
+The former compound predicate is replaced by ordered fail-closed checks with stable, value-free reason codes for schema, status, source-commit format, SQL target, migration identity name/client/object IDs, executor GUID format and mismatch, evidence ID, approval reference, timestamp syntax/future/expiry, and grants-hash format/mismatch. Executor parsing uses one dedicated typed local `Guid`, parses once, rejects empty or malformed values and compares typed GUIDs. The grants hash remains the SHA-256 of the original script bytes, must be exactly 64 lowercase hexadecimal characters, and is compared with `StringComparison.Ordinal`; no newline conversion or text reserialization is performed.
+
+`Test-AzureDemoSqlBootstrapEvidence.ps1` now writes deterministic UTF-8-without-BOM fixtures, disables Git newline conversion in its isolated repository, formats timestamps with invariant culture, proves every accepted UTC fractional-second width, and asserts every safe metadata rejection category exactly. Rejection messages are checked not to contain protected fixture values. An accepted-case failure now reports the exact safe rejection message rather than the former aggregate metadata message.
+
+All durable evidence and pipeline semantics remain unchanged: equal and ancestor commits are accepted; descendants, unrelated commits, missing objects, shallow history and native Git failures are rejected; checked-out `HEAD` must equal `ExpectedReleaseCommit`; no fetch or pull occurs; target, principals, executor and grants-script hash remain exact. The seven-stage pipeline, default-disabled deployment and rollback, Secure File handling, release-branch restriction, workload-identity authentication, App Service subnet repair and private-DNS reconciliation are unchanged.
+
+### Verification evidence
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `847b68d8791876c63d486167293a86541dd44b8c`; clean worktree; empty staged index; local branch and `origin`/`azure` tracking refs aligned exactly. |
+| Windows PowerShell 5.1 parsing | PASS under `5.1.26100.9444`: all 35 tracked PowerShell scripts parsed with zero errors. |
+| SQL-bootstrap evidence regression | PASS: 10 accepted cases and 33 fail-closed cases across all 17 stable metadata-rejection categories. Equal/ancestor provenance, all supported timestamp precisions, malformed/empty/mismatched executor GUIDs, age/skew, exact target/identity/hash, unavailable/malformed evidence and all ancestry failure modes are covered. |
+| Culture determinism | PASS under Windows PowerShell 5.1 with `en-US`, `ar-SA` and `th-TH`: each run passed 10 accepted and 33 fail-closed cases across 17 categories. |
+| Pipeline structural regression | PASS: exactly seven ordered stages; `deployAzureDemo` and `rollbackAzureDemo` remain default `false`; existing Secure File, release restriction, workload identity, migration, smoke, swap and rollback controls passed. |
+| App Service subnet regression | PASS: one exact inventory and two compiled shapes accepted; 24 inventory and eight compiled-shape cases rejected; four site/slot integrations and two existing-subnet contracts verified. |
+| Private-DNS regression | PASS: one valid inventory accepted; six invalid inventories rejected; four deterministic parent/link and zone-group contracts verified. |
+| Migration identity and target regressions | PASS: identity one valid/14 rejected; target one valid/seven rejected. |
+| Database-principal SQL regression | PASS: seven external variables retained, correct database accepted, 30 invalid cases rejected, and all three approved `CREATE USER` expressions retained. |
+| Rollback safeguards | PASS: one valid target and 12 fail-closed target cases. |
+| Source/security boundary scan | PASS: 176 source/configuration files scanned. |
+| PowerShell 7/Linux execution | UNAVAILABLE locally and not claimed: `pwsh` is not installed; WSL reports that no Linux subsystem is installed; Docker and Podman are unavailable. The Linux managed-agent pipeline task must be rerun independently. |
+| Protected/external actions | NOT RUN: no Azure, Azure DevOps, live Secure File, SQL, pipeline, deployment, migration, seed, swap or rollback access/action occurred. Protected `sql-bootstrap.json` was neither accessed nor regenerated. |
+| Diff and repository mutation | PASS: changed files are restricted to the validator, its regression test and this implementation document; `git diff --check` passes; staged index remains empty. Nothing was committed, pushed, merged or deployed. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_CROSS_PLATFORM_SQL_EVIDENCE_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_847b68d8791876c63d486167293a86541dd44b8c"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals: []
+  artefacts:
+    - "scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1"
+    - "scripts/build/Test-AzureDemoSqlBootstrapEvidence.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Exact clean baseline, empty index and aligned local/origin/azure refs were confirmed before editing."
+    - "All locally available requested regressions passed; PowerShell 7/Linux remains an explicit independent retest."
+    - "Every metadata rejection has a stable safe category and executable no-leak coverage."
+  decisions:
+    - "Validate the original JSON timestamp token so PowerShell runtime date coercion cannot alter evidence syntax."
+    - "Retain the existing durable ancestry, age, target, identity, executor and byte-exact grants-hash contract."
+    - "Expose only stable non-sensitive rejection categories."
+  assumptions: []
+  risks:
+    - "PowerShell 7/Linux execution is unavailable locally and must be proven by the managed-agent retest."
+  defects:
+    - "REPAIRED: PowerShell 7 DateTime coercion no longer invalidates a valid literal-Z recordedAtUtc token."
+    - "REPAIRED: metadata rejection no longer collapses all failures into one aggregate message."
+    - "REPAIRED: fixtures and parser checks are culture-independent and explicit across supported timestamp and GUID forms."
+  blockers:
+    - "Independent PowerShell 7/Linux retest of mtp-azure-demo-deploy remains required."
+  approvals: []
+  requested_action: "Independent Tester must rerun the SQL-bootstrap evidence task on the Linux managed agent and verify the exact safe categories without accessing or replacing protected evidence."
+```
+
+READY_FOR_CROSS_PLATFORM_SQL_EVIDENCE_RETEST
