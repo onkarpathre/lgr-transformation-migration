@@ -325,7 +325,7 @@ Database principals:
 - Seed runner: either the migration identity for the explicit seed stage or a separate narrow principal; no startup seeding.
 - Human DBA group: PIM/JIT according to enterprise controls; all bootstrap actions evidenced.
 
-The first `CREATE USER ... FROM EXTERNAL PROVIDER` and grants require an approved Entra-admin bootstrap operation. Bicep cannot safely infer database-contained permissions merely from Azure RBAC.
+The first `CREATE USER ... FROM EXTERNAL PROVIDER` and grants require an approved Entra-admin bootstrap operation. Bicep cannot safely infer database-contained permissions merely from Azure RBAC. Protected `sql-bootstrap.json` is durable evidence of that SQL permission contract, not approval of an application release. Its `sourceCommit` is the immutable bootstrap provenance commit and must be present in complete checked-out Git history as equal to or an ancestor of `Build.SourceVersion`. The evidence remains reusable for descendant releases for at most 90 days, allowing no more than five minutes of clock skew, while the exact SQL server/database, migration identity name/client/object IDs, executor SQL-administrator object ID and current grants-script SHA-256 remain unchanged and the evidence is not revoked.
 
 ## Storage configuration
 
@@ -455,6 +455,8 @@ Do not put access tokens, client secrets, SQL passwords, membership JSON or publ
 | `azure-demo-staging` | Deploy/migrate and test slots | Branch control, exclusive lock, TDA/InfoSec prerequisite evidence, DBA approval for migrations |
 | `azure-demo` | Slot swap to the main demo URLs | Independent Tester PASS, Quality Manager recommendation, Product Owner scope confirmation, named human release approval |
 
+The SQL-bootstrap approval reference approves the database principal/grant contract only. It cannot satisfy either protected-environment approval or the named release approval. Every final deployment commit requires fresh release approval bound to exact `Build.SourceVersion`, even when unexpired SQL-bootstrap evidence is reused.
+
 ## Deployment sequence
 
 1. Confirm approved Product, Architecture and governance packages and record the exact commit/artifact hashes.
@@ -463,7 +465,7 @@ Do not put access tokens, client secrets, SQL passwords, membership JSON or publ
 4. Query the supported App Service stacks in the approved subscription/region through the human-approved deployment workflow. Abort if Node 24 LTS or .NET 10 is unavailable; do not fall back to containers automatically.
 5. Run Bicep lint/build/security scan and `what-if` against `Onkar.Pathre`; obtain approval.
 6. Deploy/update network, monitoring, identities, App Service plan/sites/slots, Key Vault, SQL, Storage, private endpoints, DNS, diagnostics and alerts.
-7. Complete the evidenced SQL Entra administrator/bootstrap grants.
+7. Complete the evidenced SQL Entra administrator/bootstrap grants, or reuse valid unexpired evidence whose provenance commit is an ancestor of the release and whose exact target/identity/grants contract is unchanged. Regenerate evidence when that contract changes, reaches the 90-day maximum age or is revoked.
 8. Verify private DNS/connectivity from the deployment agent and sites without changing public-network controls.
 9. Record the pre-migration schema state/PITR time; review and execute the EF bundle with the migration identity.
 10. Execute the explicit AzureDemo seed stage and reconcile the manifest.

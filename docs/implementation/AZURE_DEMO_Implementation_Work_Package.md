@@ -63,9 +63,11 @@ The four exact-package decisions authorise controlled implementation and local o
 
 ### Mandatory external SQL bootstrap prerequisite
 
-The pipeline does not execute `Configure-AzureDemoDatabasePrincipals.sql`. The migration identity cannot create its own contained user before it has database access. Before deployment, an independently approved Entra SQL administrator/bootstrap identity must execute the exact reviewed script and publish protected `sql-bootstrap.json` evidence. The evidence must be bound to the exact release commit, SQL server/database, migration identity name/client/object IDs, executing administrator object ID, named approval reference, UTC timestamp and SHA-256 of `Configure-AzureDemoDatabasePrincipals.sql`. Missing, stale, substituted or hash-mismatched evidence fails before migration. This remains an external DBA/human pre-deployment action; it is not claimed as automated.
+The pipeline does not execute `Configure-AzureDemoDatabasePrincipals.sql`. The migration identity cannot create its own contained user before it has database access. Before deployment, an independently approved Entra SQL administrator/bootstrap identity must execute the exact reviewed script and publish protected `sql-bootstrap.json` evidence. The existing schema remains unchanged: `sourceCommit` now means the immutable provenance commit at which the bootstrap was executed. Evidence must retain `schemaVersion: 1`, `status: PASS`, the exact SQL server/database, migration identity name/client/object IDs, executing administrator object ID, non-empty evidence/approval references, an unambiguous UTC timestamp and the exact SHA-256 of the current grants script.
 
-`sql-bootstrap.json` is supplied to `mtp-azure-demo-deploy` as the Azure DevOps Secure File named exactly `sql-bootstrap.json`. Every pipeline job that consumes the file or `AZDEMO_SMOKE_PREREQUISITE_EVIDENCE` independently downloads the Secure File, copies it as `sql-bootstrap.json` into a job-local directory beneath `$(Agent.TempDirectory)`, binds the job-scoped evidence-directory variable, and removes only that directory under `condition: always()`. The evidence remains validated against the exact `Build.SourceVersion`; any new pipeline commit invalidates previously generated evidence. After this secure-delivery repair is committed and validated, the Secure File must be replaced with freshly approved evidence bound to that new commit before any migration or smoke execution.
+`sql-bootstrap.json` is supplied to `mtp-azure-demo-deploy` as the Azure DevOps Secure File named exactly `sql-bootstrap.json`. Every pipeline job that consumes the file or `AZDEMO_SMOKE_PREREQUISITE_EVIDENCE` independently downloads the Secure File, copies it as `sql-bootstrap.json` into a job-local directory beneath `$(Agent.TempDirectory)`, binds the job-scoped evidence-directory variable, and removes only that directory under `condition: always()`. The database job checks out complete history and uses local `git merge-base --is-ancestor` without fetching. Exit 0 accepts equal/ancestor provenance; exit 1 rejects non-ancestry; malformed/missing objects, shallow history, missing Git and every other Git failure reject. Evidence expires after 90 days, with only five minutes of clock-skew tolerance. A changed target, migration identity, executor, grants script/hash, expiry or revocation requires regenerated SQL evidence; unrelated descendant application, Bicep, DNS, subnet, packaging, diagnostic or documentation changes do not.
+
+SQL-bootstrap approval approves only the database principal/grant contract. Release approval separately protects the exact `Build.SourceVersion`, release branch, immutable package and migration manifests, deployment environment and human decision. The SQL-bootstrap `approvalReference` cannot substitute for a fresh per-release approval. Operationally, reuse valid SQL evidence across descendant releases while its contract and age remain valid; obtain a fresh release approval for each final deployment commit; regenerate SQL evidence only when its target/security contract changes, expires or is revoked.
 
 ### SQLCMD variable-precedence repair
 
@@ -481,7 +483,7 @@ handoff:
   decisions:
     - "Deployment and rollback remain default-disabled."
     - "The existing seven stages, exact MTP names/service connections, workload identity, immutable package flow, commit binding and migration/rollback safeguards are unchanged."
-    - "A new pipeline commit invalidates the current Secure File; freshly approved exact-commit sql-bootstrap.json evidence must replace it after this repair is committed and validated."
+    - "Historical note: this repair used the former exact-commit evidence rule; the later durable-evidence contract below supersedes that rule while retaining per-release approval."
   assumptions:
     - "Azure DevOps DownloadSecureFile@1 supplies its documented task-scoped secureFilePath output on the managed deployment agents."
   risks:
@@ -706,7 +708,7 @@ The protected predeployment gate now inventories the VNet, its subnets and actua
 
 No variable-group or environment-variable change is required. The seven stages, both default-disabled deployment controls, release-branch restriction, service connections, workload identities, Secure File evidence handling, private-DNS reconciliation, exact resource/identity names, SQL aliases/grants, runtime settings, migration/seed/smoke/swap/rollback safeguards and repository-contained immutable package flow remain unchanged.
 
-Any repair commit changes the source commit from `9939709021ed84bfcdbcf778569624865857d280`. Approval evidence and `sql-bootstrap.json` created for that commit must not be reused. Fresh approval and freshly produced SQL-bootstrap evidence bound to the repair commit are required after the repair is committed, promoted and independently validated.
+This hand-off originally applied the former exact-commit evidence rule. The durable-evidence repair below supersedes that rule: SQL-bootstrap evidence from `9939709021ed84bfcdbcf778569624865857d280` may be reused by descendants only when ancestry, age, target/identity/executor and exact grants-script hash all pass; every final release commit still needs fresh release approval.
 
 ### Local verification
 
@@ -775,7 +777,7 @@ handoff:
   risks:
     - "Build 19 may have reconciled unrelated incremental resources before the apps nested deployment failed."
     - "Compiled Bicep and protected Azure initial/repeat deployment evidence remain unavailable locally."
-    - "Any repair commit invalidates approval and SQL-bootstrap evidence bound to 9939709021ed84bfcdbcf778569624865857d280."
+    - "Historical note: the then-current exact-commit bootstrap-evidence rule is superseded by the durable ancestor-and-contract validation below; per-release approval remains exact-commit-bound."
   defects:
     - "REPAIRED: both parameter files selected the nonexistent snet-appsvc-integration subnet."
     - "REPAIRED: web production and web staging omitted regional VNet integration required by the reviewed architecture."
@@ -783,9 +785,87 @@ handoff:
   blockers:
     - "Bicep CLI 0.47.16 is unavailable in the local environment."
     - "Protected Azure inventory, what-if, initial deployment and repeat incremental deployment require independent execution under existing approvals."
-    - "Fresh approval and fresh sql-bootstrap.json evidence are required for the future repair commit."
+    - "Fresh release approval remains required; fresh sql-bootstrap.json is required only on target/security-contract change, expiry or revocation."
   approvals: []
   requested_action: "Independent Tester must rerun Bicep 0.47.16 compilation/regressions, execute the protected subnet inventory gate and what-if, verify all four site/slot integrations, then perform separately approved initial and repeat incremental deployments before migration, seed, package deployment, smoke or swap can proceed."
 ```
 
 READY_FOR_APP_SERVICE_SUBNET_RETEST
+
+## Durable SQL-bootstrap evidence repair hand-off
+
+The SQL-bootstrap Secure File remains job-local and unchanged in schema. Its `sourceCommit` is now the immutable bootstrap provenance commit rather than the application release commit. The validator rejects malformed or missing commit objects, missing Git, shallow/incomplete history and every native Git error, then accepts only exit `0` from `git merge-base --is-ancestor <evidenceSourceCommit> <expectedReleaseCommit>`; exit `1` is a non-ancestor rejection and every other exit is a validation failure. It performs no fetch or pull. The checked-out `HEAD` must equal exact `Build.SourceVersion`.
+
+The durable evidence remains bound to schema version `1`, `PASS`, the exact approved SQL server/database, migration identity name/client/object IDs, executor SQL-administrator object ID, non-empty evidence/approval references, strict UTC `recordedAtUtc`, and the lowercase SHA-256 of the current grants script. Maximum age is 90 days with at most five minutes of clock-skew tolerance. Complete Git history is checked out in `DatabaseAndSlots`; Secure File download, exact filename, temporary location, Linux permissions and `always()` cleanup are unchanged.
+
+SQL-bootstrap approval and release approval remain independent. The former approves the database principal/grant contract. The latter is required for every exact application/Bicep/pipeline `Build.SourceVersion` and retains the release branch, protected environment/manual gate, immutable package/manifest, default-disabled deployment/rollback, service-connection and workload-identity controls. An SQL-bootstrap `approvalReference` is not release approval.
+
+Evidence provenance `9939709021ed84bfcdbcf778569624865857d280` remains eligible for a descendant repair release on the supplied facts: the object is present, `git merge-base --is-ancestor` exits `0`, and `Configure-AzureDemoDatabasePrincipals.sql` is unchanged at SHA-256 `aa78888d54e7399d51a87a8daa9413c0ab9c01e7d0b447ef36df069d87c28eed`. Runtime acceptance still fails closed if the protected record's age, status, target, identities, executor, IDs, approval reference or revocation state no longer passes; the live Secure File was not accessed.
+
+### Local verification
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `7cb1124661bc7566b3d12943bf6ddf24fa9db2eb`; clean worktree; empty staged index; local, `origin` and `azure` branch refs aligned. |
+| Durable evidence regression | PASS: 4 accepted cases and 24 fail-closed cases, including equal/ancestor acceptance; unrelated, descendant, malformed, missing-object, shallow-history, Git-failure, target/identity/executor/hash/ID/age/timestamp rejection. |
+| Pipeline structure and Secure File | PASS: exactly seven ordered stages; exact `Build.SourceVersion`, complete-history checkout, mandatory ancestry/hash/90-day controls, two protected Secure File consumers, job-local temporary handling and cleanup, release controls, and default-disabled deployment/rollback retained. |
+| PowerShell 5.1 | PASS under `5.1.26100.9444`: 35 tracked scripts and 17 pipeline PowerShell blocks parsed with zero errors. |
+| Preserved repair regressions | PASS: EF parsing 20 fail-closed checks; App Service subnet 1 accepted/24 rejected plus four site/slot integrations; private DNS 1/6; migration identity 1/14; migration target 1/7; SQL principal 30 invalid cases; rollback 1/12; monitoring 17 alert resources; smoke plan enumerated 22 checks without external access. |
+| Restore/build/tests | PASS: locked restore and Release build exited `0` with zero errors; focused Azure Demo 27/27, unit 205/205 and integration 145/145 passed. Four `NU1900` warnings accurately record unavailable NuGet advisory-index access. |
+| Package-generation regression | UNAVAILABLE against the current ignored artifact cache: `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build/Test-AzureDemoPackageGeneration.ps1` exited `1` because `artifacts/azure-demo-ci/packages/application/application-artifact-manifest.json` is absent. Its outside-repository and prefix-confusion guards passed first. No package was generated for this unrelated evidence change; pipeline structure still pins repository-contained immutable package generation and manifest validation. |
+| SBOM/security | PASS: deterministic 107 NuGet/522 npm component SBOM regression; source/security boundary scan passed 176 files. |
+| Diff/index | PASS: exact seven-file allowlist; `git diff --check` exit `0`; staged index empty. |
+| Prohibited/external checks | NOT RUN: no Azure, Azure DevOps, live Secure File, SQL, pipeline, deployment, migration, seed, swap or rollback access/action was permitted. Exit code not applicable because commands were not invoked. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_DURABLE_SQL_EVIDENCE_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_7cb1124661bc7566b3d12943bf6ddf24fa9db2eb"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals:
+      - "Four exact-package implementation/local-test approvals at b8800e1eda014eef1421a1af5427aaea41393496."
+  artefacts:
+    - "azure-pipelines.yml"
+    - "docs/architecture/AZURE_DEMO_Deployment_Architecture.md"
+    - "docs/architecture/AZURE_DEMO_Environment_Configuration.md"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+    - "scripts/build/Test-AzureDemoSqlBootstrapEvidence.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1"
+  evidence:
+    - "All local checks in the durable-evidence verification table passed against the unstaged worktree."
+    - "Provenance commit 9939709021ed84bfcdbcf778569624865857d280 is present and an ancestor; the grants script retains the supplied exact SHA-256."
+  decisions:
+    - "Reuse valid SQL evidence across descendant releases only while its target/security contract, age and status remain valid."
+    - "Require fresh human release approval for every final exact Build.SourceVersion."
+    - "Regenerate SQL evidence only when its target/security contract changes, expires or is revoked."
+  assumptions:
+    - "The supplied protected evidence contract accurately describes the inaccessible live Secure File."
+  risks:
+    - "Live Secure File fields and revocation state remain runtime-validated but were not inspected."
+    - "NuGet online vulnerability advisory retrieval was unavailable in the restricted environment."
+  defects:
+    - "REPAIRED: unrelated descendant commits no longer force SQL principal bootstrap repetition or Secure File replacement."
+    - "REPAIRED: provenance ancestry, finite age and exact executor validation now fail closed."
+  blockers:
+    - "Independent Tester retest and the normal exact-commit human release approval remain required."
+    - "Azure Platform/Operations remains PENDING_PRE_DEPLOYMENT."
+  approvals: []
+  requested_action: "Independent Tester must retest the durable evidence contract and confirm live pipeline controls without treating SQL-bootstrap approval as release approval."
+```
+
+READY_FOR_DURABLE_SQL_EVIDENCE_RETEST

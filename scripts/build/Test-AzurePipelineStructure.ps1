@@ -11,6 +11,7 @@ $efArtifactScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New
 $runtimeValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureAppServiceNativeRuntimes.ps1') -Raw
 $appServiceSubnetValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoAppServiceSubnet.ps1') -Raw
 $privateDnsValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoPrivateDnsReconciliation.ps1') -Raw
+$sqlBootstrapValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\database\Assert-AzureDemoSqlBootstrapEvidence.ps1') -Raw
 
 if ($text.Contains("`t")) { throw 'Azure Pipelines YAML contains tab indentation.' }
 if ($lines | Where-Object { $_ -match '\s+$' }) { throw 'Azure Pipelines YAML contains trailing whitespace.' }
@@ -397,6 +398,11 @@ function Assert-SqlBootstrapEvidenceDelivery([string[]] $PipelineLines) {
         if ($downloadIndex -lt 0 -or $variableIndex -le $downloadIndex -or $firstConsumerIndex -le $variableIndex -or $cleanupIndex -le $lastConsumerIndex) {
             throw "Evidence-consuming job $($job.Name) must download, prepare and bind evidence before every use, then clean it up."
         }
+
+        if ($job.Name -eq 'DatabaseAndSlots' -and
+            ($job.Text -notmatch '(?m)^\s+- checkout: self\s*\r?\n\s+fetchDepth: 0\s*\r?\n\s+fetchTags: false\s*$')) {
+            throw 'The durable SQL evidence validation job must check out complete deterministic Git history without tags.'
+        }
     }
 
     $pipelineText = $PipelineLines -join "`n"
@@ -583,8 +589,35 @@ if ($text -match '(?im)^\s*(?:[-&]\s*)?sqlcmd(?:\.exe)?(?:\s|$)' -or $text.Conta
 if ([regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoDatabasePrincipalSql\.ps1\s*$').Count -ne 1) {
     throw 'The pipeline must run the SQLCMD variable-precedence and database-principal guard contract exactly once.'
 }
-if (-not $text.Contains("sql-bootstrap.json' -ExpectedSourceCommit '`$(Build.SourceVersion)'")) {
-    throw 'The pipeline must require independently produced, commit-bound SQL bootstrap evidence.'
+if ([regex]::Matches($text, '(?m)^\s*- pwsh: \./scripts/database/Assert-AzureDemoSqlBootstrapEvidence\.ps1').Count -ne 1) {
+    throw 'The pipeline must run durable SQL bootstrap evidence validation exactly once before migration.'
+}
+$sqlBootstrapInvocation = Get-YamlStepBlock $lines 'Assert-AzureDemoSqlBootstrapEvidence\.ps1 -EvidencePath'
+foreach ($fragment in @(
+        "-ExpectedReleaseCommit '`$(Build.SourceVersion)'",
+        "-RepositoryRoot '`$(Build.SourcesDirectory)'",
+        "-GrantsScriptPath 'scripts/database/Configure-AzureDemoDatabasePrincipals.sql'",
+        "-ExpectedExecutorPrincipalObjectId '`$(AZDEMO_SQL_ADMIN_OBJECT_ID)'",
+        '-MaximumEvidenceAgeDays 90')) {
+    if (-not $sqlBootstrapInvocation.Contains($fragment)) {
+        throw "The durable SQL bootstrap invocation is missing its fail-closed release/evidence contract: $fragment"
+    }
+}
+foreach ($fragment in @(
+        "'merge-base', '--is-ancestor'",
+        "'rev-parse', '--is-shallow-repository'",
+        "'cat-file', '-e'",
+        'Get-FileHash -LiteralPath $resolvedScript -Algorithm SHA256',
+        '[ValidateRange(1, 90)] [int] $MaximumEvidenceAgeDays = 90',
+        '$recordedAt -gt $now.Add($clockSkewTolerance)',
+        '$recordedAt -lt $now.AddDays(-$MaximumEvidenceAgeDays).Subtract($clockSkewTolerance)')) {
+    if (-not $sqlBootstrapValidatorScript.Contains($fragment)) {
+        throw "The durable SQL bootstrap validator is missing its fail-closed ancestry, grants-hash or age contract: $fragment"
+    }
+}
+if ($sqlBootstrapValidatorScript -match '(?im)\bgit\s+(?:fetch|pull)\b' -or
+    $sqlBootstrapValidatorScript -match "(?im)'(?:fetch|pull)'") {
+    throw 'Durable SQL bootstrap evidence validation must not fetch or pull repository history.'
 }
 if ($text -match '(?im)^\s*(?:Write-(?:Host|Output)|echo)\b[^\r\n]*(?:access.?token|idtoken|authorization)' -or
     $text -match '(?i)##vso\[task\.setvariable[^\]]*(?:token|credential|secret)') {

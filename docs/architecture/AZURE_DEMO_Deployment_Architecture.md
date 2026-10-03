@@ -306,6 +306,10 @@ The import journey requires a GPv2 Standard LRS account with public access disab
 
 ## Controlled EF Core migration and rollback
 
+SQL principal bootstrap approval and release approval are separate controls. SQL-bootstrap approval authorises only the exact database principal/grant contract: approved SQL server/database, migration identity name/client/object IDs, executor SQL-administrator object ID, and the SHA-256 of `Configure-AzureDemoDatabasePrincipals.sql`. Its protected evidence records the immutable commit at which that contract was executed. A later release may reuse the evidence only when that provenance commit is equal to or an ancestor of the exact release commit, the complete local Git history proves that relationship without fetching, every target/identity/hash value still matches, and the UTC evidence age is no more than 90 days with at most five minutes of clock-skew tolerance. A changed target, identity, executor, grants script/hash, expiry or revocation requires new SQL-bootstrap evidence.
+
+Release approval remains a distinct per-release human decision over the exact `Build.SourceVersion`, immutable package and migration-manifest hashes, Bicep/pipeline contents and deployment context. An SQL-bootstrap `approvalReference` is never release approval. Application, unrelated Bicep, DNS, subnet, packaging, pipeline-diagnostic or documentation descendants do not by themselves invalidate otherwise valid SQL-bootstrap evidence, but every final deployment commit still requires its own release approval.
+
 1. CI restores locked dependencies, builds and tests against SQL Server, then produces a Linux EF migration bundle plus an idempotent SQL script and migration manifest.
 2. A DBA/TDA reviewer compares the script and manifest with the last deployed `__EFMigrationsHistory`; destructive operations, data rewrites or unsupported down scripts block deployment.
 3. The deployment pipeline records the current database name, migration history and a point-in-time restore checkpoint before change.
@@ -401,6 +405,7 @@ Run for PRs to `release/azure-demo-v1` and other protected branches:
 - Use Azure DevOps Environments `azure-demo-staging` and `azure-demo` with named human approvals and exclusive locks.
 - Use an Azure Resource Manager service connection with workload identity federation; no client secret or publish profile.
 - Run Bicep `what-if`, policy checks and an approval before deployment to `Onkar.Pathre`.
+- Validate protected SQL-bootstrap evidence against complete checked-out Git history, the exact grants-script hash, approved target/identities and the finite age limit; validation performs no network fetch.
 - Run the database migration from the approved VNet-connected self-hosted agent; a Microsoft-hosted agent must not cause SQL public access or `Allow Azure services` to be enabled.
 - Deploy API and web artifacts to `staging` slots only, apply slot settings, warm and smoke test them.
 - Require independent Tester evidence and the human demo release approval before swapping API first, then web.

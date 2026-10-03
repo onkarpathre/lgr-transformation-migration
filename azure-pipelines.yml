@@ -327,6 +327,8 @@ stages:
         deploy:
           steps:
           - checkout: self
+            fetchDepth: 0
+            fetchTags: false
           - download: current
             artifact: azure-demo-immutable
           - task: DownloadSecureFile@1
@@ -379,8 +381,8 @@ stages:
               AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID: $(AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID)
               AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
               AZDEMO_ALERT_EMAIL: $(AZDEMO_ALERT_EMAIL)
-          - pwsh: ./scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1 -EvidencePath '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)/sql-bootstrap.json' -ExpectedSourceCommit '$(Build.SourceVersion)' -GrantsScriptPath 'scripts/database/Configure-AzureDemoDatabasePrincipals.sql'
-            displayName: Require independently produced SQL Entra bootstrap evidence
+          - pwsh: ./scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1 -EvidencePath '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)/sql-bootstrap.json' -ExpectedReleaseCommit '$(Build.SourceVersion)' -RepositoryRoot '$(Build.SourcesDirectory)' -GrantsScriptPath 'scripts/database/Configure-AzureDemoDatabasePrincipals.sql' -ExpectedExecutorPrincipalObjectId '$(AZDEMO_SQL_ADMIN_OBJECT_ID)' -MaximumEvidenceAgeDays 90
+            displayName: Require durable independently produced SQL Entra bootstrap evidence
           - task: AzureCLI@2
             displayName: Record pre-migration PITR and schema checkpoint
             inputs:
