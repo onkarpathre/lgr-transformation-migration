@@ -22,7 +22,7 @@ param resourceNames = {
   apiMainIdentity: 'id-mtp-api-dev-uks-001'
   apiStagingIdentity: 'id-mtp-api-staging-dev-uks-001'
   actionGroup: 'ag-mtp-dev-uks-001'
-  integrationSubnet: 'snet-appsvc-integration'
+  integrationSubnet: 'snet-appservice'
   privateEndpointSubnet: 'snet-private-endpoints'
   appServicePrivateDnsZone: 'privatelink.azurewebsites.net'
   keyVaultPrivateDnsZone: 'privatelink.vaultcore.azure.net'

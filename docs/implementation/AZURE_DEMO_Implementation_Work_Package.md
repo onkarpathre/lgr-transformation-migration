@@ -682,3 +682,110 @@ handoff:
 ```
 
 READY_FOR_PRIVATE_DNS_RECONCILIATION_RETEST
+
+## Azure Demo App Service integration-subnet reconciliation repair hand-off
+
+### Build 19 failure and bounded repair
+
+Azure build `19` failed during incremental deployment `mtp-azure-demo-19`, nested deployment `apps-mtp-dev-uks-001`, while reconciling `Microsoft.Web/sites/app-mtp-api-dev-uks-001/slots/staging`. ARM could not resolve the stale subnet name `snet-appsvc-integration`. The supplied deployment record is:
+
+- nested deployment `data`: `Succeeded`;
+- nested deployment `identities`: `Succeeded`;
+- nested deployment `monitoring`: `Succeeded`;
+- nested deployment `network`: `Succeeded`;
+- nested deployment `apps`: `Failed`; and
+- migration, synthetic seed reconciliation, package deployment, smoke testing and slot swap did not run.
+
+Because deployment mode was incremental, resources unrelated to the failed App Service operation may have been reconciled before the nested app failure. This repair therefore adopts the supplied authoritative inventory and does not infer that the failed deployment was atomic.
+
+The approved VNet is `vnet-mtp-dev-uks-001` (`10.50.0.0/16`). Bicep continues to reference the VNet and both subnets as symbolic `existing` resources. It now resolves the App Service integration subnet as `/subscriptions/633398e2-6c00-4bb7-a576-2db0d210ee77/resourceGroups/Onkar.Pathre/providers/Microsoft.Network/virtualNetworks/vnet-mtp-dev-uks-001/subnets/snet-appservice` from the existing VNet/subnet symbols; the subscription ID is not embedded in Bicep. The integration subnet remains `snet-appservice` (`10.50.1.0/24`) with exactly the `Microsoft.Web/serverFarms` service delegation. The separate private-endpoint subnet remains `snet-private-endpoints` (`10.50.2.0/24`). No subnet resource, prefix, delegation or VNet address space is created or changed.
+
+The reviewed architecture requires web production and web staging to use regional VNet integration. `AZURE_DEMO_Deployment_Architecture.md` defines the web application as the same-origin proxy to private API endpoints and assigns the delegated subnet to web/API sites and slots. The reconciled topology therefore attaches web production, web staging, API production and API staging to the same existing `snet-appservice` subnet. The two existing API assignments are retained; the two web assignments close the implementation gap rather than expanding the approved architecture.
+
+The protected predeployment gate now inventories the VNet, its subnets and actual `Microsoft.Network/privateEndpoints` resources through separate Azure CLI list commands. Each native exit code is captured immediately. Validation rejects command failure, empty or malformed JSON, missing/duplicate/wrong VNet or subnet matches, the stale subnet name, wrong IDs/prefixes/delegations/provisioning state, an absent or reshaped private-endpoint subnet, and any actual private-endpoint resource whose `subnet.id` targets `snet-appservice`. Provider-managed App Service `privateEndpoints` and `serviceAssociationLinks` collections on the subnet model are deliberately ignored as placement evidence; only independently enumerated `Microsoft.Network/privateEndpoints` resources are evaluated.
+
+No variable-group or environment-variable change is required. The seven stages, both default-disabled deployment controls, release-branch restriction, service connections, workload identities, Secure File evidence handling, private-DNS reconciliation, exact resource/identity names, SQL aliases/grants, runtime settings, migration/seed/smoke/swap/rollback safeguards and repository-contained immutable package flow remain unchanged.
+
+Any repair commit changes the source commit from `9939709021ed84bfcdbcf778569624865857d280`. Approval evidence and `sql-bootstrap.json` created for that commit must not be reused. Fresh approval and freshly produced SQL-bootstrap evidence bound to the repair commit are required after the repair is committed, promoted and independently validated.
+
+### Local verification
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `9939709021ed84bfcdbcf778569624865857d280`; worktree clean; staged index empty; local branch, `origin/fix/mtp-azure-demo-reconciliation` and `azure/fix/mtp-azure-demo-reconciliation` all resolved to the exact HEAD. |
+| App Service subnet regression | PASS: one exact inventory containing provider-managed App Service association metadata was accepted; 24 fail-closed inventories were rejected; both parameter files, both symbolic existing-subnet resources and all four site/slot integration assignments were verified. |
+| Pipeline structure | PASS: exactly seven ordered stages; native VNet/subnet/private-endpoint outputs and exit codes are captured before the fail-closed validator; validation precedes Bicep what-if and the dependent deployment stage. Existing release, service-connection, evidence, migration, smoke, swap and rollback contracts passed. |
+| PowerShell 5.1 | PASS under `5.1.26100.9444`: 35 repository PowerShell files and 17 pipeline inline PowerShell blocks parsed with zero errors. |
+| Private DNS | PASS: one exact existing SQL inventory accepted; six invalid inventories rejected; four deterministic parent/link and zone-group contracts preserved. |
+| Parameter/runtime | PASS: 11 synthetic parameter values accepted; native runtime regression accepted three catalogues and rejected six invalid/native-failure cases. |
+| Monitoring/rollback | PASS: 17 mandatory alerts; rollback accepted one exact target and rejected 12 invalid targets. |
+| Migration/SQL/EF | PASS: migration target 1/7, migration identity 1/14, SQL bootstrap evidence 1/6, SQLCMD contract seven external variables and 30 invalid cases, and 20 EF parser checks. |
+| Restore/build/format | PASS: locked restore exit `0`; Release build exit `0` with zero errors; scoped `dotnet format --verify-no-changes` exit `0`. Restore/build reported four `NU1900` warnings because the restricted environment could not reach the NuGet vulnerability service; no connected vulnerability-pass claim is made. |
+| .NET tests | PASS: focused Azure Demo 27/27; full unit 205/205; full integration 145/145; zero failed or skipped. |
+| SBOM/source boundaries | PASS: deterministic 107 NuGet and 522 npm component inventories; source/security boundary scan passed. |
+| Bicep 0.47.16 format/lint/build and compiled regression | UNAVAILABLE, not passed. `az bicep version`, `az bicep format --file infra/bicep/main.bicep --stdout`, `az bicep build --file infra/bicep/main.bicep --outfile .codex-temp/appservice-subnet-main.json`, and both `az bicep build-params` commands each exited `1`: `az` is not installed or available on `PATH`. No compiled template was produced, so the compiled-mode subnet and private-DNS regressions could not run. |
+| Protected Azure checks | NOT RUN and not claimed. The work item prohibits Azure/Azure DevOps access, pipeline execution, what-if, deployment, migration, seed, smoke, swap and rollback. Protected inventory, what-if, initial deployment and repeat incremental deployment remain independent retest actions. |
+
+The source-level idempotency contract passes: the exact VNet and both subnets are `existing`, names are stable, subnet shape is absent from Bicep, and all four App Service resources consume the same symbolic subnet ID. Actual repeat incremental-deployment idempotency cannot be claimed until protected retest.
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_APP_SERVICE_SUBNET_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_9939709021ed84bfcdbcf778569624865857d280"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml"
+    - "docs/architecture/AZURE_DEMO_Deployment_Architecture.md"
+    - "docs/architecture/AZURE_DEMO_Environment_Configuration.md"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+    - "infra/bicep/main.bicep"
+    - "infra/bicep/modules/appservice.bicep"
+    - "infra/bicep/parameters/azure-demo.bicepparam"
+    - "infra/bicep/parameters/dev.bicepparam"
+    - "scripts/build/Assert-AzureDemoAppServiceSubnet.ps1"
+    - "scripts/build/Test-AzureDemoAppServiceSubnet.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+  evidence:
+    - "Exact baseline, clean worktree, empty index and aligned local/origin/azure refs were confirmed before editing."
+    - "The exact existing subnet inventory passed; 24 command, JSON, identity, prefix, delegation, provisioning and private-endpoint placement cases failed closed."
+    - "All locally available pipeline, DNS, parameter, runtime, monitoring, rollback, migration, SQL, EF, SBOM, source/security, build and test checks passed."
+  decisions:
+    - "Adopt only the existing snet-appservice regional-integration subnet; do not create or reshape a subnet."
+    - "Attach web production, web staging, API production and API staging to snet-appservice as required by the reviewed private-API proxy architecture."
+    - "Treat only actual independently enumerated Microsoft.Network/privateEndpoints resources as private-endpoint placement evidence."
+    - "Retain snet-private-endpoints as the separate private-endpoint subnet."
+    - "No variable-group or Bicep environment-parameter change is required."
+  assumptions:
+    - "The supplied authoritative Azure inventory and build-19 deployment record are accurate."
+  risks:
+    - "Build 19 may have reconciled unrelated incremental resources before the apps nested deployment failed."
+    - "Compiled Bicep and protected Azure initial/repeat deployment evidence remain unavailable locally."
+    - "Any repair commit invalidates approval and SQL-bootstrap evidence bound to 9939709021ed84bfcdbcf778569624865857d280."
+  defects:
+    - "REPAIRED: both parameter files selected the nonexistent snet-appsvc-integration subnet."
+    - "REPAIRED: web production and web staging omitted regional VNet integration required by the reviewed architecture."
+    - "REPAIRED: the protected gate did not validate the exact existing integration subnet or actual private-endpoint placement before what-if."
+  blockers:
+    - "Bicep CLI 0.47.16 is unavailable in the local environment."
+    - "Protected Azure inventory, what-if, initial deployment and repeat incremental deployment require independent execution under existing approvals."
+    - "Fresh approval and fresh sql-bootstrap.json evidence are required for the future repair commit."
+  approvals: []
+  requested_action: "Independent Tester must rerun Bicep 0.47.16 compilation/regressions, execute the protected subnet inventory gate and what-if, verify all four site/slot integrations, then perform separately approved initial and repeat incremental deployments before migration, seed, package deployment, smoke or swap can proceed."
+```
+
+READY_FOR_APP_SERVICE_SUBNET_RETEST

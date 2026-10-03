@@ -209,6 +209,7 @@ resource webConfiguration 'Microsoft.Web/sites/config@2023-12-01' = {
     linuxFxVersion: webLinuxFxVersion
     appCommandLine: 'node server.js'
     healthCheckPath: '/health'
+    virtualNetworkSubnetId: integrationSubnetId
     vnetRouteAllEnabled: true
     appSettings: concat(commonWebSettings, [
       {
@@ -231,6 +232,7 @@ resource webSlot 'Microsoft.Web/sites/slots@2023-12-01' = {
     serverFarmId: plan.id
     httpsOnly: true
     publicNetworkAccess: 'Enabled'
+    virtualNetworkSubnetId: integrationSubnetId
     vnetRouteAllEnabled: true
     siteConfig: union(commonSiteConfig, {
       linuxFxVersion: webLinuxFxVersion

@@ -53,9 +53,9 @@ Globally unique names require a short approved suffix derived without exposing s
 | Storage account | `stlgrtmazd<suffix>`; lowercase alphanumeric only |
 | Log Analytics | `log-lgrtm-azdemo-uks-01` |
 | Application Insights | `appi-lgrtm-azdemo-uks-01` |
-| VNet | `vnet-lgrtm-azdemo-uks-01` |
-| Integration subnet | `snet-appsvc-integration` |
-| Private endpoint subnet | `snet-private-endpoints` |
+| VNet | Existing `vnet-mtp-dev-uks-001` (`10.50.0.0/16`) |
+| Integration subnet | Existing `snet-appservice` (`10.50.1.0/24`), delegated only to `Microsoft.Web/serverFarms` |
+| Private endpoint subnet | Existing `snet-private-endpoints` (`10.50.2.0/24`) |
 | Runtime identities | `id-lgrtm-api-azdemo`, `id-lgrtm-api-staging-azdemo`; private deployment/migration-agent identity is separately named and owned by Azure Platform/Operations |
 
 ## Bicep parameter contract
@@ -348,7 +348,9 @@ No macro-enabled workbook, archive or executable type is accepted. Only the supp
 
 ## Network and DNS validation
 
-Use at least a `/26` delegated integration subnet and a separate `/27` private-endpoint subnet. Exact CIDRs require Network owner approval and collision checking; do not invent them in source control without landing-zone confirmation.
+Use the approved existing `vnet-mtp-dev-uks-001` (`10.50.0.0/16`) without changing its address space. Regional App Service VNet integration uses only the existing `snet-appservice` subnet (`10.50.1.0/24`), whose only service delegation is `Microsoft.Web/serverFarms`; private endpoints use only the separate existing `snet-private-endpoints` subnet (`10.50.2.0/24`). Do not create, rename, replace, resize or redelegate either subnet.
+
+The required regional-integration topology is web production, web staging, API production and API staging all attached to `snet-appservice`. This is required because both web slots proxy to private API endpoints and both API slots need outbound private access to SQL, Key Vault and Blob Storage. A subnet response can contain provider-managed App Service `privateEndpoints` or `serviceAssociationLinks` metadata; that metadata is not evidence that a `Microsoft.Network/privateEndpoints` resource targets the integration subnet. Predeployment validation must enumerate actual private-endpoint resources independently and reject only an actual resource whose `subnet.id` is `snet-appservice`.
 
 Required resolution from each site and slot:
 

@@ -9,6 +9,7 @@ $lines = Get-Content -LiteralPath $pipelinePath
 $parameterEnvironmentScript = Join-Path $repo 'scripts\build\Test-AzureDemoParameterEnvironment.ps1'
 $efArtifactScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-EfMigrationArtifacts.ps1') -Raw
 $runtimeValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureAppServiceNativeRuntimes.ps1') -Raw
+$appServiceSubnetValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoAppServiceSubnet.ps1') -Raw
 $privateDnsValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoPrivateDnsReconciliation.ps1') -Raw
 
 if ($text.Contains("`t")) { throw 'Azure Pipelines YAML contains tab indentation.' }
@@ -101,6 +102,9 @@ $requiredFragments = @(
     'Test-AzureDemoDatabasePrincipalSql.ps1',
     'Test-AzureAppServiceNativeRuntimes.ps1',
     'Assert-AzureAppServiceNativeRuntimes.ps1',
+    'Test-AzureDemoAppServiceSubnet.ps1',
+    "Test-AzureDemoAppServiceSubnet.ps1 -CompiledTemplatePath '`$(Build.ArtifactStagingDirectory)/main.json'",
+    'Assert-AzureDemoAppServiceSubnet.ps1',
     'Test-AzureDemoPrivateDnsReconciliation.ps1',
     "Test-AzureDemoPrivateDnsReconciliation.ps1 -CompiledTemplatePath '`$(Build.ArtifactStagingDirectory)/main.json'",
     'Assert-AzureDemoPrivateDnsReconciliation.ps1',
@@ -128,6 +132,76 @@ if ($preDeploymentGateStart -lt 0 -or $preDeploymentGateEnd -le $preDeploymentGa
     throw 'The PreDeploymentGate stage boundaries could not be identified.'
 }
 $preDeploymentGate = $text.Substring($preDeploymentGateStart, $preDeploymentGateEnd - $preDeploymentGateStart)
+$virtualNetworkListCommand = "az network vnet list --resource-group '`$(AZDEMO_RESOURCE_GROUP_NAME)' --output json --only-show-errors 2>&1"
+$virtualNetworkExitCapture = '$virtualNetworksExitCode = $LASTEXITCODE'
+$subnetListCommand = "az network vnet subnet list --resource-group '`$(AZDEMO_RESOURCE_GROUP_NAME)' --vnet-name 'vnet-mtp-dev-uks-001' --output json --only-show-errors 2>&1"
+$subnetExitCapture = '$subnetsExitCode = $LASTEXITCODE'
+$privateEndpointListCommand = "az network private-endpoint list --resource-group '`$(AZDEMO_RESOURCE_GROUP_NAME)' --output json --only-show-errors 2>&1"
+$privateEndpointExitCapture = '$privateEndpointsExitCode = $LASTEXITCODE'
+$appServiceSubnetValidatorInvocation = '& ./scripts/build/Assert-AzureDemoAppServiceSubnet.ps1 @subnetValidation'
+foreach ($fragment in @(
+        $virtualNetworkListCommand,
+        $virtualNetworkExitCapture,
+        $subnetListCommand,
+        $subnetExitCapture,
+        $privateEndpointListCommand,
+        $privateEndpointExitCapture,
+        'VirtualNetworksJson = [string]::Join([Environment]::NewLine, [string[]] $virtualNetworkRows)',
+        'SubnetsJson = [string]::Join([Environment]::NewLine, [string[]] $subnetRows)',
+        'PrivateEndpointsJson = [string]::Join([Environment]::NewLine, [string[]] $privateEndpointRows)',
+        'VirtualNetworksCommandExitCode = $virtualNetworksExitCode',
+        'SubnetsCommandExitCode = $subnetsExitCode',
+        'PrivateEndpointsCommandExitCode = $privateEndpointsExitCode',
+        $appServiceSubnetValidatorInvocation)) {
+    if (-not $preDeploymentGate.Contains($fragment)) {
+        throw "The PreDeploymentGate existing App Service subnet contract is missing: $fragment"
+    }
+}
+foreach ($orderedPair in @(
+        @($virtualNetworkListCommand, $virtualNetworkExitCapture),
+        @($virtualNetworkExitCapture, $subnetListCommand),
+        @($subnetListCommand, $subnetExitCapture),
+        @($subnetExitCapture, $privateEndpointListCommand),
+        @($privateEndpointListCommand, $privateEndpointExitCapture),
+        @($privateEndpointExitCapture, $appServiceSubnetValidatorInvocation),
+        @($appServiceSubnetValidatorInvocation, 'az deployment group what-if'))) {
+    if ($preDeploymentGate.IndexOf($orderedPair[0], [StringComparison]::Ordinal) -ge
+        $preDeploymentGate.IndexOf($orderedPair[1], [StringComparison]::Ordinal)) {
+        throw "Existing App Service subnet inventory, native exit capture and validation order is invalid: $($orderedPair[0])."
+    }
+}
+foreach ($fragment in @(
+        "'vnet-mtp-dev-uks-001'",
+        "'snet-appservice'",
+        "'snet-appsvc-integration'",
+        "'snet-private-endpoints'",
+        "'10.50.1.0/24'",
+        "'10.50.2.0/24'",
+        "'Microsoft.Web/serverFarms'",
+        "'Microsoft.Network/privateEndpoints'",
+        '$VirtualNetworksCommandExitCode -ne 0',
+        '$SubnetsCommandExitCode -ne 0',
+        '$PrivateEndpointsCommandExitCode -ne 0',
+        '$staleSubnets.Count -ne 0',
+        '$delegationNames.Count -ne 1')) {
+    if (-not $appServiceSubnetValidatorScript.Contains($fragment)) {
+        throw "The App Service integration-subnet validator is missing a fail-closed contract: $fragment"
+    }
+}
+$forbiddenMetadataCheck = 'Get-ProviderValue $integrationSubnet ''privateEndpoints'''
+if ($appServiceSubnetValidatorScript.Contains($forbiddenMetadataCheck)) {
+    throw 'The App Service subnet validator must not treat provider-managed subnet privateEndpoints metadata as actual private-endpoint resources.'
+}
+$deploymentStageStart = $text.IndexOf('- stage: MigrateAndDeploySlots', [StringComparison]::Ordinal)
+if ($deploymentStageStart -lt 0 -or
+    $text.IndexOf('dependsOn: PreDeploymentGate', $deploymentStageStart, [StringComparison]::Ordinal) -lt $deploymentStageStart) {
+    throw 'Application deployment must remain dependent on the protected PreDeploymentGate.'
+}
+$subnetTestWithoutCompiled = [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoAppServiceSubnet\.ps1\s*$').Count
+$subnetTestWithCompiled = [regex]::Matches($text, "Test-AzureDemoAppServiceSubnet\.ps1 -CompiledTemplatePath '`\$\(Build\.ArtifactStagingDirectory\)/main\.json'").Count
+if ($subnetTestWithoutCompiled -ne 1 -or $subnetTestWithCompiled -ne 1) {
+    throw 'The App Service integration-subnet regression must run once against source and once against compiled Bicep.'
+}
 $runtimeCommand = '$runtimeRows = @(az webapp list-runtimes --os linux --output tsv 2>&1)'
 $runtimeExitCapture = '$runtimeCommandExitCode = $LASTEXITCODE'
 $runtimeValidatorInvocation = '& ./scripts/build/Assert-AzureAppServiceNativeRuntimes.ps1 @runtimeValidation'

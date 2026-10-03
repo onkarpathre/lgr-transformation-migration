@@ -236,8 +236,8 @@ All of these controls are mandatory:
 ### Network shape
 
 - One VNet in UK South.
-- `/26` subnet delegated to `Microsoft.Web/serverFarms` for regional VNet integration by the web/API sites and slots.
-- Separate `/27` private-endpoint subnet with private-endpoint network policies configured as required.
+- Existing `snet-appservice` subnet (`10.50.1.0/24`) delegated to `Microsoft.Web/serverFarms` for regional VNet integration by web production, web staging, API production and API staging.
+- Separate existing `snet-private-endpoints` subnet (`10.50.2.0/24`) for private endpoints, with private-endpoint network policies configured as required.
 - Private DNS zones and VNet links for `privatelink.azurewebsites.net`, `privatelink.database.windows.net`, `privatelink.vaultcore.azure.net` and `privatelink.blob.core.windows.net`.
 - Private endpoints for API production, API staging, Azure SQL, Key Vault and Blob Storage. A slot needs its own API private endpoint (`sites-staging`).
 - Disable public network access for API, SQL, Key Vault and Storage. Keep SCM basic authentication disabled; deploy using federated identities.
@@ -332,9 +332,9 @@ The current monitoring-only Bicep is insufficient. The implementation must remai
 
 1. naming/tags and validated `uksouth` parameters;
 2. Log Analytics, Application Insights, action group, diagnostic settings and alerts;
-3. VNet, delegated integration subnet, private-endpoint subnet and four private DNS zones;
+3. symbolic references to the existing VNet, existing delegated `snet-appservice` integration subnet and existing `snet-private-endpoints` private-endpoint subnet, plus four private DNS zones; Bicep must not create, rename, replace or reshape either subnet;
 4. one Linux Standard S1 App Service plan;
-5. web/API sites, staging slots, native runtime settings, health checks, HTTPS/TLS, FTPS disabled, SCM/basic-auth disabled and always-on; attach only the API identities defined below;
+5. web/API sites, staging slots, native runtime settings, health checks, HTTPS/TLS, FTPS disabled, SCM/basic-auth disabled and always-on; attach all four sites/slots to `snet-appservice` for regional VNet integration and attach only the API identities defined below;
 6. API production and staging private endpoints and DNS records;
 7. Key Vault Standard with RBAC, purge protection, private endpoint and only approved role assignments;
 8. Azure SQL logical server, Entra-only authentication, S0 demo database, private endpoint, auditing/diagnostics and threat-detection settings approved for the subscription;
