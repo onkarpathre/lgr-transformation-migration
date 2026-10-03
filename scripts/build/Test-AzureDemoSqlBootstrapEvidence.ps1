@@ -5,8 +5,11 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $guard = Join-Path $PSScriptRoot '..\database\Assert-AzureDemoSqlBootstrapEvidence.ps1'
+$resolver = Join-Path $PSScriptRoot '..\database\Resolve-NativeApplicationExecutablePath.ps1'
 $sourceGrantsScript = Join-Path $PSScriptRoot '..\database\Configure-AzureDemoDatabasePrincipals.sql'
 $guardSource = Get-Content -LiteralPath $guard -Raw
+$resolverSource = Get-Content -LiteralPath $resolver -Raw
+. $resolver
 $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("azdemo-bootstrap-evidence-{0}" -f [Guid]::NewGuid().ToString('N'))
 $repository = Join-Path $temporaryDirectory 'repository'
 $evidencePath = Join-Path $temporaryDirectory 'sql-bootstrap.json'
@@ -14,6 +17,7 @@ $grantsScript = Join-Path $temporaryDirectory 'Configure-AzureDemoDatabasePrinci
 $executorObjectId = [Guid] 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 $acceptedCount = 0
 $rejectedCount = 0
+$executableResolutionCount = 0
 $isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $invariantCulture = [Globalization.CultureInfo]::InvariantCulture
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
@@ -45,12 +49,11 @@ $requiredMetadataReasons = @(
 )
 
 foreach ($fragment in @(
-        '$git.Path',
-        '[IO.Path]::IsPathRooted($resolvedGitExecutable)',
+        '$gitCandidates = @(Get-Command',
+        '$resolvedGitExecutable = [string] (Resolve-NativeApplicationExecutablePath -Candidates $gitCandidates)',
         'PSNativeCommandUseErrorActionPreference',
         '$exitCode = $LASTEXITCODE',
         '[GIT_EXECUTABLE_UNAVAILABLE]',
-        '[GIT_EXECUTABLE_RESOLUTION_INVALID]',
         '[GIT_PROCESS_START_FAILED]',
         '[GIT_EXIT_1]',
         '[GIT_EXIT_NONZERO]')) {
@@ -62,11 +65,25 @@ if ($guardSource -match '\$git\.Source') {
     throw 'SQL bootstrap evidence guard must invoke ApplicationInfo.Path rather than ApplicationInfo.Source.'
 }
 
-$nativeGitCommand = Get-Command -Name git -CommandType Application -ErrorAction Stop
-$nativeGitPath = [string] $nativeGitCommand.Path
-if ([string]::IsNullOrWhiteSpace($nativeGitPath) -or -not [IO.Path]::IsPathRooted($nativeGitPath)) {
-    throw 'Test Git did not resolve through a deterministic ApplicationInfo.Path.'
+if ($guardSource -match '&\s+\$gitCandidates') {
+    throw 'SQL bootstrap evidence guard must never pass an ApplicationInfo candidate array to the call operator.'
 }
+foreach ($fragment in @(
+        '$candidate -is [System.Management.Automation.ApplicationInfo]',
+        '$validCandidates[0].Path',
+        '[string] $selectedPath',
+        'Test-Path -LiteralPath $selectedPath -PathType Leaf',
+        '[GIT_EXECUTABLE_RESOLUTION_INVALID]')) {
+    if (-not $resolverSource.Contains($fragment)) {
+        throw "Native-application resolver is missing its scalar first-candidate contract: $fragment"
+    }
+}
+if ($resolverSource -match '(?im)(?:-join|\[string\]::Join)') {
+    throw 'Native-application resolver must never join executable candidate paths.'
+}
+
+$nativeGitCandidates = @(Get-Command -Name git -CommandType Application -ErrorAction Stop)
+[string] $nativeGitPath = [string] (Resolve-NativeApplicationExecutablePath -Candidates $nativeGitCandidates)
 
 if ($nativeErrorPreferenceSupported) {
     Set-Variable -Name PSNativeCommandUseErrorActionPreference -Value $expectedNativeErrorPreference -Scope Script
@@ -78,6 +95,38 @@ function Invoke-TestGit([string[]] $Arguments) {
         throw "Test Git setup failed: $($Arguments -join ' ')."
     }
     return @($output | ForEach-Object { [string] $_ })
+}
+
+function Assert-ResolvedCandidatePath([string] $Name, [object[]] $Candidates, [string] $ExpectedPath) {
+    $actualPath = Resolve-NativeApplicationExecutablePath -Candidates $Candidates
+    if ($actualPath -isnot [string]) {
+        throw "Native-application resolution case '$Name' did not return one scalar string."
+    }
+    if (-not [string]::Equals($actualPath, $ExpectedPath, [StringComparison]::Ordinal)) {
+        throw "Native-application resolution case '$Name' did not preserve first-valid-candidate order."
+    }
+
+    $candidatePaths = @($Candidates | Where-Object { $_ -is [System.Management.Automation.ApplicationInfo] } | ForEach-Object { [string] $_.Path })
+    if ($candidatePaths.Count -gt 1 -and
+        [string]::Equals($actualPath, ($candidatePaths -join ' '), [StringComparison]::Ordinal)) {
+        throw "Native-application resolution case '$Name' space-joined candidate paths."
+    }
+    $script:executableResolutionCount++
+}
+
+function Assert-InvalidCandidateResolution([string] $Name, [object[]] $Candidates) {
+    $actualMessage = $null
+    try {
+        Resolve-NativeApplicationExecutablePath -Candidates $Candidates | Out-Null
+    }
+    catch {
+        $actualMessage = $_.Exception.Message
+    }
+    $expectedMessage = 'SQL bootstrap evidence native Git executable resolution was invalid. [GIT_EXECUTABLE_RESOLUTION_INVALID]'
+    if (-not [string]::Equals($actualMessage, $expectedMessage, [StringComparison]::Ordinal)) {
+        throw "Native-application resolution case '$Name' did not fail with the safe invalid-resolution category."
+    }
+    $script:executableResolutionCount++
 }
 
 function Assert-PreferenceRestoration([string] $Name) {
@@ -243,19 +292,47 @@ try {
     Copy-Item -LiteralPath $sourceGrantsScript -Destination $grantsScript
 
     $spacedExecutableDirectory = Join-Path $temporaryDirectory 'native Git path with spaces'
+    New-Item -ItemType Directory -Path $spacedExecutableDirectory -Force | Out-Null
     if ($isWindowsPlatform) {
         # Git for Windows is normally installed below Program Files, so use the
         # real native path without a batch wrapper that would consume the caret
         # in revision expressions such as HEAD^{commit}.
         $spacedGitExecutable = $nativeGitPath
+        $alternateGitExecutable = Join-Path $spacedExecutableDirectory 'git candidate.cmd'
+        [IO.File]::WriteAllText($alternateGitExecutable, "@exit /b 0`r`n", [Text.Encoding]::ASCII)
     }
     else {
-        New-Item -ItemType Directory -Path $spacedExecutableDirectory -Force | Out-Null
         $spacedGitExecutable = Join-Path $spacedExecutableDirectory 'git wrapper'
         [IO.File]::WriteAllText($spacedGitExecutable, "#!/bin/sh`nexec `"$nativeGitPath`" `"`$@`"`n", $utf8NoBom)
         & chmod 700 -- $spacedGitExecutable
         if ($LASTEXITCODE -ne 0) { throw 'Could not permission the synthetic Git executable with spaces.' }
+        $alternateGitExecutable = $spacedGitExecutable
     }
+
+    $nativeGitApplication = @(Get-Command -Name $nativeGitPath -CommandType Application -ErrorAction Stop)[0]
+    $alternateGitApplication = @(Get-Command -Name $alternateGitExecutable -CommandType Application -ErrorAction Stop)[0]
+    Assert-ResolvedCandidatePath 'one Git candidate' @($nativeGitApplication) $nativeGitPath
+    Assert-ResolvedCandidatePath 'two Git candidates select the first native path' @($nativeGitApplication, $alternateGitApplication) $nativeGitPath
+    Assert-ResolvedCandidatePath 'two Git candidates preserve reversed order' @($alternateGitApplication, $nativeGitApplication) $alternateGitExecutable
+    Assert-ResolvedCandidatePath 'non-ApplicationInfo candidate is filtered' @([pscustomobject] @{ Path = $alternateGitExecutable }, $nativeGitApplication) $nativeGitPath
+
+    $staleCandidateExecutable = if ($isWindowsPlatform) {
+        Join-Path $temporaryDirectory 'stale-git-candidate.cmd'
+    }
+    else {
+        Join-Path $temporaryDirectory 'stale-git-candidate'
+    }
+    if ($isWindowsPlatform) {
+        [IO.File]::WriteAllText($staleCandidateExecutable, "@exit /b 0`r`n", [Text.Encoding]::ASCII)
+    }
+    else {
+        [IO.File]::WriteAllText($staleCandidateExecutable, "#!/bin/sh`nexit 0`n", $utf8NoBom)
+        & chmod 700 -- $staleCandidateExecutable
+        if ($LASTEXITCODE -ne 0) { throw 'Could not permission the stale synthetic Git candidate.' }
+    }
+    $staleGitApplication = @(Get-Command -Name $staleCandidateExecutable -CommandType Application -ErrorAction Stop)[0]
+    Remove-Item -LiteralPath $staleCandidateExecutable -Force
+    Assert-InvalidCandidateResolution 'resolved executable path no longer names a file' @($staleGitApplication)
 
     Assert-Accepted 'evidence commit equals release commit through ApplicationInfo.Path' $releaseCommit $releaseCommit @{} $nativeGitPath
     Assert-Accepted 'evidence commit is an ancestor through executable path containing spaces' $ancestorCommit $releaseCommit @{} $spacedGitExecutable
@@ -359,4 +436,4 @@ finally {
     }
 }
 
-Write-Output "Azure demo durable SQL bootstrap evidence guard passed $acceptedCount accepted and $rejectedCount fail-closed cases across $($requiredMetadataReasons.Count) safe metadata-rejection categories."
+Write-Output "Azure demo durable SQL bootstrap evidence guard passed $acceptedCount accepted, $rejectedCount fail-closed and $executableResolutionCount executable-resolution cases across $($requiredMetadataReasons.Count) safe metadata-rejection categories."

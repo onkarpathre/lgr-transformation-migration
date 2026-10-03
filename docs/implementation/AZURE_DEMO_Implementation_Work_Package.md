@@ -1108,3 +1108,90 @@ handoff:
 ```
 
 READY_FOR_NATIVE_GIT_LINUX_RETEST
+
+## Scalar native-Git executable selection repair hand-off
+
+### Build 22 failure and exact root cause
+
+Azure DevOps build 22 of pipeline `mtp-azure-demo-deploy` failed the Linux/PowerShell 7 task **Valid and invalid independent SQL bootstrap evidence tests** on branch `fix/mtp-azure-demo-reconciliation`. The exact repair baseline was commit `ac3189687b2dc3b2388be1cc0a114c549250301d`, with a clean worktree, empty staged index and local `origin`/`azure` tracking refs aligned to that commit before editing.
+
+`Get-Command -CommandType Application` returned two valid Git `ApplicationInfo` candidates in PATH order: `/usr/bin/git` and `/bin/git`. The validator treated the result as a single command and converted the candidates' `Path` values to one string, producing `/usr/bin/git /bin/git`. PowerShell then attempted to invoke that combined value as one executable. Build 22 therefore exposed a candidate-collection defect, not an evidence metadata, repository-history or ancestry defect.
+
+### Bounded scalar-selection repair
+
+`Resolve-NativeApplicationExecutablePath.ps1` provides one testable resolution boundary. It accepts an explicit candidate collection, filters it to `ApplicationInfo` instances with non-empty `Path` values, preserves the order supplied by PowerShell/PATH, selects exactly index zero, converts only that selected path to an explicitly typed scalar string, and requires the value to be a rooted existing file. Empty, filtered-out, stale or non-file results fail closed as `GIT_EXECUTABLE_RESOLUTION_INVALID`. The helper never joins candidate paths.
+
+`Assert-AzureDemoSqlBootstrapEvidence.ps1` now captures `Get-Command` output explicitly as an array and passes the collection to that resolver. The call operator receives only the returned scalar string. Explicit `GitExecutablePath` injection remains supported for negative regression cases. Native invocation still captures and restores `ErrorActionPreference`; when available, it captures, disables and restores `PSNativeCommandUseErrorActionPreference`; and it captures `LASTEXITCODE` immediately after invocation. Exit 1 remains distinct from exit 2 and other non-zero results.
+
+`Test-AzureDemoSqlBootstrapEvidence.ps1` directly proves one valid candidate, two valid candidates in both orders, first-candidate selection, scalar-string output, filtering of non-`ApplicationInfo` values, absence of space-joining, and rejection of a selected path whose file no longer exists. Its existing executable-path-with-spaces, missing command, process-start failure, native exit 1/2, equal/ancestor acceptance, descendant/unrelated rejection, preference restoration and protected-value non-disclosure coverage remains intact.
+
+No pipeline YAML, Bicep, application code, EF migration, SQL script/grant, identity, runtime, service connection, variable group or protected SQL-bootstrap evidence file changed. The seven ordered stages, `deployAzureDemo: false`, `rollbackAzureDemo: false`, secure-file delivery, release-branch restriction, App Service subnet repair, private-DNS reconciliation and workload identity remain unchanged.
+
+### Local verification evidence
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `ac3189687b2dc3b2388be1cc0a114c549250301d`; clean worktree; empty staged index; local `origin` and `azure` tracking refs both exactly aligned with HEAD. |
+| Windows PowerShell 5.1 parsing | PASS under `5.1.26100.9444`: all 36 PowerShell scripts, including the new resolver, parsed with zero errors. |
+| Durable SQL-evidence regression | PASS: 10 accepted, 35 fail-closed and five executable-resolution cases across all 17 safe metadata-rejection categories. |
+| Explicit duplicate-Git regression | PASS: two valid `ApplicationInfo` candidates select exactly one scalar path; both candidate orders were proved; non-application candidates were filtered; the result was never the space-joined candidate list. |
+| Executable validity and portability regression | PASS under Windows PowerShell 5.1: rooted existing-file enforcement, invalid stale path, missing executable, process-start failure and an actual Git path containing spaces were covered. The Linux branch retains its executable wrapper with a spaced path for the managed-agent run. |
+| Native exit and ancestry semantics | PASS: exit 1 and exit 2 remain distinct; equal and ancestor evidence pass; descendant, unrelated, missing-object, shallow-history and HEAD-mismatch cases remain rejected. |
+| Pipeline structural regression | PASS: exactly seven ordered stages; default-disabled deployment/rollback, secure-file, release restriction, workload identity, migration, smoke, swap and rollback controls passed. |
+| App Service subnet regression | PASS: one exact inventory and two compiled shapes accepted; 24 inventory and eight compiled-shape cases rejected; four site/slot integrations and two existing-subnet contracts verified. |
+| Private-DNS regression | PASS: one valid inventory accepted; six invalid inventories rejected; four deterministic parent/link and zone-group contracts verified. |
+| Migration identity and target regressions | PASS: identity one valid/14 rejected; target one valid/seven rejected. |
+| Database-principal SQL regression | PASS: seven external variables retained, correct database accepted, 30 invalid cases rejected and all three approved user-creation expression shapes retained. |
+| Rollback safeguards | PASS: one valid target and 12 fail-closed target cases. |
+| Source/security boundary scan | PASS: 177 source/configuration files scanned. |
+| Diff and allowlist | PASS: `git diff --check` returned zero; the changed-file set is limited to the resolver, validator, durable-evidence regression and this implementation document; the staged index remains empty. |
+| PowerShell 7/Linux execution | UNAVAILABLE locally and not claimed: `pwsh` is not installed. The Linux managed-agent task must be rerun independently. |
+| Managed Linux validation | BLOCKED pending an independent rerun of pipeline `mtp-azure-demo-deploy`; managed-agent success is not claimed until the affected task passes. |
+| Protected/external actions | NOT RUN: no Azure, Azure DevOps, SQL, pipeline, deployment, migration, seed, swap or rollback access/action occurred. Protected SQL-bootstrap evidence was not accessed, regenerated or replaced. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_SCALAR_GIT_EXECUTABLE_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_ac3189687b2dc3b2388be1cc0a114c549250301d"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals: []
+  artefacts:
+    - "scripts/database/Resolve-NativeApplicationExecutablePath.ps1"
+    - "scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1"
+    - "scripts/build/Test-AzureDemoSqlBootstrapEvidence.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Exact clean baseline, empty index and aligned local/origin/azure refs were confirmed before editing."
+    - "All locally available requested regressions passed under Windows PowerShell 5.1."
+    - "Candidate selection is explicitly collection-aware, ordered, scalar and fail-closed."
+  decisions:
+    - "Select only the first valid ApplicationInfo.Path in PowerShell/PATH order."
+    - "Pass only an explicitly scalar existing executable-file path to the call operator."
+    - "Retain durable ancestry, timestamp, target, identity, executor and exact grants-hash contracts."
+  assumptions: []
+  risks:
+    - "PowerShell 7/Linux execution is unavailable locally and requires the managed-agent retest."
+  defects:
+    - "REPAIRED LOCALLY: multiple native Git candidates can no longer become one space-joined executable string."
+    - "REPAIRED LOCALLY: stale or otherwise invalid selected executable paths fail closed before invocation."
+  blockers:
+    - "Independent PowerShell 7/Linux rerun of mtp-azure-demo-deploy remains required."
+  approvals: []
+  requested_action: "Independent Tester must rerun build 22's SQL-bootstrap evidence task on the Linux managed agent and confirm duplicate Git candidates select one executable while all fail-closed evidence semantics remain intact."
+```
+
+READY_FOR_SCALAR_GIT_EXECUTABLE_RETEST

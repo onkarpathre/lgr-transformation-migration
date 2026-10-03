@@ -12,6 +12,8 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+. (Join-Path $PSScriptRoot 'Resolve-NativeApplicationExecutablePath.ps1')
+
 $clockSkewTolerance = [TimeSpan]::FromMinutes(5)
 $fullCommitPattern = '^[0-9a-f]{40}$'
 $sha256Pattern = '^[0-9a-f]{64}$'
@@ -42,19 +44,13 @@ function Get-EvidencePropertyValue([object] $Evidence, [string] $PropertyName) {
 
 function Invoke-GitValidation([string[]] $Arguments) {
     try {
-        $git = Get-Command -Name $GitExecutablePath -CommandType Application -ErrorAction Stop
+        $gitCandidates = @(Get-Command -Name $GitExecutablePath -CommandType Application -ErrorAction Stop)
     }
     catch {
         throw 'SQL bootstrap evidence ancestry validation requires an available native Git executable. [GIT_EXECUTABLE_UNAVAILABLE]'
     }
 
-    # ApplicationInfo.Path is the cross-platform executable contract. Source is
-    # command provenance and is not a portable native-process invocation path.
-    $resolvedGitExecutable = [string] $git.Path
-    if ([string]::IsNullOrWhiteSpace($resolvedGitExecutable) -or
-        -not [IO.Path]::IsPathRooted($resolvedGitExecutable)) {
-        throw 'SQL bootstrap evidence native Git executable resolution was invalid. [GIT_EXECUTABLE_RESOLUTION_INVALID]'
-    }
+    [string] $resolvedGitExecutable = [string] (Resolve-NativeApplicationExecutablePath -Candidates $gitCandidates)
 
     $previousErrorActionPreference = $ErrorActionPreference
     $nativeErrorPreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
