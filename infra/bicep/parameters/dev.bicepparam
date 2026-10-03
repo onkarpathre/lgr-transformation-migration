@@ -28,6 +28,7 @@ param resourceNames = {
   keyVaultPrivateDnsZone: 'privatelink.vaultcore.azure.net'
   blobPrivateDnsZone: 'privatelink.blob.core.windows.net'
   privateDnsVirtualNetworkLink: 'link-mtp-dev-uks-001'
+  sqlPrivateDnsVirtualNetworkLink: 'link-mtp-dev-vnet'
   apiPrivateEndpoint: 'pep-api-mtp-dev-uks-001'
   apiStagingPrivateEndpoint: 'pep-api-staging-mtp-dev-uks-001'
   keyVaultPrivateEndpoint: 'pep-kv-mtp-dev-uks-001'

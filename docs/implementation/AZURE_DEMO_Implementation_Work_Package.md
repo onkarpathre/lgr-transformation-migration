@@ -581,3 +581,104 @@ handoff:
 ```
 
 READY_FOR_APP_SERVICE_RUNTIME_RETEST
+
+## Azure Demo private-DNS reconciliation repair hand-off
+
+### Failed deployment and bounded repair
+
+Pipeline run `20261002.13` / Azure build `17` failed in incremental deployment `mtp-azure-demo-17`, nested deployment `network-mtp-dev-uks-001`. The failure occurred before migration, synthetic seed reconciliation and application staging-slot deployment. Because the ARM deployment mode was incremental, unrelated operations submitted before the nested failure could nevertheless have partially completed; this repair does not infer or overwrite their state.
+
+The authoritative reconciliation inventory identifies one existing SQL private DNS zone/link pair and three missing parent zones:
+
+- `privatelink.database.windows.net` and exact existing link `link-mtp-dev-vnet` are adopted by their current identities. The SQL zone remains an `existing` Bicep resource, while the exact existing child link is declaratively managed with `registrationEnabled: false` against `/subscriptions/633398e2-6c00-4bb7-a576-2db0d210ee77/resourceGroups/Onkar.Pathre/providers/Microsoft.Network/virtualNetworks/vnet-mtp-dev-uks-001`. No delete, rename, temporary link or second SQL-zone/VNet link is introduced.
+- `privatelink.vaultcore.azure.net`, `privatelink.azurewebsites.net` and `privatelink.blob.core.windows.net` are now deployable Bicep parent resources. Each has exactly one deterministic child link named `link-mtp-dev-uks-001`, with `registrationEnabled: false`, and each child uses a symbolic `parent:` reference. Compiled ARM dependencies require each managed parent before its child link.
+- Private-endpoint DNS-zone-group bindings remain unchanged and use the four network-module zone resource IDs for SQL, Key Vault, App Service and Blob respectively.
+- The protected predeployment gate still requires the SQL zone to exist, then enumerates its VNet links and fails closed unless the exact link name, approved VNet ID, disabled registration, `Succeeded` provisioning state and single-link-per-target contract all hold. The other three zones are not pre-existence prerequisites because Bicep owns their creation.
+- Repeated incremental deployment is idempotent because all four zone/link resource identities are stable. The expected protected what-if is no deletion or replacement of the SQL zone/link, creation of the three missing zones and creation of their three approved links. Protected what-if was not executed locally.
+
+No variable-group or environment-variable change is required. The seven-stage pipeline, disabled-by-default deployment and rollback parameters, release-branch condition, service connections, workload identities, SQL bootstrap evidence handling, runtime validation, migration, smoke, swap and rollback controls remain intact.
+
+### Local verification
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `a49ecd256999400635772c0efbd8e0f8501a5b09`; worktree clean; staged index empty; local branch, `origin/fix/mtp-azure-demo-reconciliation` and `azure/fix/mtp-azure-demo-reconciliation` all resolved to the exact HEAD. |
+| Diff and changed-file boundary | PASS: `git diff --check` exited 0; the exact nine-file allowlist matched; the staged index remained empty. No application, EF migration, database schema/seed, dependency, identity, SQL principal, runtime, service-connection or variable-group file changed. |
+| Private-DNS regression | PASS: one exact existing SQL inventory accepted; six invalid inventories rejected for missing/wrong link name, wrong VNet, `registrationEnabled=true`, failed provisioning and duplicate target link. Four deterministic zone/link identities and all private-endpoint zone-group bindings passed. |
+| Pipeline structure | PASS: exactly seven ordered stages; the SQL zone pre-existence check, link enumeration, native exit capture and fail-closed validation occur before what-if. Existing default, branch, service-connection, evidence, migration, smoke, swap and rollback contracts passed. |
+| PowerShell 5.1 | PASS: 33 repository PowerShell files and 17 pipeline inline PowerShell blocks parsed with zero errors. |
+| Bicep CLI 0.47.16 | PASS using `0.47.16 (3f73e1a234)`: all Bicep/Bicepparam format comparisons were identical; main lint/build exited 0; both parameter builds with synthetic values exited 0. The only output was the repository's existing experimental Assertions warning. |
+| Compiled DNS contract | PASS: only SQL compiles as an existing zone; three zones compile as managed parents; four VNet links compile with registration disabled; all three new-zone links compile with parent dependencies; the SQL link compiles from the SQL-specific exact-name parameter. |
+| Parameter/runtime regression | PASS: 11 synthetic parameter environment values accepted; App Service runtime regression accepted three valid catalogues and rejected six invalid/native-failure cases. |
+| Monitoring and rollback guards | PASS: 17 mandatory alert resources; rollback accepted one valid target and rejected 12 invalid targets. |
+| Migration and SQL guards | PASS: migration target 1 valid/7 rejected; migration identity 1 valid/14 rejected; SQL bootstrap evidence 1 valid/6 rejected; SQLCMD contract retained seven external variables and rejected 30 invalid cases; EF parsing passed 20 fail-closed checks. |
+| Smoke safeguards | PASS plan-only: all 22 smoke contracts enumerated and no endpoint, Azure, SQL, Key Vault, Storage, Entra or Azure DevOps call was made. An initial invocation without the script's mandatory local-only arguments exited 1; the corrected plan-only command exited 0. |
+| Locked restore | PASS, exit 0: all projects up to date under `--locked-mode`; four `NU1900` warnings accurately report that the restricted environment could not reach the NuGet vulnerability service index. |
+| Release build | PASS, exit 0: 0 errors and the same four `NU1900` advisory-feed warnings. |
+| Focused Azure Demo tests | PASS: 27/27, 0 failed, 0 skipped. |
+| Unit tests | PASS: 205/205, 0 failed, 0 skipped. |
+| Integration tests | PASS: 145/145, 0 failed, 0 skipped. |
+| SBOM regression | PASS: deterministic inventories for 107 NuGet and 522 npm components. |
+| Source/security boundaries | PASS: 174 source/configuration files; no prohibited capability or secret boundary regression. |
+| Protected Azure what-if/deployment | NOT RUN and not claimed. Command: `az deployment group what-if --resource-group Onkar.Pathre --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --no-pretty-print`. Exit code: not applicable because execution was prohibited. Blocker: this work item expressly forbids Azure/Azure DevOps access, pipeline execution and deployment. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_PRIVATE_DNS_RECONCILIATION_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_a49ecd256999400635772c0efbd8e0f8501a5b09"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals:
+      - "Four exact-package implementation/local-test approvals at b8800e1eda014eef1421a1af5427aaea41393496."
+  artefacts:
+    - "azure-pipelines.yml"
+    - "infra/bicep/main.bicep"
+    - "infra/bicep/modules/network.bicep"
+    - "infra/bicep/parameters/azure-demo.bicepparam"
+    - "infra/bicep/parameters/dev.bicepparam"
+    - "scripts/build/Assert-AzureDemoPrivateDnsReconciliation.ps1"
+    - "scripts/build/Test-AzureDemoPrivateDnsReconciliation.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Exact baseline, clean worktree, empty index and aligned local origin/azure refs were confirmed before editing."
+    - "Bicep 0.47.16 format, lint/build, both synthetic parameter builds and compiled parent/dependency assertions passed."
+    - "The exact existing SQL link passed; six malformed, missing, wrong-target, registration, provisioning and duplicate cases failed closed."
+    - "Locked restore and Release build passed; 27/27 focused Azure Demo, 205/205 unit and 145/145 integration tests passed."
+    - "All requested local pipeline, runtime, monitoring, rollback, migration, SQL evidence, SBOM and source/security guards passed."
+  decisions:
+    - "Preserve and manage the existing SQL link by exact resource identity; do not create, rename or replace it."
+    - "Create only the three missing private DNS parent zones and their deterministic links, with symbolic parent dependencies."
+    - "No variable-group or Bicep environment-parameter change is required."
+    - "Deployment and rollback remain default-disabled and release-branch restricted."
+    - "Nothing was staged, committed, pushed, merged, deployed, migrated, seeded, swapped or rolled back."
+  assumptions:
+    - "The supplied authoritative inventory accurately describes the four private DNS zones and the existing SQL link before protected retest."
+  risks:
+    - "The prior incremental deployment may have partially completed unrelated operations; protected inventory and what-if must reconcile the current state before deployment."
+    - "Actual Azure what-if and repeat-deployment idempotency remain for independent protected retest."
+    - "Online NuGet advisory retrieval was unavailable; restore/build succeeded with NU1900 warnings and no vulnerability-pass claim."
+  defects:
+    - "REPAIRED: a new SQL link name conflicted with the existing zone/VNet link."
+    - "REPAIRED: Key Vault, App Service and Blob links were submitted beneath missing parent zones."
+  blockers:
+    - "Protected Azure what-if, deployment and repeat-deployment evidence require independent execution under existing human/platform controls."
+  approvals:
+    - "No approval evidence was regenerated or replaced."
+  requested_action: "Independent Tester must execute the protected SQL inventory gate and Bicep what-if, confirm the exact no-delete/no-replacement and three-zone/create plan, then perform the separately approved initial and repeat incremental deployments before migration, seed or application deployment can proceed."
+```
+
+READY_FOR_PRIVATE_DNS_RECONCILIATION_RETEST

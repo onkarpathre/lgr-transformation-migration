@@ -9,6 +9,7 @@ $lines = Get-Content -LiteralPath $pipelinePath
 $parameterEnvironmentScript = Join-Path $repo 'scripts\build\Test-AzureDemoParameterEnvironment.ps1'
 $efArtifactScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-EfMigrationArtifacts.ps1') -Raw
 $runtimeValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureAppServiceNativeRuntimes.ps1') -Raw
+$privateDnsValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoPrivateDnsReconciliation.ps1') -Raw
 
 if ($text.Contains("`t")) { throw 'Azure Pipelines YAML contains tab indentation.' }
 if ($lines | Where-Object { $_ -match '\s+$' }) { throw 'Azure Pipelines YAML contains trailing whitespace.' }
@@ -100,6 +101,9 @@ $requiredFragments = @(
     'Test-AzureDemoDatabasePrincipalSql.ps1',
     'Test-AzureAppServiceNativeRuntimes.ps1',
     'Assert-AzureAppServiceNativeRuntimes.ps1',
+    'Test-AzureDemoPrivateDnsReconciliation.ps1',
+    "Test-AzureDemoPrivateDnsReconciliation.ps1 -CompiledTemplatePath '`$(Build.ArtifactStagingDirectory)/main.json'",
+    'Assert-AzureDemoPrivateDnsReconciliation.ps1',
     'id-mtp-migration-dev-uks-001',
     'Authentication=Active Directory Workload Identity',
     'Test-AzureDemoSboms.ps1',
@@ -142,6 +146,40 @@ if ($preDeploymentGate.IndexOf($runtimeCommand, [StringComparison]::Ordinal) -ge
     $preDeploymentGate.IndexOf($runtimeExitCapture, [StringComparison]::Ordinal) -ge
     $preDeploymentGate.IndexOf($runtimeValidatorInvocation, [StringComparison]::Ordinal)) {
     throw 'Native-runtime output and exit status must be captured before fail-closed validation.'
+}
+$privateDnsListCommand = "az network private-dns link vnet list --resource-group '`$(AZDEMO_RESOURCE_GROUP_NAME)' --zone-name `$sqlPrivateDnsZoneName --output json --only-show-errors"
+$privateDnsExitCapture = '$sqlPrivateDnsLinksExitCode = $LASTEXITCODE'
+$privateDnsValidatorInvocation = './scripts/build/Assert-AzureDemoPrivateDnsReconciliation.ps1 -LinksJson $sqlPrivateDnsLinksJson -ExpectedLinkName $sqlPrivateDnsLinkName -ExpectedVirtualNetworkId $approvedVirtualNetworkId'
+foreach ($fragment in @(
+        "@{ Type = 'Microsoft.Network/privateDnsZones'; Name = 'privatelink.database.windows.net' }",
+        "`$sqlPrivateDnsLinkName = 'link-mtp-dev-vnet'",
+        "`$approvedVirtualNetworkId = '/subscriptions/633398e2-6c00-4bb7-a576-2db0d210ee77/resourceGroups/Onkar.Pathre/providers/Microsoft.Network/virtualNetworks/vnet-mtp-dev-uks-001'",
+        $privateDnsListCommand,
+        $privateDnsExitCapture,
+        'if ($sqlPrivateDnsLinksExitCode -ne 0)',
+        '$sqlPrivateDnsLinksJson = [string]::Join([Environment]::NewLine, [string[]] $sqlPrivateDnsLinks)',
+        $privateDnsValidatorInvocation)) {
+    if (-not $preDeploymentGate.Contains($fragment)) {
+        throw "The PreDeploymentGate private DNS reconciliation contract is missing: $fragment"
+    }
+}
+if ($preDeploymentGate.IndexOf($privateDnsListCommand, [StringComparison]::Ordinal) -ge
+    $preDeploymentGate.IndexOf($privateDnsExitCapture, [StringComparison]::Ordinal) -or
+    $preDeploymentGate.IndexOf($privateDnsExitCapture, [StringComparison]::Ordinal) -ge
+    $preDeploymentGate.IndexOf($privateDnsValidatorInvocation, [StringComparison]::Ordinal) -or
+    $preDeploymentGate.IndexOf($privateDnsValidatorInvocation, [StringComparison]::Ordinal) -ge
+    $preDeploymentGate.IndexOf('az deployment group what-if', [StringComparison]::Ordinal)) {
+    throw 'SQL private DNS inventory, exit status and fail-closed validation must precede ARM what-if.'
+}
+foreach ($fragment in @(
+        '$exactLinks.Count -ne 1',
+        '$exactLinkVirtualNetwork -ne $expectedVirtualNetwork',
+        '$exactLinks[0].registrationEnabled -ne $false',
+        "$exactLinks[0].provisioningState -cne 'Succeeded'",
+        '$targetLinks.Count -ne 1')) {
+    if (-not $privateDnsValidatorScript.Contains($fragment)) {
+        throw "The SQL private DNS validator is missing a fail-closed contract: $fragment"
+    }
 }
 $colonRuntimeIdentifierPattern = '(?:NODE|DOTNETCORE):(?:24-lts|10\.0)'
 if ($preDeploymentGate -match $colonRuntimeIdentifierPattern -or
