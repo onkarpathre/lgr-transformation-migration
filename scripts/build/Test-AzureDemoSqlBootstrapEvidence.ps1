@@ -18,6 +18,7 @@ $executorObjectId = [Guid] 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 $acceptedCount = 0
 $rejectedCount = 0
 $executableResolutionCount = 0
+$cultureExecutionCount = 0
 $isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $invariantCulture = [Globalization.CultureInfo]::InvariantCulture
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
@@ -47,6 +48,23 @@ $requiredMetadataReasons = @(
     'METADATA_GRANTS_HASH_FORMAT',
     'METADATA_GRANTS_HASH_MISMATCH'
 )
+
+foreach ($fragment in @(
+        '$timestampPropertyMatches = [regex]::Matches(',
+        '$timestampTokenMatches = [regex]::Matches(',
+        '$evidenceJson,',
+        '[DateTimeOffset]::TryParseExact(',
+        '[Globalization.CultureInfo]::InvariantCulture',
+        '[Globalization.DateTimeStyles]::AssumeUniversal',
+        '[Globalization.DateTimeStyles]::AdjustToUniversal',
+        '$recordedAt.Offset -ne [TimeSpan]::Zero')) {
+    if (-not $guardSource.Contains($fragment)) {
+        throw "SQL bootstrap evidence guard is missing raw UTC timestamp contract fragment: $fragment"
+    }
+}
+if ($guardSource -match "Get-EvidencePropertyValue\s+\`$evidence\s+'recordedAtUtc'") {
+    throw 'SQL bootstrap evidence guard must not validate the materialised recordedAtUtc value returned by ConvertFrom-Json.'
+}
 
 foreach ($fragment in @(
         '$gitCandidates = @(Get-Command',
@@ -159,6 +177,30 @@ function Format-TestTimestamp([DateTimeOffset] $Timestamp, [int] $FractionalDigi
     return $Timestamp.ToUniversalTime().ToString($format, $invariantCulture)
 }
 
+function Format-CanonicalEvidenceTimestamp([DateTimeOffset] $Timestamp) {
+    return $Timestamp.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", $invariantCulture)
+}
+
+function Invoke-AcceptedCaseInCulture(
+    [string] $CultureName,
+    [string] $SourceCommit,
+    [string] $ExpectedReleaseCommit
+) {
+    $originalCulture = [Threading.Thread]::CurrentThread.CurrentCulture
+    $originalUiCulture = [Threading.Thread]::CurrentThread.CurrentUICulture
+    try {
+        $culture = [Globalization.CultureInfo]::GetCultureInfo($CultureName)
+        [Threading.Thread]::CurrentThread.CurrentCulture = $culture
+        [Threading.Thread]::CurrentThread.CurrentUICulture = $culture
+        Assert-Accepted "canonical UTC timestamp under $CultureName" $SourceCommit $ExpectedReleaseCommit
+        $script:cultureExecutionCount++
+    }
+    finally {
+        [Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture
+        [Threading.Thread]::CurrentThread.CurrentUICulture = $originalUiCulture
+    }
+}
+
 function Write-Evidence([string] $SourceCommit, [hashtable] $Overrides = @{}) {
     $evidence = [ordered]@{
         schemaVersion = '1'
@@ -172,7 +214,7 @@ function Write-Evidence([string] $SourceCommit, [hashtable] $Overrides = @{}) {
         executorPrincipalObjectId = $executorObjectId.ToString()
         evidenceId = 'SYNTHETIC-DBA-EVIDENCE'
         approvalReference = 'SYNTHETIC-DBA-APPROVAL'
-        recordedAtUtc = Format-TestTimestamp ([DateTimeOffset]::UtcNow)
+        recordedAtUtc = Format-CanonicalEvidenceTimestamp ([DateTimeOffset]::UtcNow)
         grantsScriptSha256 = (Get-FileHash -LiteralPath $grantsScript -Algorithm SHA256).Hash.ToLowerInvariant()
     }
     foreach ($key in $Overrides.Keys) { $evidence[$key] = $Overrides[$key] }
@@ -338,10 +380,35 @@ try {
     Assert-Accepted 'evidence commit is an ancestor through executable path containing spaces' $ancestorCommit $releaseCommit @{} $spacedGitExecutable
     Assert-Accepted 'current schema and unchanged grants hash' $ancestorCommit $releaseCommit
     Assert-Accepted 'valid evidence inside age limit' $ancestorCommit $releaseCommit @{ recordedAtUtc = Format-TestTimestamp ([DateTimeOffset]::UtcNow.AddDays(-89)) 0 }
-    foreach ($fractionalDigits in 1..6) {
-        Assert-Accepted "UTC timestamp with $fractionalDigits fractional digits" $ancestorCommit $releaseCommit @{
-            recordedAtUtc = Format-TestTimestamp ([DateTimeOffset]::UtcNow) $fractionalDigits
+    Assert-Accepted 'literal Z without fractional seconds' $ancestorCommit $releaseCommit @{
+        recordedAtUtc = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", $invariantCulture)
+    }
+    Assert-Accepted 'literal Z with seven fractional digits' $ancestorCommit $releaseCommit @{
+        recordedAtUtc = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", $invariantCulture)
+    }
+    Assert-Accepted 'explicit zero offset without fractional seconds' $ancestorCommit $releaseCommit @{
+        recordedAtUtc = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:sszzz', $invariantCulture)
+    }
+    Assert-Accepted 'explicit zero offset with seven fractional digits' $ancestorCommit $releaseCommit @{
+        recordedAtUtc = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffffffzzz', $invariantCulture)
+    }
+    Assert-Accepted 'real protected evidence explicit UTC timestamp shape' $ancestorCommit $releaseCommit @{
+        recordedAtUtc = '2026-10-03T00:59:16.7133881+00:00'
+    }
+    Assert-Accepted 'DateTimeOffset round-trip producer output' $ancestorCommit $releaseCommit @{
+        recordedAtUtc = [DateTimeOffset]::UtcNow.ToString('O', $invariantCulture)
+    }
+    foreach ($fractionalDigits in 1..7) {
+        $timestamp = [DateTimeOffset]::UtcNow
+        Assert-Accepted "literal Z UTC timestamp with $fractionalDigits fractional digits" $ancestorCommit $releaseCommit @{
+            recordedAtUtc = Format-TestTimestamp $timestamp $fractionalDigits
         }
+        Assert-Accepted "explicit zero offset UTC timestamp with $fractionalDigits fractional digits" $ancestorCommit $releaseCommit @{
+            recordedAtUtc = $timestamp.ToString("yyyy-MM-dd'T'HH:mm:ss.$('f' * $fractionalDigits)zzz", $invariantCulture)
+        }
+    }
+    foreach ($cultureName in @('en-US', 'ar-SA', 'th-TH')) {
+        Invoke-AcceptedCaseInCulture $cultureName $ancestorCommit $releaseCommit
     }
 
     Assert-Rejected 'unrelated commit' $unrelatedCommit $releaseCommit 'The SQL bootstrap evidence provenance commit is not an ancestor of the expected release commit. [GIT_EXIT_1]'
@@ -367,8 +434,22 @@ try {
     Assert-Rejected 'future evidence' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_FUTURE_TIMESTAMP.') @{ recordedAtUtc = Format-TestTimestamp ([DateTimeOffset]::UtcNow.AddMinutes(6)) 0 }
     Assert-Rejected 'malformed timestamp' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = 'not-a-timestamp' }
     Assert-Rejected 'timezone-ambiguous timestamp' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss', $invariantCulture) }
-    Assert-Rejected 'offset timestamp' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:sszzz', $invariantCulture) }
+    Assert-Rejected 'positive non-zero offset timestamp' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '2026-10-03T12:00:00+01:00' }
+    Assert-Rejected 'negative offset timestamp' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '2026-10-03T12:00:00-01:00' }
+    Assert-Rejected 'non-zero half-hour offset timestamp' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '2026-10-03T12:00:00+05:30' }
+    Assert-Rejected 'malformed offset timestamp' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '2026-10-03T12:00:00+0000' }
+    Assert-Rejected 'lowercase z timestamp' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '2026-10-03T12:00:00z' }
     Assert-Rejected 'timestamp with eight fractional digits' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '2026-10-03T12:00:00.12345678Z' }
+    Assert-Rejected 'timestamp with leading whitespace' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = ' 2026-10-03T12:00:00Z' }
+    Assert-Rejected 'timestamp with trailing whitespace' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '2026-10-03T12:00:00Z ' }
+    Assert-Rejected 'malformed calendar date' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '2026-02-30T12:00:00Z' }
+    Assert-Rejected 'malformed clock time' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '2026-10-03T24:00:00Z' }
+    Assert-Rejected 'locale-specific timestamp' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '03/10/2026 12:00:00 +00:00' }
+
+    Write-Evidence $ancestorCommit @{ recordedAtUtc = '2026-10-03T12:00:00+00:00' }
+    $escapedTimestampJson = [IO.File]::ReadAllText($evidencePath).Replace('+00:00', '+00\u003a00')
+    [IO.File]::WriteAllText($evidencePath, $escapedTimestampJson, $utf8NoBom)
+    Assert-CurrentEvidenceRejected 'raw timestamp token changed by JSON materialisation' $releaseCommit ($metadataFailurePrefix + 'METADATA_UTC_TIMESTAMP_SYNTAX.') @{ recordedAtUtc = '2026-10-03T12:00:00+00:00' }
 
     $approvedGrantsHash = (Get-FileHash -LiteralPath $grantsScript -Algorithm SHA256).Hash.ToLowerInvariant()
     Assert-Rejected 'uppercase grants hash' $ancestorCommit $releaseCommit ($metadataFailurePrefix + 'METADATA_GRANTS_HASH_FORMAT.') @{ grantsScriptSha256 = $approvedGrantsHash.ToUpperInvariant() }
@@ -436,4 +517,4 @@ finally {
     }
 }
 
-Write-Output "Azure demo durable SQL bootstrap evidence guard passed $acceptedCount accepted, $rejectedCount fail-closed and $executableResolutionCount executable-resolution cases across $($requiredMetadataReasons.Count) safe metadata-rejection categories."
+Write-Output "Azure demo durable SQL bootstrap evidence guard passed $acceptedCount accepted, $rejectedCount fail-closed, $executableResolutionCount executable-resolution and $cultureExecutionCount culture-execution cases across $($requiredMetadataReasons.Count) safe metadata-rejection categories."

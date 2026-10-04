@@ -17,7 +17,7 @@ Set-StrictMode -Version Latest
 $clockSkewTolerance = [TimeSpan]::FromMinutes(5)
 $fullCommitPattern = '^[0-9a-f]{40}$'
 $sha256Pattern = '^[0-9a-f]{64}$'
-$timestampPattern = '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?Z$'
+$timestampPattern = '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?(?:Z|\+00:00)$'
 $timestampFormats = [string[]] @(
     "yyyy-MM-dd'T'HH:mm:ss'Z'",
     "yyyy-MM-dd'T'HH:mm:ss.f'Z'",
@@ -26,7 +26,15 @@ $timestampFormats = [string[]] @(
     "yyyy-MM-dd'T'HH:mm:ss.ffff'Z'",
     "yyyy-MM-dd'T'HH:mm:ss.fffff'Z'",
     "yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'",
-    "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'"
+    "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+    "yyyy-MM-dd'T'HH:mm:sszzz",
+    "yyyy-MM-dd'T'HH:mm:ss.fzzz",
+    "yyyy-MM-dd'T'HH:mm:ss.ffzzz",
+    "yyyy-MM-dd'T'HH:mm:ss.fffzzz",
+    "yyyy-MM-dd'T'HH:mm:ss.ffffzzz",
+    "yyyy-MM-dd'T'HH:mm:ss.fffffzzz",
+    "yyyy-MM-dd'T'HH:mm:ss.ffffffzzz",
+    "yyyy-MM-dd'T'HH:mm:ss.fffffffzzz"
 )
 $timestampStyles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
 
@@ -158,8 +166,9 @@ if ([string]::IsNullOrWhiteSpace([string] (Get-EvidencePropertyValue $evidence '
 }
 
 # PowerShell 7 converts ISO-8601 JSON strings to DateTime objects. Validate and
-# parse the original JSON token so its literal trailing Z and exact syntax are
-# preserved consistently with Windows PowerShell 5.1.
+# parse the original JSON token so its lexical representation is preserved
+# consistently with Windows PowerShell 5.1. Only uppercase Z or the explicit
+# zero offset +00:00 is accepted as UTC.
 $timestampPropertyMatches = [regex]::Matches(
     $evidenceJson,
     '(?<!\\)"recordedAtUtc"\s*:',
@@ -167,7 +176,7 @@ $timestampPropertyMatches = [regex]::Matches(
 )
 $timestampTokenMatches = [regex]::Matches(
     $evidenceJson,
-    '(?<!\\)"recordedAtUtc"\s*:\s*"(?<timestamp>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?Z)"',
+    '(?<!\\)"recordedAtUtc"\s*:\s*"(?<timestamp>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?(?:Z|\+00:00))"',
     [Text.RegularExpressions.RegexOptions]::CultureInvariant
 )
 $recordedAtProperty = $evidence.PSObject.Properties['recordedAtUtc']
@@ -185,6 +194,9 @@ $timestampParsed = $recordedAtText -cmatch $timestampPattern -and
         [ref] $recordedAt
     )
 if (-not $timestampParsed) {
+    Deny-Metadata 'METADATA_UTC_TIMESTAMP_SYNTAX'
+}
+if ($recordedAt.Offset -ne [TimeSpan]::Zero) {
     Deny-Metadata 'METADATA_UTC_TIMESTAMP_SYNTAX'
 }
 

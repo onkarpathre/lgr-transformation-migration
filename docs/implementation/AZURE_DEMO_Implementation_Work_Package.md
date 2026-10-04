@@ -1304,3 +1304,89 @@ handoff:
 ```
 
 READY_FOR_AZURE_MONITOR_METRIC_RETEST
+
+## Explicit-UTC SQL-bootstrap evidence repair hand-off
+
+### Failed protected deployment and root cause
+
+Pipeline `mtp-azure-demo-deploy` failed task **Require durable independently produced SQL Entra bootstrap evidence** for validated source/release commit `07c575567c864b23a23a1fef8d42dc9f7d9ecb22` with reason `METADATA_UTC_TIMESTAMP_SYNTAX`. The authoritative protected evidence contains `recordedAtUtc: 2026-10-03T00:59:16.7133881+00:00`, an explicit UTC zero-offset value produced by `DateTimeOffset.ToString("O")`. Its supplied SHA-256 is `02d105fd3d16eab02567f565e400b8c79d9ca7f8a75aade40c10ed22114b034e`. The producer was correct, but the durable validator accepted only the equivalent literal-`Z` lexical representation.
+
+The protected evidence was not accessed, edited, regenerated, replaced or rewritten to the current time. This repair preserves the original recorded instant and its explicit `+00:00` syntax.
+
+### Bounded validator and producer-contract repair
+
+`Assert-AzureDemoSqlBootstrapEvidence.ps1` continues to validate the raw JSON token before PowerShell 7 `ConvertFrom-Json` can materialise an ISO-8601 string as a `DateTime`. It now accepts exactly invariant `yyyy-MM-ddTHH:mm:ssZ`, `yyyy-MM-ddTHH:mm:ss.FFFFFFFZ`, `yyyy-MM-ddTHH:mm:ss+00:00` and `yyyy-MM-ddTHH:mm:ss.FFFFFFF+00:00`, where a present fraction contains one through seven digits. Parsing uses explicit exact formats, invariant culture, `DateTimeOffset`, and deterministic universal adjustment; the parsed offset must be exactly zero. Missing, non-zero, negative, malformed or lowercase zones; whitespace; invalid calendar/clock values; locale-specific strings; and fractions longer than seven digits remain rejected.
+
+The synthetic repository evidence producer now emits one canonical future format: uppercase literal `Z` with exactly seven fractional digits (`yyyy-MM-ddTHH:mm:ss.fffffffZ`). Documentation requires the same format for future independently produced protected evidence. Compatibility with the existing `+00:00` evidence is retained; no existing evidence is mutated.
+
+All other controls remain unchanged: schema version `1`, `PASS`, exact SQL target, exact migration identity, exact executor identity, non-empty evidence/approval references, exact grants-script SHA-256, complete non-shallow repository, exact checked-out `HEAD`, commit-object existence, equal/ancestor provenance only, descendant/unrelated rejection, no Git fetch/pull, native scalar Git resolution, 90-day maximum age and five-minute future tolerance. The seven-stage pipeline, default-disabled deploy/rollback, release-branch restriction, Secure File delivery, workload identity, monitoring, subnet, private-DNS, migration, SQL-principal, swap and rollback safeguards are unchanged.
+
+The protected pipeline must be rerun independently. Managed-agent success is not claimed until the existing evidence passes the affected task without weakening provenance, identity, target, hash or age validation.
+
+### Local verification evidence
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `07c575567c864b23a23a1fef8d42dc9f7d9ecb22`; clean worktree; empty staged index; local `origin` and `azure` tracking refs both exactly aligned with HEAD. |
+| Windows PowerShell 5.1 parsing | PASS: all 36 tracked PowerShell scripts parsed with zero errors. |
+| Durable SQL-evidence regression | PASS: 27 accepted, 45 fail-closed, five executable-resolution and three culture-execution cases across all 17 safe metadata-rejection categories. Coverage includes both UTC suffixes, zero through seven fractional digits, exact real timestamp shape, `DateTimeOffset.UtcNow.ToString("O")`, raw-token preservation, age/skew, target/identity/hash and full ancestry semantics. |
+| Multiple-culture execution | PASS under `en-US`, `ar-SA` and `th-TH` inside the durable regression using invariant timestamp generation and parsing. |
+| Pipeline structural validation | PASS: exactly seven ordered stages; deploy/rollback default-disabled, release restriction, Secure File, workload identity, migration, smoke, swap and rollback controls retained. |
+| Monitoring regression | PASS: 17 mandatory alerts retained; three exact metric contracts passed and six invalid mutations were rejected. |
+| App Service subnet regression | PASS: one exact inventory and two compiled shapes accepted; 24 inventory and eight compiled-shape cases rejected. |
+| Private-DNS regression | PASS: one valid inventory accepted; six invalid inventories rejected; four parent/link and zone-group contracts verified. |
+| Migration identity and target regressions | PASS: identity one valid/14 rejected; target one valid/seven rejected. |
+| Database-principal SQL regression | PASS: seven external variables preserved, correct database accepted, 30 invalid cases rejected, and three approved `CREATE USER` shapes retained. |
+| Rollback safeguards | PASS: one valid and 12 fail-closed target cases. |
+| Source/security boundary scan | PASS: 177 source/configuration files scanned. |
+| Diff and mutation boundary | PASS: `git diff --check`; exact five-file allowlist; staged index empty. No Bicep, application, EF migration, SQL grant/principal, identity, service connection, runtime, variable-group, pipeline YAML or protected evidence change. |
+| PowerShell 7/Linux | UNAVAILABLE locally and not claimed: `pwsh` is absent, WSL is not installed, and Docker/Podman are absent. |
+| Protected/external actions | NOT RUN: no Azure, Azure DevOps, SQL, pipeline, deployment, migration, seed, swap or rollback access/action occurred. The protected evidence and supplied SHA-256 `02d105fd3d16eab02567f565e400b8c79d9ca7f8a75aade40c10ed22114b034e` were not accessed or modified. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_EXPLICIT_UTC_EVIDENCE_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_07c575567c864b23a23a1fef8d42dc9f7d9ecb22"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals: []
+  artefacts:
+    - "scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1"
+    - "scripts/build/Test-AzureDemoSqlBootstrapEvidence.ps1"
+    - "docs/architecture/AZURE_DEMO_Deployment_Architecture.md"
+    - "docs/architecture/AZURE_DEMO_Environment_Configuration.md"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Exact clean baseline, empty index and aligned local origin/azure refs were confirmed before editing."
+    - "All locally available requested regressions passed under Windows PowerShell 5.1."
+    - "The exact real explicit-zero-offset timestamp fixture passed without accessing or changing protected evidence."
+  decisions:
+    - "Accept only uppercase Z or exact +00:00 after raw JSON lexical validation."
+    - "Parse exact invariant DateTimeOffset formats, normalise deterministically to UTC and require zero offset."
+    - "Emit canonical uppercase Z with exactly seven fractional digits for new evidence."
+  assumptions:
+    - "The supplied protected-evidence observation and SHA-256 are authoritative."
+  risks:
+    - "PowerShell 7/Linux and the protected Secure File remain independently testable only on the managed agent."
+  defects:
+    - "REPAIRED LOCALLY: the durable validator rejected valid explicit UTC +00:00 timestamps produced by DateTimeOffset.ToString(O)."
+  blockers:
+    - "Independent PowerShell 7/Linux rerun of pipeline mtp-azure-demo-deploy remains required; managed-agent success is not claimed."
+  approvals: []
+  requested_action: "Independent Tester must rerun the protected SQL-bootstrap task using the unchanged Secure File and confirm the existing +00:00 timestamp passes while age, provenance, identity, target and hash validation remain fail-closed."
+```
+
+READY_FOR_EXPLICIT_UTC_EVIDENCE_RETEST
