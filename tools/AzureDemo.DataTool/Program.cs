@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using LgrTransformationMigration.Api.Domain;
 using LgrTransformationMigration.Api.Infrastructure;
 using Microsoft.Data.SqlClient;
@@ -17,7 +18,18 @@ if (Required("--environment") != "AzureDemo")
     throw new InvalidOperationException("The data tool refuses every environment except AzureDemo.");
 if (Required("--resource-group") != "Onkar.Pathre")
     throw new InvalidOperationException("The data tool refuses an unapproved resource-group identifier.");
+var databaseName = Required("--database");
+if (!Regex.IsMatch(databaseName, "^sqldb-mtp-dev-uks-001(?:-reset-[a-z0-9]+)?$", RegexOptions.CultureInvariant))
+    throw new InvalidOperationException("The data tool refuses an unapproved database identifier.");
+var artifactRoot = Path.GetFullPath(Required("--artifact-root"))
+    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+if (!Directory.Exists(artifactRoot))
+    throw new InvalidOperationException("The immutable artifact root is absent.");
+EnsureNoLinks(artifactRoot, artifactRoot);
 var manifestPath = Path.GetFullPath(Required("--manifest"));
+if (!IsWithinRoot(artifactRoot, manifestPath) || !File.Exists(manifestPath))
+    throw new InvalidOperationException("The seed manifest is absent or outside the immutable artifact root.");
+EnsureNoLinks(artifactRoot, manifestPath);
 var manifest = JsonSerializer.Deserialize<SeedManifest>(await File.ReadAllTextAsync(manifestPath),
     new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
     ?? throw new InvalidOperationException("The seed manifest is invalid.");
@@ -26,13 +38,12 @@ if (manifest.SchemaVersion != "1" || manifest.Environment != "AzureDemo"
     || manifest.CustomerId != SeedIds.DemoCustomer || manifest.ProjectId != SeedIds.DemoProject)
     throw new InvalidOperationException("The seed manifest is not approved for the AzureDemo synthetic project.");
 
-var repositoryRoot = FindRepositoryRoot(Path.GetDirectoryName(manifestPath)!);
 foreach (var sample in manifest.ApprovedSampleFiles)
 {
-    var samplePath = Path.GetFullPath(Path.Combine(repositoryRoot, sample.Path));
-    if (!samplePath.StartsWith(repositoryRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-        || !File.Exists(samplePath))
-        throw new InvalidOperationException("An approved synthetic sample file is absent or outside the repository.");
+    var samplePath = Path.GetFullPath(Path.Combine(artifactRoot, sample.Path));
+    if (!IsWithinRoot(artifactRoot, samplePath) || !File.Exists(samplePath))
+        throw new InvalidOperationException("An approved synthetic sample file is absent or outside the immutable artifact root.");
+    EnsureNoLinks(artifactRoot, samplePath);
     var sampleHash = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(samplePath))).ToLowerInvariant();
     if (!string.Equals(sampleHash, sample.Sha256, StringComparison.Ordinal))
         throw new InvalidOperationException("An approved synthetic sample file checksum does not match the manifest.");
@@ -44,7 +55,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
 var sql = new SqlConnectionStringBuilder(connectionString);
 var sqlHost = NormalizedSqlHost(sql.DataSource);
 if (!string.Equals(sqlHost, "sql-mtp-dev-uks-001.database.windows.net", StringComparison.OrdinalIgnoreCase)
-    || sql.InitialCatalog != Required("--database")
+    || sql.InitialCatalog != databaseName
     || sql.Authentication != SqlAuthenticationMethod.ActiveDirectoryWorkloadIdentity
     || !sql.Encrypt || sql.TrustServerCertificate || !string.IsNullOrEmpty(sql.Password)
     || !string.Equals(sql.UserID, "f77b1931-0954-4ae9-8f6b-de5f9cfdb2e7", StringComparison.OrdinalIgnoreCase))
@@ -99,12 +110,29 @@ foreach (var expected in manifest.MinimumCounts)
 var manifestHash = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(manifestPath))).ToLowerInvariant();
 Console.WriteLine(JsonSerializer.Serialize(new { status = "reconciled", manifestVersion = manifest.ManifestVersion, manifestSha256 = manifestHash, counts = actual }));
 
-static string FindRepositoryRoot(string start)
+static bool IsWithinRoot(string root, string candidate)
 {
-    var current = new DirectoryInfo(start);
-    while (current is not null && !File.Exists(Path.Combine(current.FullName, "LgrTransformationMigration.sln")))
-        current = current.Parent;
-    return current?.FullName ?? throw new InvalidOperationException("Repository root was not found for seed validation.");
+    var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    var prefix = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+    return candidate.StartsWith(prefix, comparison);
+}
+
+static void EnsureNoLinks(string root, string candidate)
+{
+    var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    var rootPath = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    var currentPath = Path.GetFullPath(candidate).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    while (true)
+    {
+        FileSystemInfo item = File.Exists(currentPath) ? new FileInfo(currentPath) : new DirectoryInfo(currentPath);
+        if ((item.Attributes & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidOperationException("Immutable seed paths must not contain symbolic links or reparse points.");
+        if (string.Equals(currentPath, rootPath, comparison)) return;
+        currentPath = Path.GetDirectoryName(currentPath)
+            ?? throw new InvalidOperationException("Immutable seed path ancestry could not be validated.");
+        if (!IsWithinRoot(rootPath, currentPath) && !string.Equals(currentPath, rootPath, comparison))
+            throw new InvalidOperationException("Immutable seed path ancestry escaped the artifact root.");
+    }
 }
 
 static string NormalizedSqlHost(string dataSource)

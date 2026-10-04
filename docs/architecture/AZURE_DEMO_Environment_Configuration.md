@@ -410,6 +410,14 @@ The build job must:
 7. generate SBOMs/hashes and publish test/scan evidence; and
 8. prove the application starts in `AzureDemo` only with complete Entra/private dependency configuration and fails closed otherwise.
 
+### Immutable seed-tool artifact
+
+The Linux Package job restores `tools/AzureDemo.DataTool/AzureDemo.DataTool.csproj` in locked mode and publishes it once in Release configuration as a framework-dependent .NET 10 artifact with `--no-restore` and `--no-self-contained`. The published entry assembly is `seed/AzureDemo.DataTool.dll`. The unchanged approved synthetic manifest is `demo-data/azure-demo-seed-manifest.json`, and every sample named by that manifest is copied beneath the same immutable package root at its manifest-relative path.
+
+`deployment-artifact-manifest.json` records the exact `Build.SourceVersion` and SHA-256 for every payload file beneath the package root. Validation compares the complete manifested set with the complete downloaded set, so a missing, modified, added or substituted tool, dependency, manifest or sample fails closed. Absolute/traversing paths and symbolic-link/reparse-point paths are rejected. The manifest does not hash itself; its complete payload list and exact-commit field form the verified envelope, and the manifest file's own SHA-256 remains the evidence identifier consumed by smoke evidence.
+
+The protected seed task supplies explicit absolute paths beneath `$(Pipeline.Workspace)/azure-demo-immutable` and launches the validated DLL with the agent's installed .NET 10 runtime. It never runs the source project and performs no restore, build or `dotnet run`. Reset reconciliation must pass the same root, tool, seed-manifest, deployment-manifest and expected-commit values. The data tool resolves approved samples from the supplied immutable artifact root and has no repository-root discovery fallback.
+
 ### Slot deployment contract
 
 - Build once and publish immutable, hashed `web.zip` and `api.zip`; deployment stages download those exact pipeline artifacts and never rebuild them.
@@ -470,14 +478,14 @@ The SQL-bootstrap approval reference approves the database principal/grant contr
 
 1. Confirm approved Product, Architecture and governance packages and record the exact commit/artifact hashes.
 2. Verify `release/azure-demo-v1` protection and required checks; do not push directly.
-3. Run PR validation and produce immutable web/API/migration/Bicep artifacts and SBOMs.
+3. Run PR validation and produce immutable web/API/migration/Bicep artifacts, the published seed tool and approved synthetic inputs, one exact-file deployment manifest, and SBOMs.
 4. Query the supported App Service stacks in the approved subscription/region through the human-approved deployment workflow. Abort if Node 24 LTS or .NET 10 is unavailable; do not fall back to containers automatically.
 5. Run Bicep lint/build/security scan and `what-if` against `Onkar.Pathre`; obtain approval.
 6. Deploy/update network, monitoring, identities, App Service plan/sites/slots, Key Vault, SQL, Storage, private endpoints, DNS, diagnostics and alerts.
 7. Complete the evidenced SQL Entra administrator/bootstrap grants, or reuse valid unexpired evidence whose provenance commit is an ancestor of the release and whose exact target/identity/grants contract is unchanged. Regenerate evidence when that contract changes, reaches the 90-day maximum age or is revoked.
 8. Verify private DNS/connectivity from the deployment agent and sites without changing public-network controls.
 9. Record the pre-migration schema state/PITR time; review and execute the EF bundle with the migration identity.
-10. Execute the explicit AzureDemo seed stage and reconcile the manifest.
+10. Validate the complete downloaded immutable payload and exact source commit, then execute the published AzureDemo seed entry assembly with the approved immutable manifest and reconcile it without restoring or building.
 11. Deploy API artifact to `staging`; warm `/health/ready`; run API/identity/tenant smoke tests through the web staging path.
 12. Deploy web artifact to `staging`; warm `/health`; verify login, proxy, deep links and static assets.
 13. Run the complete post-deployment smoke suite and the nine demonstration journeys with synthetic data.

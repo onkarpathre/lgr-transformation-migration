@@ -198,9 +198,9 @@ No dev dependencies, source maps containing secrets, tests, LocalTest configurat
 
 ### Exact App Service deployment method
 
-Both applications are built once in CI and packaged as immutable, hashed, ready-to-run ZIP files. The approved Azure DevOps deployment job uses an Azure Resource Manager service connection with workload identity federation and `AzureWebApp@1` (or its approved successor) with `appType: webAppLinux`, `deployToSlotOrASE: true`, `slotName: staging` and `deploymentMethod: zipDeploy`. The API ZIP contains the contents of the .NET publish directory at its root; the web ZIP contains the contents of `.next/standalone` with `server.js` at its root. App Service ZIP deployment requires the contents rather than a parent directory: [App Service ZIP deployment](https://learn.microsoft.com/en-us/azure/app-service/deploy-zip).
+Both applications are built once in CI and packaged as immutable, hashed, ready-to-run ZIP files. The explicit seed tool is likewise restored in locked mode and published once as a framework-dependent .NET 10 artifact on the Linux Package agent. The approved Azure DevOps deployment job uses an Azure Resource Manager service connection with workload identity federation and `AzureWebApp@1` (or its approved successor) with `appType: webAppLinux`, `deployToSlotOrASE: true`, `slotName: staging` and `deploymentMethod: zipDeploy`. The API ZIP contains the contents of the .NET publish directory at its root; the web ZIP contains the contents of `.next/standalone` with `server.js` at its root. App Service ZIP deployment requires the contents rather than a parent directory: [App Service ZIP deployment](https://learn.microsoft.com/en-us/azure/app-service/deploy-zip).
 
-Set `SCM_DO_BUILD_DURING_DEPLOYMENT=false` and do not enable Oryx remote build. Restore, compilation, tests, standalone tracing and asset copying occur only in the audited build stage. No FTP, local Git, Deployment Center continuous deployment, publish profile, platform-side `npm install`, direct-main ZIP deployment or container image is permitted. The private API/slot SCM endpoint is reached only from the approved VNet-connected deployment agent. Artifact hashes are checked before and after upload, and the same ZIPs are promoted without rebuild.
+Set `SCM_DO_BUILD_DURING_DEPLOYMENT=false` and do not enable Oryx remote build. Restore, compilation, tests, seed-tool publish, standalone tracing and asset copying occur only in the audited build/package stages. The protected deployment stage performs no package restore, compilation or `dotnet run`; it executes only the hash-validated published seed entry assembly downloaded beneath `Pipeline.Workspace`. No FTP, local Git, Deployment Center continuous deployment, publish profile, platform-side `npm install`, direct-main ZIP deployment or container image is permitted. The private API/slot SCM endpoint is reached only from the approved VNet-connected deployment agent. Artifact hashes are checked before use, and the same artifacts are promoted without rebuild.
 
 ## Identity, authorization and LocalTest prohibition
 
@@ -395,7 +395,7 @@ Run for PRs to `release/azure-demo-v1` and other protected branches:
 - NuGet direct/transitive vulnerability and deprecated-package scan;
 - secret scan, SAST, licence review and generated SBOMs for both artifacts;
 - Bicep format/lint/build plus policy/security scan;
-- package API publish, web standalone output, EF migration bundle/script and Bicep as immutable artifacts with hashes;
+- package API publish, web standalone output, EF migration bundle/script, the framework-dependent Linux seed tool, its approved synthetic manifest/sample and Bicep as immutable artifacts with hashes;
 - validate the web artifact by serving `server.js` and requesting a page, deep link and static chunk;
 - publish tests, coverage, scans and artifacts against the same commit; and
 - sign or otherwise integrity-protect the artifact manifest, retain hashes/SBOMs/scan results under the governed retention policy and prevent a deployment stage from rebuilding or substituting an artifact.
@@ -406,6 +406,7 @@ Run for PRs to `release/azure-demo-v1` and other protected branches:
 - Use an Azure Resource Manager service connection with workload identity federation; no client secret or publish profile.
 - Run Bicep `what-if`, policy checks and an approval before deployment to `Onkar.Pathre`.
 - Validate protected SQL-bootstrap evidence against complete checked-out Git history, the exact grants-script hash, approved target/identities and the finite age limit; validation performs no network fetch.
+- Validate the downloaded deployment manifest against the exact `Build.SourceVersion`, the complete payload file set and every SHA-256 before seed execution; reject missing, added, modified, substituted, traversing or linked seed paths.
 - Run the database migration from the approved VNet-connected self-hosted agent; a Microsoft-hosted agent must not cause SQL public access or `Allow Azure services` to be enabled.
 - Deploy API and web artifacts to `staging` slots only, apply slot settings, warm and smoke test them.
 - Require independent Tester evidence and the human demo release approval before swapping API first, then web.

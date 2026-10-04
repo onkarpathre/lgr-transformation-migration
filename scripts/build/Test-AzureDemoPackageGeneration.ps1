@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string] $PackageDirectory = 'artifacts/azure-demo-ci/packages'
+    [string] $PackageDirectory = 'artifacts/azure-demo-ci/packages',
+    [string] $ExpectedSourceCommit
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,6 +9,12 @@ $repo = (Resolve-Path (Join-Path (Join-Path $PSScriptRoot '..') '..')).ProviderP
 $utilities = Join-Path $PSScriptRoot 'AzureDemoPackageUtilities.ps1'
 $packageScript = Join-Path $PSScriptRoot 'New-AzureDemoPackages.ps1'
 . $utilities
+. (Join-Path $PSScriptRoot 'AzureDemoDeploymentArtifactUtilities.ps1')
+
+if ([string]::IsNullOrWhiteSpace($ExpectedSourceCommit)) {
+    $ExpectedSourceCommit = (& git -C $repo rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Could not establish the expected package source commit.' }
+}
 
 $packageRoot = Assert-AzureDemoRepositoryOutputPath -RepositoryPath $repo -OutputPath $PackageDirectory
 $expectedPackageRoot = Get-AzureDemoCanonicalPath -Path (Join-Path $repo 'artifacts/azure-demo-ci/packages')
@@ -110,4 +117,20 @@ finally {
     }
 }
 
-Write-Output 'Azure demo package regression passed repository-boundary, ZIP, manifest, SHA-256 and deterministic-generation checks.'
+$deploymentManifestPath = Join-Path $packageRoot 'deployment-artifact-manifest.json'
+$deployment = Assert-AzureDemoDeploymentArtifact `
+    -ArtifactRoot $packageRoot `
+    -ManifestPath $deploymentManifestPath `
+    -ExpectedSourceCommit $ExpectedSourceCommit
+$deploymentManifest = Get-Content -LiteralPath $deployment.ManifestPath -Raw | ConvertFrom-Json
+$manifestPaths = @($deploymentManifest.artifacts | ForEach-Object { [string] $_.path })
+foreach ($requiredPath in @(
+        'seed/AzureDemo.DataTool.dll',
+        'demo-data/azure-demo-seed-manifest.json',
+        'samples/discovery/azure-migrate-server-report-demo.csv')) {
+    if ($manifestPaths -cnotcontains $requiredPath) {
+        throw "Deployment artifact manifest does not hash-protect required seed payload $requiredPath."
+    }
+}
+
+Write-Output "Azure demo package regression passed repository-boundary, ZIP, exact-file manifest, SHA-256 and deterministic-generation checks for $($deployment.ArtifactCount) payload files."

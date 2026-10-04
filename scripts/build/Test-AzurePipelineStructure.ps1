@@ -12,6 +12,9 @@ $runtimeValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\bui
 $appServiceSubnetValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoAppServiceSubnet.ps1') -Raw
 $privateDnsValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoPrivateDnsReconciliation.ps1') -Raw
 $sqlBootstrapValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\database\Assert-AzureDemoSqlBootstrapEvidence.ps1') -Raw
+$seedPackageScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-AzureDemoSeedArtifact.ps1') -Raw
+$seedInvocationScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invoke-AzureDemoSeed.ps1') -Raw
+$seedResetScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invoke-AzureDemoReset.ps1') -Raw
 $approvedMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev-v2'
 $retiredMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev'
 
@@ -120,6 +123,10 @@ $requiredFragments = @(
     "New-AzureDemoPackages.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'",
     'Test-EfMigrationArtifactParsing.ps1',
     "New-EfMigrationArtifacts.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/migration'",
+    "New-AzureDemoSeedArtifact.ps1 -PackageDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'",
+    'New-AzureDemoDeploymentArtifactManifest.ps1',
+    'Assert-AzureDemoDeploymentArtifact.ps1',
+    'Test-AzureDemoImmutableSeedArtifact.ps1',
     "Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'",
     "Test-AzureDemoPackageGeneration.ps1 -PackageDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'",
     'publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages',
@@ -583,6 +590,27 @@ foreach ($step in @($migrationStep, $seedStep)) {
     }
 }
 
+foreach ($fragment in @(
+        "-ImmutableArtifactRoot '`$(Pipeline.Workspace)/azure-demo-immutable'",
+        "-ToolPath '`$(Pipeline.Workspace)/azure-demo-immutable/seed/AzureDemo.DataTool.dll'",
+        "-ManifestPath '`$(Pipeline.Workspace)/azure-demo-immutable/demo-data/azure-demo-seed-manifest.json'",
+        "-DeploymentManifestPath '`$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json'",
+        "-ExpectedSourceCommit '`$(Build.SourceVersion)'")) {
+    if (-not $seedStep.Contains($fragment)) {
+        throw "Protected seed task does not use the immutable seed contract: $fragment"
+    }
+}
+if ($seedStep -match '(?i)\bdotnet\s+(?:run|restore|build)\b' -or
+    $seedStep -match '(?i)tools[\\/]AzureDemo\.DataTool[\\/]AzureDemo\.DataTool\.csproj') {
+    throw 'Protected seed deployment must not run, restore or build the source project.'
+}
+foreach ($script in @($seedInvocationScript, $seedResetScript)) {
+    if ($script -match '(?i)\bdotnet\s+(?:run|restore|build)\b' -or
+        $script -match '(?i)AzureDemo\.DataTool\.csproj|Build\.SourcesDirectory') {
+        throw 'Seed and reset scripts must not contain a source, restore or build fallback.'
+    }
+}
+
 if ($text -match "(?m)^\s+azureSubscription:\s+$([regex]::Escape($retiredMigrationServiceConnection))\s*`$") {
     throw 'The pipeline retains an executable reference to the retired dedicated migration service connection.'
 }
@@ -674,6 +702,28 @@ foreach ($relativePath in @('application', 'migration')) {
     if (-not $packageStage.Contains("$packageRoot/$relativePath")) {
         throw "Package generation is missing repository-contained $relativePath output."
     }
+}
+foreach ($fragment in @(
+        '[Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Linux)',
+        'dotnet restore $project --locked-mode',
+        'dotnet publish $project --configuration Release --no-self-contained --no-restore',
+        '$seedDirectory = Join-Path $packageRoot ''seed''',
+        '$demoDataDirectory = Join-Path $packageRoot ''demo-data''',
+        '$samplesDirectory = Join-Path $packageRoot ''samples''')) {
+    if (-not $seedPackageScript.Contains($fragment)) {
+        throw "Seed artifact generator is missing its locked Linux publish contract: $fragment"
+    }
+}
+$seedPackageIndex = $packageStage.IndexOf('New-AzureDemoSeedArtifact.ps1', [StringComparison]::Ordinal)
+$deploymentManifestIndex = $packageStage.IndexOf('New-AzureDemoDeploymentArtifactManifest.ps1', [StringComparison]::Ordinal)
+$seedRegressionIndex = $packageStage.IndexOf('Test-AzureDemoImmutableSeedArtifact.ps1', [StringComparison]::Ordinal)
+$packagePublishIndex = $packageStage.IndexOf('publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages', [StringComparison]::Ordinal)
+if ($seedPackageIndex -lt 0 -or $deploymentManifestIndex -le $seedPackageIndex -or
+    $seedRegressionIndex -le $deploymentManifestIndex -or $packagePublishIndex -le $seedRegressionIndex) {
+    throw 'Seed publish, complete deployment manifest, fail-closed regression and immutable publication order is invalid.'
+}
+if ([regex]::Matches($packageStage, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoImmutableSeedArtifact\.ps1').Count -ne 1) {
+    throw 'The immutable seed artifact regression must run exactly once before package publication.'
 }
 
 $swap = $text.Substring($text.IndexOf('- stage: SwapAndVerify', [StringComparison]::Ordinal),

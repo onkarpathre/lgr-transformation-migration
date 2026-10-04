@@ -209,19 +209,23 @@ stages:
       displayName: Regress fail-closed EF migration-list JSON parsing
     - pwsh: ./scripts/build/New-EfMigrationArtifacts.ps1 -OutputDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/migration'
       displayName: Create controlled Linux EF bundle, SQL and manifest
+    - pwsh: ./scripts/build/New-AzureDemoSeedArtifact.ps1 -PackageDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'
+      displayName: Publish immutable Linux seed tool and approved synthetic inputs
     - pwsh: ./scripts/build/Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'
       displayName: Verify hashes, ZIP roots and prohibited-file absence
-    - pwsh: ./scripts/build/Test-AzureDemoPackageGeneration.ps1 -PackageDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'
-      displayName: Regress package path boundary and deterministic ZIP evidence
     - pwsh: |
         $packageDirectory = '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'
         Copy-Item infra/bicep -Destination (Join-Path $packageDirectory 'infrastructure') -Recurse
-        Copy-Item demo-data -Destination (Join-Path $packageDirectory 'demo-data') -Recurse
         Copy-Item scripts/smoke -Destination (Join-Path $packageDirectory 'smoke') -Recurse
-        Get-ChildItem $packageDirectory -Recurse -File | ForEach-Object {
-          [pscustomobject]@{ path = $_.FullName.Substring($packageDirectory.Length + 1).Replace('\','/'); sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
-        } | ConvertTo-Json | Set-Content (Join-Path $packageDirectory 'deployment-artifact-manifest.json')
-      displayName: Assemble deployment evidence manifest
+        ./scripts/build/New-AzureDemoDeploymentArtifactManifest.ps1 -ArtifactRoot $packageDirectory -SourceCommit '$(Build.SourceVersion)'
+        ./scripts/build/Assert-AzureDemoDeploymentArtifact.ps1 -ArtifactRoot $packageDirectory -ManifestPath (Join-Path $packageDirectory 'deployment-artifact-manifest.json') -ExpectedSourceCommit '$(Build.SourceVersion)'
+      displayName: Assemble and validate exact-commit deployment artifact manifest
+    - pwsh: ./scripts/build/Test-AzureDemoPackageGeneration.ps1 -PackageDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ExpectedSourceCommit '$(Build.SourceVersion)'
+      displayName: Regress package path boundary, hashes and deterministic ZIP evidence
+    - pwsh: ./scripts/build/Test-AzureDemoImmutableSeedArtifact.ps1 -PackageDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ExpectedSourceCommit '$(Build.SourceVersion)'
+      displayName: Regress immutable seed packaging and fail-closed execution contract
+    - pwsh: ./scripts/build/Assert-AzureDemoDeploymentArtifact.ps1 -ArtifactRoot '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ManifestPath '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/deployment-artifact-manifest.json' -ExpectedSourceCommit '$(Build.SourceVersion)'
+      displayName: Revalidate final immutable deployment payload before publication
     - publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages
       artifact: azure-demo-immutable
 
@@ -462,7 +466,7 @@ stages:
                   $env:AZURE_FEDERATED_TOKEN_FILE = $federatedTokenFile
                   $env:LGR_AZURE_DEMO_SQL_CONNECTION_STRING = 'Server=tcp:$(AZDEMO_SQL_SERVER_FQDN),1433;Database=$(AZDEMO_SQL_DATABASE_NAME);Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Workload Identity;User Id=$(AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID)'
                   ./scripts/database/Assert-AzureDemoMigrationTarget.ps1
-                  ./scripts/data/Invoke-AzureDemoSeed.ps1 -Environment AzureDemo -DatabaseName '$(AZDEMO_SQL_DATABASE_NAME)' -ResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)'
+                  ./scripts/data/Invoke-AzureDemoSeed.ps1 -Environment AzureDemo -DatabaseName '$(AZDEMO_SQL_DATABASE_NAME)' -ResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -ImmutableArtifactRoot '$(Pipeline.Workspace)/azure-demo-immutable' -ToolPath '$(Pipeline.Workspace)/azure-demo-immutable/seed/AzureDemo.DataTool.dll' -ManifestPath '$(Pipeline.Workspace)/azure-demo-immutable/demo-data/azure-demo-seed-manifest.json' -DeploymentManifestPath '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -ExpectedSourceCommit '$(Build.SourceVersion)'
                 }
                 finally {
                   Remove-Variable sqlAccessToken -ErrorAction SilentlyContinue

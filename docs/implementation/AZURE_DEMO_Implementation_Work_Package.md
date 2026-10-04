@@ -1456,3 +1456,112 @@ handoff:
 ```
 
 READY_FOR_MIGRATION_SERVICE_CONNECTION_RETEST
+
+## Immutable seed-tool deployment artifact repair
+
+### Protected deployment failure and exact root cause
+
+Pipeline `mtp-azure-demo-deploy` passed the migration identity, tenant, release, artifact and SQL-target guards, and the reviewed EF migration task progressed far enough for the independent seed task to start. Seed startup then failed with `NETSDK1004` because `scripts/data/Invoke-AzureDemoSeed.ps1` executed `dotnet run --project tools/AzureDemo.DataTool/AzureDemo.DataTool.csproj --configuration Release --no-restore`. The protected deployment job runs on a separate ephemeral agent. Its filesystem contains neither the Package job's `obj/project.assets.json` nor any Package-job `bin` output, so `--no-restore` against repository source could not succeed. Job/stage isolation is the root cause; the migration, identity, tenant, target and durable SQL-bootstrap evidence controls were not the failing controls.
+
+### Bounded immutable-artifact repair
+
+The Linux Package job now restores `AzureDemo.DataTool.csproj` in locked mode and publishes Release, framework-dependent .NET 10 output once with `--no-restore` and `--no-self-contained`. Packaging is Linux-gated and produces:
+
+- `azure-demo-immutable/seed/AzureDemo.DataTool.dll` plus its `.deps.json`, `.runtimeconfig.json` and complete published dependency set;
+- `azure-demo-immutable/demo-data/azure-demo-seed-manifest.json`; and
+- `azure-demo-immutable/samples/discovery/azure-migrate-server-report-demo.csv`, retaining the manifest's approved SHA-256.
+
+The package generator builds `deployment-artifact-manifest.json` only after application, migration, infrastructure, smoke, seed-tool, seed-manifest and approved-sample payloads are present. The manifest records exact `Build.SourceVersion` and one SHA-256 entry for every payload file. Validation compares the complete manifest set with the complete downloaded set and therefore rejects missing, modified, added or substituted files. Absolute paths, `..` traversal, repository escape, prohibited source/restore metadata, duplicate paths and symbolic-link/reparse-point paths fail closed. The manifest itself is excluded from its self-referential payload list; its own SHA-256 remains the evidence identifier used by protected smoke evidence.
+
+The seed task retains the dedicated `sc-mtp-azure-demo-migration-dev-v2` workload-identity flow, migration identity/tenant/release/artifact guard, exact passwordless SQL target guard and token-file cleanup. It now passes explicit absolute paths beneath `$(Pipeline.Workspace)/azure-demo-immutable`, verifies the complete artifact and exact commit, requires the installed .NET 10 shared runtimes, then executes `dotnet <validated AzureDemo.DataTool.dll>`. Protected deployment contains no `dotnet run`, restore, build or source-project execution and does not use `Build.SourcesDirectory` as the executable location.
+
+`Program.cs` now consumes the explicit immutable artifact root and manifest path. It no longer searches for `LgrTransformationMigration.sln` or derives sample locations from repository source. It preserves the exact `AzureDemo`, `Onkar.Pathre`, approved database-name, synthetic classification/customer/project, sample checksum, passwordless workload-identity SQL, pending-migration refusal, stable-ID idempotent reconciliation, minimum-count verification and manifest-checksum semantics. `Invoke-AzureDemoReset.ps1` forwards the identical immutable root/tool/seed-manifest/deployment-manifest/commit contract while retaining named restore evidence and DBA approval requirements and every destructive-operation prohibition.
+
+This repair creates a new source commit and therefore requires a new release approval bound to that future exact commit and artifact manifest; no prior release approval is inherited. Existing durable `sql-bootstrap.json` evidence remains independently evaluated by its unchanged ancestry, age, target, identity, executor and grants-script-hash contract. It was not accessed, edited or regenerated.
+
+### Local verification evidence
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `0989a99d871c7158eed4994c9e6ff1f7a994ab0f`; clean worktree; empty staged index; local `origin` and `azure` tracking refs both exactly aligned with HEAD. |
+| Windows PowerShell 5.1 parsing | PASS: all 42 repository PowerShell scripts parsed with zero errors. |
+| Pipeline structural regression | PASS: exactly seven ordered stages; default-disabled deploy/rollback, release branch, both service connections, workload identity, migration/target/SQL-evidence guards, seed package/manifest validation, staging-first deployment, smoke, swap and rollback controls retained. |
+| Immutable seed regression | PASS: Package locked-restore/no-restore publish contract, complete seed hash coverage, packaged execution path, no deployment restore/build/`dotnet run`, missing tool/manifest, traversal, outside-root, modified/added content, commit mismatch, reset forwarding, stable-ID idempotency and no-secret-output checks passed. |
+| Deployment artifact validation | PASS against local test fixtures: 1,803 payload files matched the complete manifest and SHA-256 set; required seed DLL, manifest and sample entries were present. Fixtures are ignored local evidence only and are not a release artifact. |
+| Package-generation regression | PASS against the same local test fixtures: repository/prefix path guards, ZIP roots, deterministic ZIP recreation, application manifest hashes and complete deployment-manifest coverage passed. |
+| Application artifact regression | PASS: API/web ZIP hashes, root layout and prohibited-file checks passed. |
+| Source/security boundary scan | PASS after generated probe cleanup: 183 source/configuration files; no generated/binary path, secret pattern, LocalTest deployment setting or prohibited capability finding. |
+| Durable SQL evidence | PASS: 27 accepted, 45 fail-closed, five executable-resolution and three culture-execution cases across 17 rejection categories. |
+| Migration identity and target | PASS: identity one accepted/15 rejected; target one accepted/seven rejected. |
+| Database-principal SQL | PASS: seven external variables, correct database, 30 invalid guard cases and three approved `CREATE USER` shapes. |
+| Reset/rollback | PASS: immutable regression proves reset forwards the same artifact contract; existing rollback regression accepted one valid and rejected 12 invalid targets. |
+| Private DNS / App Service subnet / runtime / monitoring | PASS: DNS one valid/six rejected; subnet one inventory and two compiled shapes accepted with 24/eight rejected; runtime three accepted/six rejected; all 17 alerts with three exact metric contracts and six invalid mutations. |
+| Locked .NET restore | PASS, exit `0`: solution restored in locked mode; only `NU1900` warnings remained because the vulnerability service was unreachable. |
+| Release build and formatting | PASS: Release build produced all four projects with zero errors; focused `Program.cs` format verification exited `0`. |
+| Focused Azure Demo tests | PASS: 27/27. |
+| Full unit and integration tests | PASS: 205/205 unit and 145/145 integration tests. |
+| SBOM regression | PASS: 107 NuGet and 522 npm components; repeat generation remained valid. |
+| Full application package generation | UNAVAILABLE: the exact Package-equivalent command exited `1` because sandboxed `npm ci` could not fetch `https://registry.npmjs.org/next/-/next-16.3.8.tgz`; a no-restore retry exited `1` because `next` was absent after the failed clean install. No application package success is claimed. |
+| Linux seed publish | UNAVAILABLE on this Windows host: the exact generator exited `1` with `Azure demo seed packaging must run on the Linux Package agent.` The Linux Package-stage contract is covered structurally and must be executed by the protected pipeline retest. |
+| Azure CLI / Bicep | UNAVAILABLE: `az --version`, `az bicep version` and `bicep --version` each exited `1` because the executables are not installed. No Bicep format/build/what-if result is claimed. |
+| PowerShell 7/Linux | UNAVAILABLE: `pwsh --version` exited `1`; `wsl.exe --status` exited `50` because WSL is not installed. |
+| Protected/external actions | NOT RUN: no Azure, Azure DevOps, SQL, pipeline, deployment, migration, seed, swap or rollback action occurred. No token, connection string, evidence content or protected file was printed. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_IMMUTABLE_SEED_ARTIFACT_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_0989a99d871c7158eed4994c9e6ff1f7a994ab0f"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01", "C-11"]
+    functional_requirements: ["F-01", "F-02", "F-13", "F-14", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-04", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/build/AzureDemoDeploymentArtifactUtilities.ps1"
+    - "scripts/build/New-AzureDemoDeploymentArtifactManifest.ps1"
+    - "scripts/build/Assert-AzureDemoDeploymentArtifact.ps1"
+    - "scripts/build/New-AzureDemoSeedArtifact.ps1"
+    - "scripts/build/Test-AzureDemoImmutableSeedArtifact.ps1"
+    - "scripts/build/Test-AzureDemoPackageGeneration.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "scripts/data/AzureDemoSeedArtifactContract.ps1"
+    - "scripts/data/Invoke-AzureDemoSeed.ps1"
+    - "scripts/data/Invoke-AzureDemoReset.ps1"
+    - "tools/AzureDemo.DataTool/Program.cs"
+    - "docs/architecture/AZURE_DEMO_Deployment_Architecture.md"
+    - "docs/architecture/AZURE_DEMO_Environment_Configuration.md"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Exact clean baseline, empty index and aligned origin/azure refs confirmed before editing."
+    - "All locally available immutable seed, package/hash, pipeline, source/security, SQL-evidence, identity, target, principal, rollback, DNS, subnet, runtime, monitoring, restore/build/test and SBOM checks passed."
+    - "Unavailable Linux, Bicep and network-dependent checks are recorded with exact commands, exit codes and blockers."
+  decisions:
+    - "Publish once in Package; execute only the immutable DLL beneath Pipeline.Workspace."
+    - "Hash and exact-commit bind every payload file, including the seed tool, dependencies, approved manifest and sample."
+    - "Use no deployment-time restore, build, source project or mutable seed-tool download."
+  assumptions:
+    - "The protected Linux Package agent supplies .NET SDK 10 and the protected deployment agent supplies both .NET 10 shared runtimes."
+  risks:
+    - "Linux Package execution and the protected ephemeral deployment-agent retest remain independent downstream evidence."
+    - "A new release approval is mandatory for the future repair commit."
+  defects:
+    - "REPAIRED LOCALLY: the protected seed task depended on another ephemeral job's absent NuGet restore/build outputs."
+  blockers:
+    - "Independent protected Linux Package/deployment retest is required; no pipeline or deployment success is claimed."
+  approvals: []
+  requested_action: "Independent Tester must run the Package stage on Linux, verify the published seed payload and exact deployment manifest, then rerun the protected deployment through seed reconciliation and prove no restore/build/dotnet run or source-project execution occurs."
+```
+
+READY_FOR_IMMUTABLE_SEED_ARTIFACT_RETEST
