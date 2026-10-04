@@ -38,7 +38,7 @@ function Invoke-Guard([hashtable] $Overrides = @{}) {
         AuthenticatedTenantId = $tenantId
         AccessToken = (New-TestToken)
         ExpectedTenantId = $tenantId
-        ServiceConnectionName = 'sc-mtp-azure-demo-migration-dev'
+        ServiceConnectionName = 'sc-mtp-azure-demo-migration-dev-v2'
         SourceBranch = 'refs/heads/release/azure-demo-v1'
         ReleaseCommit = $commit
         MigrationManifestPath = (Join-Path $temporaryDirectory 'migration-manifest.json')
@@ -55,7 +55,7 @@ try {
     $env:AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID = $clientId
     $env:AZDEMO_MIGRATION_PRINCIPAL_NAME = 'id-mtp-migration-dev-uks-001'
     $env:AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID = $objectId
-    $env:AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION = 'sc-mtp-azure-demo-migration-dev'
+    $env:AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION = 'sc-mtp-azure-demo-migration-dev-v2'
     $bundlePath = Join-Path $temporaryDirectory 'lgrtm-efbundle-linux-x64'
     $scriptPath = Join-Path $temporaryDirectory 'lgrtm-migrations-idempotent.sql'
     Set-Content -LiteralPath $bundlePath -Value 'synthetic bundle' -NoNewline
@@ -83,6 +83,7 @@ try {
         @{ AccessToken = (New-TestToken -TokenObjectId 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb') },
         @{ AccessToken = (New-TestToken -TokenTenantId 'cccccccc-cccc-4ccc-8ccc-cccccccccccc') },
         @{ AccessToken = (New-TestToken -Audience 'https://management.azure.com/') },
+        @{ ServiceConnectionName = 'sc-mtp-azure-demo-migration-dev' },
         @{ ServiceConnectionName = 'sc-mtp-azure-demo-dev' },
         @{ SourceBranch = 'refs/heads/fix/mtp-azure-demo-reconciliation' },
         @{ ReleaseCommit = 'short' },

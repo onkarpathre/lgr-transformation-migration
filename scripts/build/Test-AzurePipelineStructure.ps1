@@ -12,6 +12,8 @@ $runtimeValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\bui
 $appServiceSubnetValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoAppServiceSubnet.ps1') -Raw
 $privateDnsValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoPrivateDnsReconciliation.ps1') -Raw
 $sqlBootstrapValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\database\Assert-AzureDemoSqlBootstrapEvidence.ps1') -Raw
+$approvedMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev-v2'
+$retiredMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev'
 
 if ($text.Contains("`t")) { throw 'Azure Pipelines YAML contains tab indentation.' }
 if ($lines | Where-Object { $_ -match '\s+$' }) { throw 'Azure Pipelines YAML contains trailing whitespace.' }
@@ -46,7 +48,7 @@ $approvedMigrationVariables = [ordered]@{
     AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID = 'f77b1931-0954-4ae9-8f6b-de5f9cfdb2e7'
     AZDEMO_MIGRATION_PRINCIPAL_NAME = 'id-mtp-migration-dev-uks-001'
     AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID = '9b984b84-7ebe-45ca-9441-7b2f41fd8f6c'
-    AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION = 'sc-mtp-azure-demo-migration-dev'
+    AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION = $approvedMigrationServiceConnection
 }
 
 $expectedStages = @(
@@ -88,7 +90,7 @@ $requiredFragments = @(
     'environment: mtp-azure-demo-dev',
     'pool: { name: mdp-mtp-dev-uks-001 }',
     'azureSubscription: sc-mtp-azure-demo-dev',
-    'azureSubscription: sc-mtp-azure-demo-migration-dev',
+    "azureSubscription: $approvedMigrationServiceConnection",
     'deployToSlotOrASE: true',
     'slotName: staging',
     'ManualValidation@0',
@@ -557,7 +559,8 @@ $migrationStep = Get-YamlStepBlock $lines "lgrtm-efbundle-linux-x64' --connectio
 $seedStep = Get-YamlStepBlock $lines 'Invoke-AzureDemoSeed\.ps1 -Environment AzureDemo'
 foreach ($step in @($migrationStep, $seedStep)) {
     if ($step -notmatch '^\s*- task: AzureCLI@2' -or
-        $step -notmatch '(?m)^\s+azureSubscription:\s+sc-mtp-azure-demo-migration-dev\s*$' -or
+        $step -notmatch "(?m)^\s+azureSubscription:\s+$([regex]::Escape($approvedMigrationServiceConnection))\s*`$" -or
+        $step -match "(?m)^\s+azureSubscription:\s+$([regex]::Escape($retiredMigrationServiceConnection))\s*`$" -or
         $step -notmatch '(?m)^\s+addSpnToEnvironment:\s+true\s*$' -or
         -not $step.Contains('Assert-AzureDemoMigrationIdentity.ps1') -or
         -not $step.Contains('az account get-access-token --resource https://database.windows.net/') -or
@@ -578,6 +581,10 @@ foreach ($step in @($migrationStep, $seedStep)) {
         $step.IndexOf('[IO.File]::WriteAllText($federatedTokenFile, $env:idToken', [StringComparison]::Ordinal)) {
         throw 'The task-local federated-token file must be permission-restricted before the assertion is written.'
     }
+}
+
+if ($text -match "(?m)^\s+azureSubscription:\s+$([regex]::Escape($retiredMigrationServiceConnection))\s*`$") {
+    throw 'The pipeline retains an executable reference to the retired dedicated migration service connection.'
 }
 
 if ([regex]::Matches($text, '(?m)^\s+addSpnToEnvironment:\s+true\s*$').Count -ne 2) {

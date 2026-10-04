@@ -63,7 +63,7 @@ variables:
   value: 9b984b84-7ebe-45ca-9441-7b2f41fd8f6c
   readonly: true
 - name: AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION
-  value: sc-mtp-azure-demo-migration-dev
+  value: sc-mtp-azure-demo-migration-dev-v2
   readonly: true
 
 stages:
@@ -395,7 +395,7 @@ stages:
           - task: AzureCLI@2
             displayName: Execute reviewed EF bundle with dedicated migration workload identity
             inputs:
-              azureSubscription: sc-mtp-azure-demo-migration-dev
+              azureSubscription: sc-mtp-azure-demo-migration-dev-v2
               addSpnToEnvironment: true
               scriptType: pscore
               scriptLocation: inlineScript
@@ -438,7 +438,7 @@ stages:
           - task: AzureCLI@2
             displayName: Reconcile approved synthetic seed with dedicated migration workload identity
             inputs:
-              azureSubscription: sc-mtp-azure-demo-migration-dev
+              azureSubscription: sc-mtp-azure-demo-migration-dev-v2
               addSpnToEnvironment: true
               scriptType: pscore
               scriptLocation: inlineScript

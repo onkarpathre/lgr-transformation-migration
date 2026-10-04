@@ -20,7 +20,7 @@ Set-StrictMode -Version Latest
 $expectedClientId = 'f77b1931-0954-4ae9-8f6b-de5f9cfdb2e7'
 $expectedObjectId = '9b984b84-7ebe-45ca-9441-7b2f41fd8f6c'
 $expectedPrincipalName = 'id-mtp-migration-dev-uks-001'
-$expectedServiceConnection = 'sc-mtp-azure-demo-migration-dev'
+$expectedServiceConnection = 'sc-mtp-azure-demo-migration-dev-v2'
 $expectedBranch = 'refs/heads/release/azure-demo-v1'
 $expectedServer = 'sql-mtp-dev-uks-001.database.windows.net'
 $expectedDatabase = 'sqldb-mtp-dev-uks-001'

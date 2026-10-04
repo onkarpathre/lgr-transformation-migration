@@ -55,7 +55,7 @@ The four exact-package decisions authorise controlled implementation and local o
 ## Migration workload-identity reconciliation
 
 - Infrastructure deployment, what-if, resource inspection, PITR metadata inspection, slot operations and App Service ZIP deployment retain `sc-mtp-azure-demo-dev`. Database migration and seed do not use that connection.
-- The EF bundle and seed reconciliation each run inside a separate `AzureCLI@2` task bound literally to `sc-mtp-azure-demo-migration-dev`. Each task independently establishes authentication; no Azure CLI context or token is assumed to cross a task boundary.
+- The EF bundle and seed reconciliation each run inside a separate `AzureCLI@2` task bound literally to `sc-mtp-azure-demo-migration-dev-v2` (validated service-connection ID `d472ce79-141c-4b8c-861a-4dd009b4c6a2`). Each task independently establishes authentication; no Azure CLI context or token is assumed to cross a task boundary.
 - The external migration identity is `id-mtp-migration-dev-uks-001`, client ID `f77b1931-0954-4ae9-8f6b-de5f9cfdb2e7`, object ID `9b984b84-7ebe-45ca-9441-7b2f41fd8f6c`. Read-only pipeline variables and the runtime guard validate all three values and the service-connection name.
 - Before SQL access, each task validates its authenticated client ID, the SQL access-token `azp`/`appid`, `oid`, `tid` and audience, the exact approved tenant, release branch, full release commit, resource group, SQL server/database and commit-bound migration manifest/artifact hashes.
 - SQL uses `Authentication=Active Directory Workload Identity` with the exact client ID. The Azure DevOps federated assertion is written only to a task-local permission-restricted temporary file, is never printed, and is deleted in `finally`; the associated workload-identity environment is also removed. This prevents fallback to an ambient agent, managed-identity or developer login.
@@ -311,7 +311,7 @@ handoff:
     - "Blocked connected/tooling commands and exact exit codes are recorded without claiming a pass."
   decisions:
     - "SQL principal bootstrap is an explicitly external Entra-administrator/DBA prerequisite evidenced by protected sql-bootstrap.json; the pipeline does not run the grants script."
-    - "EF migration and seed each authenticate independently through sc-mtp-azure-demo-migration-dev and use explicit workload-identity SQL authentication."
+    - "EF migration and seed each authenticate independently through sc-mtp-azure-demo-migration-dev-v2 and use explicit workload-identity SQL authentication."
     - "The approved 10 GB monthly malware-scanning cap and 30-day architecture retention are preserved."
     - "The existing StorageMalwareScanningResults scheduled-query alert remains enabled and unchanged in strength."
     - "Deployment remains default disabled and subject to Azure Platform/Operations and human gates."
@@ -1390,3 +1390,69 @@ handoff:
 ```
 
 READY_FOR_EXPLICIT_UTC_EVIDENCE_RETEST
+
+## Dedicated migration service-connection v2 reconciliation
+
+The validated dedicated workload-identity service connection is `sc-mtp-azure-demo-migration-dev-v2`, service-connection ID `d472ce79-141c-4b8c-861a-4dd009b4c6a2`. The read-only `AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION` value and the literal `azureSubscription` inputs for both the reviewed EF migration bundle and synthetic seed reconciliation now use that endpoint. The retired `sc-mtp-azure-demo-migration-dev` endpoint is rejected by pipeline structure and migration-identity regressions.
+
+The approved migration identity remains `id-mtp-migration-dev-uks-001`, client ID `f77b1931-0954-4ae9-8f6b-de5f9cfdb2e7`, object ID `9b984b84-7ebe-45ca-9441-7b2f41fd8f6c`, in tenant `af8fcf7a-30f8-4ce0-bad1-088afe786ec4`. The general deployment connection remains `sc-mtp-azure-demo-dev`. No SQL permission/principal alias, protected evidence, runtime, DNS, subnet, monitoring, Bicep, application, EF migration, schema or seed-data change is included.
+
+| Migration service-connection verification | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `e9e48b3a29e656f55db887d770102de288898851`; clean worktree; empty staged index; local `origin` and `azure` tracking refs both exactly aligned with HEAD. |
+| PowerShell parsing | PASS: all 36 tracked PowerShell scripts parsed with zero errors. |
+| Pipeline structural regression | PASS: exactly seven ordered stages; both migration/seed AzureCLI tasks require `sc-mtp-azure-demo-migration-dev-v2`; retired endpoint rejected; default-disabled deploy/rollback, release restriction, workload identity, Secure File evidence, migration, smoke, swap and rollback controls retained. |
+| Migration identity and target regressions | PASS: identity one valid/15 rejected, including the retired endpoint; target one valid/seven rejected. |
+| Durable SQL-evidence regression | PASS: 27 accepted, 45 fail-closed, five executable-resolution and three culture-execution cases across 17 safe metadata-rejection categories. |
+| Database-principal SQL regression | PASS: seven external variables preserved, correct database accepted, 30 invalid cases rejected and three approved `CREATE USER` shapes retained. |
+| Rollback safeguards | PASS: one valid and 12 fail-closed target cases. |
+| Preserved repair regressions | PASS: native runtimes three positive/six rejected; subnet one exact inventory and two compiled shapes accepted, 24 inventory/eight compiled shapes rejected; private DNS one accepted/six rejected; monitoring retained 17 alerts and rejected six invalid metric mutations. |
+| Source/security boundary scan | PASS: 177 source/configuration files scanned. |
+| Protected/external actions | NOT RUN: no Azure, Azure DevOps, SQL, pipeline, deployment, migration, seed, swap or rollback access/action occurred. Protected `sql-bootstrap.json` was not accessed, modified or regenerated. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_MIGRATION_SERVICE_CONNECTION_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_e9e48b3a29e656f55db887d770102de288898851"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/database/Assert-AzureDemoMigrationIdentity.ps1"
+    - "scripts/build/Test-AzureDemoMigrationIdentity.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Exact clean baseline, empty index and aligned local origin/azure refs were confirmed before editing."
+    - "The pipeline variable and both dedicated migration/seed AzureCLI tasks use the validated v2 service connection."
+    - "All requested local regressions and preserved repair regressions passed."
+  decisions:
+    - "Reference the validated endpoint by its Azure DevOps service-connection name in pipeline execution and record its supplied immutable ID in implementation evidence."
+    - "Reject the retired dedicated endpoint in both structural and runtime-guard regression coverage."
+  assumptions:
+    - "The supplied v2 service-connection validation, ID and managed-identity binding are authoritative."
+  risks:
+    - "The service connection remains independently testable only through the protected Azure DevOps pipeline."
+  defects:
+    - "REPAIRED LOCALLY: migration and seed tasks referenced the retired dedicated migration service connection."
+  blockers:
+    - "Independent protected Azure DevOps migration-service-connection retest remains required; no external execution is claimed."
+  approvals: []
+  requested_action: "Independent Tester must rerun the protected pipeline through the pre-migration guard and confirm both dedicated AzureCLI tasks authenticate as the approved managed identity through service connection d472ce79-141c-4b8c-861a-4dd009b4c6a2, without executing migration or seed unless separately authorised."
+```
+
+READY_FOR_MIGRATION_SERVICE_CONNECTION_RETEST
