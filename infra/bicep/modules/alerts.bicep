@@ -316,12 +316,12 @@ resource apiHttpFailures 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   }
 }
 
-resource sqlSaturation 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: alertNames.sqlDtu
+resource sqlCpu 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+  name: alertNames.sqlCpu
   location: 'global'
   tags: tags
   properties: {
-    description: 'Restricted demo SQL DTU usage exceeds threshold.'
+    description: 'Restricted demo SQL CPU usage exceeds threshold.'
     severity: 2
     enabled: true
     scopes: [sqlDatabaseId]
@@ -331,8 +331,8 @@ resource sqlSaturation 'Microsoft.Insights/metricAlerts@2018-03-01' = {
       'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
       allOf: [
         {
-          name: 'Dtu'
-          metricName: 'dtu_consumption_percent'
+          name: 'Cpu'
+          metricName: 'cpu_percent'
           metricNamespace: 'Microsoft.Sql/servers/databases'
           operator: 'GreaterThan'
           threshold: 80
@@ -366,7 +366,7 @@ resource webSlotHealth 'Microsoft.Insights/metricAlerts@2018-03-01' = {
         {
           name: 'WebSlotHealth'
           metricName: 'HealthCheckStatus'
-          metricNamespace: 'Microsoft.Web/sites'
+          metricNamespace: 'Microsoft.Web/sites/slots'
           operator: 'LessThan'
           threshold: 1
           timeAggregation: 'Average'
@@ -399,7 +399,7 @@ resource apiSlotHealth 'Microsoft.Insights/metricAlerts@2018-03-01' = {
         {
           name: 'ApiSlotHealth'
           metricName: 'HealthCheckStatus'
-          metricNamespace: 'Microsoft.Web/sites'
+          metricNamespace: 'Microsoft.Web/sites/slots'
           operator: 'LessThan'
           threshold: 1
           timeAggregation: 'Average'

@@ -97,7 +97,7 @@ public sealed class AzureDemoDeploymentBoundaryTests
             "alert-mtp-api-http5xx-dev-uks-001",
             "alert-mtp-unhandled-errors-dev-uks-001",
             "alert-mtp-auth-failures-denials-dev-uks-001",
-            "alert-mtp-sql-dtu-dev-uks-001",
+            "alert-mtp-sql-cpu-dev-uks-001",
             "alert-mtp-sql-connectivity-dev-uks-001",
             "alert-mtp-keyvault-denial-dev-uks-001",
             "alert-mtp-blob-dependency-dev-uks-001",
@@ -117,6 +117,11 @@ public sealed class AzureDemoDeploymentBoundaryTests
         Assert.Contains("Microsoft.Insights/webtests@2022-06-15", alerts, StringComparison.Ordinal);
         Assert.Contains("Microsoft.Insights/scheduledQueryRules@2023-12-01", alerts, StringComparison.Ordinal);
         Assert.Contains("Microsoft.Insights/activityLogAlerts@2020-10-01", alerts, StringComparison.Ordinal);
+        Assert.Contains("metricName: 'cpu_percent'", alerts, StringComparison.Ordinal);
+        Assert.Contains("metricNamespace: 'Microsoft.Sql/servers/databases'", alerts, StringComparison.Ordinal);
+        Assert.Contains("metricNamespace: 'Microsoft.Web/sites/slots'", alerts, StringComparison.Ordinal);
+        Assert.DoesNotContain("dtu_consumption_percent", alerts, StringComparison.Ordinal);
+        Assert.DoesNotContain("app_cpu_percent", alerts, StringComparison.Ordinal);
     }
 
     [Fact]

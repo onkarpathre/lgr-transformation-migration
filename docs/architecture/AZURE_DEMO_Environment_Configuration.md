@@ -457,6 +457,15 @@ Do not put access tokens, client secrets, SQL passwords, membership JSON or publ
 
 The SQL-bootstrap approval reference approves the database principal/grant contract only. It cannot satisfy either protected-environment approval or the named release approval. Every final deployment commit requires fresh release approval bound to exact `Build.SourceVersion`, even when unexpired SQL-bootstrap evidence is reused.
 
+### Azure Monitor metric compatibility contract
+
+- The web staging health alert scopes the exact `Microsoft.Web/sites/app-mtp-web-dev-uks-001/slots/staging` resource and uses `HealthCheckStatus`, namespace `Microsoft.Web/sites/slots` and `Average` aggregation.
+- The API staging health alert scopes the exact `Microsoft.Web/sites/app-mtp-api-dev-uks-001/slots/staging` resource and uses `HealthCheckStatus`, namespace `Microsoft.Web/sites/slots` and `Average` aggregation. The parent `Microsoft.Web/sites` namespace is valid for the separate production-site HTTP 5xx alerts but invalid for either slot-scoped health alert.
+- The GP serverless/vCore SQL database alert scopes `Microsoft.Sql/servers/sql-mtp-dev-uks-001/databases/sqldb-mtp-dev-uks-001` and uses `cpu_percent`, namespace `Microsoft.Sql/servers/databases` and `Average` aggregation. `dtu_consumption_percent` is unavailable for this database, and `app_cpu_percent` is not an approved substitute.
+- The mandatory inventory remains 17 alert resources. The SQL CPU alert replaces the invalid SQL DTU contract one-for-one; thresholds, evaluation frequencies, window sizes, action-group bindings and enabled states remain the reviewed values.
+- Incremental deployment may retain a failed legacy `alert-mtp-sql-dtu-dev-uks-001` resource. Its existence must be checked through a separately authorised read-only inventory and, if present, handled through a separately approved controlled cleanup action. Bicep and the pipeline must not delete it automatically.
+- The approved `what-if` must show only the two slot-alert corrections and creation or correction of `alert-mtp-sql-cpu-dev-uks-001`; it must show no unrelated deletion/replacement or SQL, application, identity, DNS, subnet or private-endpoint change.
+
 ## Deployment sequence
 
 1. Confirm approved Product, Architecture and governance packages and record the exact commit/artifact hashes.

@@ -1195,3 +1195,112 @@ handoff:
 ```
 
 READY_FOR_SCALAR_GIT_EXECUTABLE_RETEST
+
+## Azure Monitor metric deployment repair hand-off
+
+### Azure build 24 failure and authoritative metric inventory
+
+Azure build `24` of pipeline `mtp-azure-demo-deploy` failed during incremental top-level deployment `mtp-azure-demo-24`, nested deployment `alerts-mtp-dev-uks-001`. The Bicep deployment failed before database migration, synthetic seed reconciliation, application package deployment, smoke testing or slot swap. Because deployment mode was incremental, unrelated resource operations may already have completed; this repair does not treat the failed deployment as atomic and does not access or change live Azure state.
+
+The supplied target-resource metric inventory is authoritative for this repair:
+
+- web staging slot `Microsoft.Web/sites/app-mtp-web-dev-uks-001/slots/staging`, namespace `Microsoft.Web/sites/slots`: `Requests`/`Total`, `Http5xx`/`Total`, deprecated `AverageResponseTime`/`Average`, `HttpResponseTime`/`Average`, and `HealthCheckStatus`/`Average`;
+- API staging slot `Microsoft.Web/sites/app-mtp-api-dev-uks-001/slots/staging`, namespace `Microsoft.Web/sites/slots`: the same five metrics and aggregations; and
+- SQL database `Microsoft.Sql/servers/sql-mtp-dev-uks-001/databases/sqldb-mtp-dev-uks-001`, namespace `Microsoft.Sql/servers/databases`: `cpu_percent`/`Average`, `app_cpu_percent`/`Average`, `storage_percent`/`Maximum`, `workers_percent`/`Average`, and `sessions_percent`/`Average`. `dtu_consumption_percent` is unavailable for the approved GP serverless/vCore database.
+
+Build 24 exposed three exact contract failures: both staging-slot `HealthCheckStatus` alerts used parent-site namespace `Microsoft.Web/sites` instead of `Microsoft.Web/sites/slots`, and the SQL alert selected unavailable `dtu_consumption_percent` rather than approved `cpu_percent`.
+
+### Bounded repair
+
+| Alert | Exact scope | Metric contract | Preserved reviewed settings |
+|---|---|---|---|
+| `alert-mtp-web-slot-health-dev-uks-001` | exact web staging slot ID from `webSlot.id` | `HealthCheckStatus`; `Microsoft.Web/sites/slots`; `Average` | severity `1`; enabled; `LessThan 1`; evaluation `PT5M`; window `PT5M`; approved action group |
+| `alert-mtp-api-slot-health-dev-uks-001` | exact API staging slot ID from `apiSlot.id` | `HealthCheckStatus`; `Microsoft.Web/sites/slots`; `Average` | severity `1`; enabled; `LessThan 1`; evaluation `PT5M`; window `PT5M`; approved action group |
+| `alert-mtp-sql-cpu-dev-uks-001` | exact SQL database ID from `sqlDatabase.id` | `cpu_percent`; `Microsoft.Sql/servers/databases`; `Average` | severity `2`; enabled; `GreaterThan 80`; evaluation `PT5M`; window `PT15M`; approved action group |
+
+The SQL Bicep symbol, parameter key, physical metric-alert name, criterion name, description and executable inventories now use CPU terminology. The invalid DTU alert is replaced one-for-one, so the approved total remains 17 mandatory alerts; no eighteenth alert and no unrelated removal were introduced. `app_cpu_percent` is explicitly rejected and is not used as a substitute.
+
+`Test-AzureDemoMonitoringAlerts.ps1` now validates both parameter files as exact 19-name monitoring inventories: two web-test resources plus 17 mandatory alerts. It proves the exact web/API/SQL resource-ID wiring, metric names, namespaces, aggregations, descriptions, thresholds, enabled states, time settings and action-group bindings. Mutation tests reject parent-site namespace on either slot, production-site substitution for either slot scope, unavailable `dtu_consumption_percent` and unapproved `app_cpu_percent`. The alert module is also rejected if it introduces an identity or Azure role assignment.
+
+No application, EF migration, database schema/seed, SQL principal alias/grant, Azure identity ID, runtime version, service connection, variable-group value, dependency or `sql-bootstrap.json` change is required or made. Both Bicep parameter files change only the static monitoring name mapping from `sqlDtu: alert-mtp-sql-dtu-dev-uks-001` to `sqlCpu: alert-mtp-sql-cpu-dev-uks-001`; no environment parameter or variable-group update is required. `infra/bicep/main.bicep` and `azure-pipelines.yml` remain unchanged.
+
+### Incremental deployment and retest requirements
+
+Renaming the SQL alert accurately causes incremental deployment to create or correct `alert-mtp-sql-cpu-dev-uks-001`; incremental mode does not establish that a failed `alert-mtp-sql-dtu-dev-uks-001` resource is absent and does not remove it. The work item prohibits Azure access, so no live-resource check was performed. Before or during the separately authorised retest, an authorised operator must perform a read-only inventory check for the legacy DTU-named resource. If Azure retained it, its cleanup requires a separate controlled, approved action with evidence. No destructive automatic deletion was added to Bicep or the pipeline.
+
+The protected Bicep `what-if` remains mandatory and is expected to show correction/update of the two slot alerts and creation or correction of the SQL CPU alert. It must show no unrelated deletion or replacement and no SQL, application, identity, DNS, subnet or private-endpoint change caused by this repair. Any broader change blocks deployment before migration, seed, package deployment, smoke or swap.
+
+### Local verification
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `77ea25b5fb501985e42f11e958e64443b1833f4a`; worktree clean; staged index empty; local `origin/fix/mtp-azure-demo-reconciliation` and `azure/fix/mtp-azure-demo-reconciliation` refs both exactly matched HEAD. |
+| Diff and changed-file boundary | PASS: `git diff --check` exited `0`; the exact eight-file allowlist matched; `azure-pipelines.yml`, `infra/bicep/main.bicep` and the database-principal SQL script are unchanged; the staged index remains empty. |
+| Monitoring regression | PASS, exit `0`: 17 mandatory alerts retained; three exact metric contracts passed; six invalid namespace, scope and SQL-metric mutations rejected. Both parameter-file inventories and exact action-group/permission boundaries passed. |
+| Pipeline structure | PASS, exit `0`: exactly seven ordered stages. Default-disabled deployment/rollback, release-branch restriction, exact service connections/targets, workload identity, Secure File evidence, migration/seed/smoke/swap and rollback safeguards remain intact. |
+| PowerShell 5.1 | PASS under `5.1.26100.9444`: 36 tracked PowerShell scripts and 17 pipeline script blocks parsed with zero errors. |
+| App Service subnet regression | PASS, exit `0`: one exact inventory and two compiled shapes accepted; 24 inventory and eight compiled-shape cases rejected; four site/slot integrations and two existing-subnet contracts verified. |
+| Private-DNS regression | PASS, exit `0`: one valid inventory accepted; six invalid inventories rejected; four deterministic parent/link and zone-group contracts verified. |
+| Durable SQL-evidence regression | PASS, exit `0`: 10 accepted, 35 fail-closed and five executable-resolution cases passed across 17 safe metadata-rejection categories. The protected evidence file was not accessed or replaced. |
+| Migration identity and target | PASS, exit `0` each: identity one valid/14 rejected; target one valid/seven rejected. |
+| Database-principal SQL | PASS, exit `0`: seven external variables, correct database, 30 invalid cases and all three approved `CREATE USER` expressions passed. |
+| Rollback safeguards | PASS, exit `0`: one valid and 12 fail-closed target cases. |
+| Source/security boundary | PASS, exit `0`: 177 source/configuration files scanned. |
+| Focused .NET deployment boundary | PASS, exit `0`: 10/10 `AzureDemoDeploymentBoundaryTests` passed. Two `NU1900` warnings record that the restricted environment could not reach the NuGet advisory service; no connected vulnerability-pass claim is made. |
+| Bicep CLI 0.47.16 | UNAVAILABLE, not passed. `az bicep version`; four `az bicep format --file ... --stdout` commands for `main.bicep`, `alerts.bicep` and both parameter files; `az bicep lint --file infra/bicep/main.bicep`; `az bicep build --file infra/bicep/main.bicep --outfile .codex-temp/azure-monitor-main.json`; and both `az bicep build-params` commands with synthetic environment values each exited `1`. Exact blocker: `'az' is not recognized as an internal or external command, operable program or batch file.` No Bicep executable exists on `PATH` or in the repository, so no format comparison, lint, compiled template or compiled parameter output is claimed. |
+| Protected/external validation | NOT RUN: the work item prohibits Azure/Azure DevOps access, pipeline execution, live alert inventory/change, what-if, deployment, migration, seed, smoke, swap and rollback. Those actions require the existing protected human workflow. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_AZURE_MONITOR_METRIC_RETEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_77ea25b5fb501985e42f11e958e64443b1833f4a"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01", "C-11"]
+    functional_requirements: ["F-14", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-03", "NF-06", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals: []
+  artefacts:
+    - "docs/architecture/AZURE_DEMO_Deployment_Architecture.md"
+    - "docs/architecture/AZURE_DEMO_Environment_Configuration.md"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+    - "infra/bicep/modules/alerts.bicep"
+    - "infra/bicep/parameters/azure-demo.bicepparam"
+    - "infra/bicep/parameters/dev.bicepparam"
+    - "scripts/build/Test-AzureDemoMonitoringAlerts.ps1"
+    - "tests/api.unit/AzureDemoDeploymentBoundaryTests.cs"
+  evidence:
+    - "Exact branch/HEAD, clean worktree, empty index and aligned local origin/azure refs were confirmed before editing."
+    - "All locally available requested monitoring, pipeline, PowerShell, subnet, DNS, SQL-evidence, migration, SQL-principal, rollback and source/security checks passed."
+    - "The mandatory inventory remains exactly 17 alerts and all three corrected metric contracts pass fail-closed regression."
+  decisions:
+    - "Use Microsoft.Web/sites/slots for both staging-slot HealthCheckStatus alerts."
+    - "Replace the invalid DTU metric/name contract one-for-one with approved SQL cpu_percent and CPU terminology."
+    - "Require a separately authorised read-only legacy-resource check and separately approved cleanup if the failed DTU-named resource was retained."
+    - "Make no automatic deletion, permission, variable-group, pipeline, database, identity or application change."
+  assumptions:
+    - "The supplied Azure metric inventory and build 24 deployment record are accurate."
+  risks:
+    - "Incremental build 24 may have completed unrelated resource operations and may have retained a failed legacy DTU-named resource."
+    - "Bicep compilation and protected Azure what-if/deployment evidence remain unavailable locally."
+  defects:
+    - "REPAIRED LOCALLY: web and API staging-slot health alerts used the parent-site metric namespace."
+    - "REPAIRED LOCALLY: the GP serverless/vCore database alert used an unavailable DTU metric and false DTU terminology."
+  blockers:
+    - "Bicep CLI 0.47.16 is unavailable because Azure CLI/Bicep is not installed on PATH."
+    - "Independent protected what-if and deployment retest remain required before any later deployment stage can proceed."
+  approvals: []
+  requested_action: "Independent Tester must run Bicep CLI 0.47.16 format/lint/build and both parameter builds, execute the protected what-if, verify only the three intended alert changes and no unrelated changes, perform the authorised legacy DTU-alert inventory check, then rerun the incremental Bicep deployment before migration, seed, package deployment, smoke or slot swap."
+```
+
+READY_FOR_AZURE_MONITOR_METRIC_RETEST

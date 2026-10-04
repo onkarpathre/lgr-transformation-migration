@@ -49,7 +49,7 @@ param resourceNames = {
     apiHttp5xx: 'alert-mtp-api-http5xx-dev-uks-001'
     unhandledErrors: 'alert-mtp-unhandled-errors-dev-uks-001'
     authFailuresDenials: 'alert-mtp-auth-failures-denials-dev-uks-001'
-    sqlDtu: 'alert-mtp-sql-dtu-dev-uks-001'
+    sqlCpu: 'alert-mtp-sql-cpu-dev-uks-001'
     sqlConnectivity: 'alert-mtp-sql-connectivity-dev-uks-001'
     keyVaultDenial: 'alert-mtp-keyvault-denial-dev-uks-001'
     blobDependency: 'alert-mtp-blob-dependency-dev-uks-001'

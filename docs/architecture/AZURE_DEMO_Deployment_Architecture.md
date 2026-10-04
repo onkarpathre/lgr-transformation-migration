@@ -301,7 +301,7 @@ The import journey requires a GPv2 Standard LRS account with public access disab
 - Preserve a correlation ID from web proxy to API to SQL dependency traces and return it in safe errors. Reject newline/control characters in accepted external correlation headers or generate a new value.
 - Redact authorization headers, token claims other than stable pseudonymous IDs, Key Vault values, database connection strings, request/response bodies and uploaded rows.
 - Emit metrics for request rate, failures, duration, authentication failures, authorization denials, SQL dependency failure, import failure, slot health and seed/migration result.
-- Configure alerts for web health, API readiness through the web probe, HTTP 5xx rate, unhandled exceptions, SQL saturation/connectivity, Key Vault denial, storage malware result, failed deployment and daily log cap.
+- Configure alerts for web health, API readiness through the web probe, HTTP 5xx rate, unhandled exceptions, Azure SQL database CPU saturation/connectivity, Key Vault denial, storage malware result, failed deployment and daily log cap. SQL CPU saturation uses `cpu_percent` with `Average` aggregation in `Microsoft.Sql/servers/databases`; staging-slot health uses `HealthCheckStatus` with `Average` aggregation in `Microsoft.Web/sites/slots` at each exact slot resource ID.
 - Use sampling and a small daily Log Analytics/Application Insights cap. Platform metrics and activity/service-health alerts should be enabled. Alert routing and an out-of-hours expectation require the named demo operational owner.
 
 ## Controlled EF Core migration and rollback
