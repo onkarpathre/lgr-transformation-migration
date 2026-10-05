@@ -20,8 +20,22 @@ function Assert-AzureDemoNoReparsePoints {
     $candidate = [IO.Path]::GetFullPath($CandidatePath).TrimEnd([char[]] @('\', '/'))
     $current = $candidate
     while ($true) {
-        $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
-        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        try {
+            $attributes = [IO.File]::GetAttributes($current)
+        }
+        catch {
+            $pathException = $_.Exception
+            while ($null -ne $pathException.InnerException) {
+                $pathException = $pathException.InnerException
+            }
+            if ($pathException -isnot [IO.FileNotFoundException] -and
+                $pathException -isnot [IO.DirectoryNotFoundException]) {
+                throw 'Immutable artifact path ancestry could not be validated.'
+            }
+            $attributes = $null
+        }
+        if ($null -ne $attributes -and
+            ($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
             throw 'Immutable artifact paths must not contain symbolic links or reparse points.'
         }
         if ($current.Equals($root, $comparison)) { break }
@@ -52,6 +66,7 @@ function Resolve-AzureDemoArtifactPath {
     if ($candidate.Equals($root, $comparison) -or -not $candidate.StartsWith($rootPrefix, $comparison)) {
         throw 'Immutable artifact payload path escapes the approved artifact root.'
     }
+    Assert-AzureDemoNoReparsePoints -RootPath $root -CandidatePath $candidate
     if (-not (Test-Path -LiteralPath $root -PathType Container)) {
         throw 'The approved immutable artifact root does not exist.'
     }
@@ -59,7 +74,6 @@ function Resolve-AzureDemoArtifactPath {
         throw 'A required immutable artifact path is missing or has the wrong type.'
     }
 
-    Assert-AzureDemoNoReparsePoints -RootPath $root -CandidatePath $candidate
     $resolvedRoot = (Resolve-Path -LiteralPath $root).ProviderPath.TrimEnd([char[]] @('\', '/'))
     $resolvedCandidate = (Resolve-Path -LiteralPath $candidate).ProviderPath.TrimEnd([char[]] @('\', '/'))
     $resolvedPrefix = $resolvedRoot + [IO.Path]::DirectorySeparatorChar
@@ -112,18 +126,19 @@ function New-AzureDemoDeploymentArtifactManifest {
     if ($SourceCommit -cnotmatch '^[0-9a-f]{40}$') {
         throw 'Deployment artifact manifest requires a full lowercase source commit.'
     }
-    if (-not [IO.Path]::IsPathRooted($ArtifactRoot) -or
-        -not (Test-Path -LiteralPath $ArtifactRoot -PathType Container)) {
+    if (-not [IO.Path]::IsPathRooted($ArtifactRoot)) {
         throw 'Deployment artifact manifest requires an existing absolute artifact root.'
     }
 
-    $root = (Resolve-Path -LiteralPath $ArtifactRoot).ProviderPath.TrimEnd([char[]] @('\', '/'))
+    $root = [IO.Path]::GetFullPath($ArtifactRoot).TrimEnd([char[]] @('\', '/'))
+    Assert-AzureDemoNoReparsePoints -RootPath $root -CandidatePath $root
+    if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+        throw 'Deployment artifact manifest requires an existing absolute artifact root.'
+    }
     $manifestPath = Join-Path $root 'deployment-artifact-manifest.json'
     if (Test-Path -LiteralPath $manifestPath) {
         Remove-Item -LiteralPath $manifestPath -Force
     }
-    Assert-AzureDemoNoReparsePoints -RootPath $root -CandidatePath $root
-
     $items = @(Get-ChildItem -LiteralPath $root -Recurse -Force)
     $links = @($items | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 })
     if ($links.Count -ne 0) {

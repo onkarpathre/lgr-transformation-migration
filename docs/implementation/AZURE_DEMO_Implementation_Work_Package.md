@@ -1720,3 +1720,86 @@ handoff:
 ```
 
 READY_FOR_TEST
+
+## Linux EF bundle symbolic-link regression repair
+
+### Baseline, scope and traceability
+
+The Developer repair started from the exact requested baseline: branch `fix/mtp-azure-demo-reconciliation`, commit `e036e7891c7c5ed8c932b52023dcccbf01d51426`, clean worktree and empty staged index. It remains within `AZURE-DEMO-001`, `DEV-AC-06`, `NF-03`, `NF-07`, `NF-10`, `NF-12`, `R-09` and `R-11`. It changes only immutable deployment-artifact path validation, the EF bundle wrapper, its Linux/structural/boundary regressions and this implementation record. No product capability, migration, schema, seed, application startup, identity, connection, network, dependency, Azure resource or pipeline deployment definition changed.
+
+### Confirmed cause and evidence boundary
+
+The reported line 98 was the old negative-test classifier, not the wrapper or payload. `Assert-Failed` combined two different outcomes in one condition: a zero child exit, or a nonzero child exit whose human-formatted stderr did not contain one exact contiguous exception sentence. It then discarded the exit code and stderr and emitted the same `did not fail closed` message for both. PowerShell may decorate or wrap rendered error text, so matching that presentation is not a reliable exception contract. The retained CI message therefore proves only that the classifier condition fired; it does not prove that the linked payload executed. Because the old helper emitted neither the child result nor an execution marker for this fixture, the original CI output cannot distinguish successful return from an intended rejection that was misclassified.
+
+Code inspection confirms that an ordinary bundle-file link reached `Resolve-AzureDemoArtifactPath`, whose existing `Assert-AzureDemoNoReparsePoints` check preceded `Resolve-Path`. The original test nevertheless did not verify `CreateSymbolicLink` outcome/type or prove non-execution. Two adjacent path-contract gaps were also found and repaired: the wrapper resolved `ImmutableArtifactRoot` before shared validation, erasing a root link from the inspected path, and `Resolve-AzureDemoArtifactPath` performed existence/type checks before reparse inspection, classifying a dangling link as an ordinary missing path.
+
+### Bounded repair
+
+The wrapper now keeps the absolute lexical immutable root through the shared validator. The shared validator inspects the candidate, each in-root ancestor and the root with non-following file attributes before any existence check or `Resolve-Path`; missing components remain permissible during ancestry inspection so the existing explicit missing-root/missing-payload errors remain intact, while dangling links retain their reparse identity and are rejected. Manifest generation applies the same root rule instead of resolving a supplied root link away. Resolved containment, complete manifest/file-set validation, exact source-commit binding and SHA-256 validation remain unchanged.
+
+The Linux regression now creates links with absolute `/usr/bin/ln` or `/bin/ln`, requires exit code zero, then verifies `ReparsePoint`, `LinkType == SymbolicLink` and the exact recorded target. It covers bundle-file, `migration` ancestor-directory, immutable-root and dangling links. The three executable substitutions use same-hash harmless payloads that create local markers if launched; every rejection requires its marker to remain absent. Regular-file execution, delayed wait, separated connection argument, nonzero exit, missing path, invalid format/association trap, tamper rejection, bundle-only `chmod u+x --`, post-permission mode and unchanged hash remain covered.
+
+The child regression driver now catches wrapper exceptions and emits a base64-encoded JSON record containing only exception type and message with a dedicated exit code. The parent distinguishes successful return, the intended rejection, a different exception, malformed/missing exception evidence and an unexpected process exit. Diagnostics redact the synthetic connection value, replace the temporary root and cap output length. Human-formatted PowerShell stderr is no longer the assertion protocol.
+
+Pipeline and compiled boundary checks require the lexical-root rule and reparse validation before root/payload existence checks. The protected task still uses the exact commit-bound manifest and wrapper. The wrapper still validates the complete manifest and hashes before permission change, changes only the validated bundle mode, disables shell execution, passes separated arguments, waits, reads the launched process's own exit code and rejects nonzero completion.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| PowerShell parsing | PASS, exit `0`: `AzureDemoDeploymentArtifactUtilities.ps1`, `Invoke-AzureDemoEfMigrationBundle.ps1`, `Test-AzureDemoEfMigrationBundleExecution.ps1` and `Test-AzurePipelineStructure.ps1` parsed with zero errors under Windows PowerShell 5.1. Parsing is not Linux runtime evidence. |
+| Pipeline structural regression | PASS, exit `0`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build/Test-AzurePipelineStructure.ps1`; seven ordered stages and the execution/path boundary contract passed. |
+| Focused deployment-boundary suite | PASS, exit `0`: `dotnet test tests/api.unit/LgrTransformationMigration.Api.UnitTests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~AzureDemoDeploymentBoundaryTests" --logger "console;verbosity=minimal"`; 11/11 passed. Restore was not performed; NuGet vulnerability metadata was unavailable and emitted `NU1900`. |
+| Immutable seed/deployment artifact regression | PASS, exit `0`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build/Test-AzureDemoImmutableSeedArtifact.ps1 -PackageDirectory artifacts/azure-demo-ci/packages -ExpectedSourceCommit 0989a99d871c7158eed4994c9e6ff1f7a994ab0f`; the unchanged ignored fixture was validated at its recorded commit. |
+| Package/hash generation regression | PASS, exit `0`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build/Test-AzureDemoPackageGeneration.ps1 -PackageDirectory artifacts/azure-demo-ci/packages -ExpectedSourceCommit 0989a99d871c7158eed4994c9e6ff1f7a994ab0f`; 1,803 payload files passed. |
+| Application artifact regression | PASS, exit `0`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build/Test-AzureDemoArtifacts.ps1 -ArtifactDirectory artifacts/azure-demo-ci/packages/application`. |
+| Source/security boundary | PASS, exit `0`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build/Test-AzureDemoSourceBoundaries.ps1`; 185 source/configuration files passed. |
+| Full unit suite | PASS, exit `0`: `dotnet test tests/api.unit/LgrTransformationMigration.Api.UnitTests.csproj --configuration Release --no-build --no-restore --logger "console;verbosity=minimal"`; 206/206 passed. |
+| Focused formatting | PASS, exit `0`: `dotnet format LgrTransformationMigration.sln --verify-no-changes --no-restore --include scripts/build/AzureDemoDeploymentArtifactUtilities.ps1 scripts/build/Test-AzureDemoEfMigrationBundleExecution.ps1 scripts/build/Test-AzurePipelineStructure.ps1 scripts/database/Invoke-AzureDemoEfMigrationBundle.ps1 tests/api.unit/AzureDemoDeploymentBoundaryTests.cs`; workspace-load warnings were emitted, with no formatting difference. |
+| Real Linux execution regression | UNAVAILABLE locally and not claimed: `pwsh` and Docker are absent, and WSL reports that it is not installed. `scripts/build/Test-AzureDemoEfMigrationBundleExecution.ps1` must pass under real PowerShell on Linux before this defect is considered independently verified. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, real bundle/database, deployment, migration, seed, swap or rollback access/action occurred. No artifact, `sql-bootstrap.json` or approval evidence was regenerated. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_e036e7891c7c5ed8c932b52023dcccbf01d51426"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "scripts/build/AzureDemoDeploymentArtifactUtilities.ps1"
+    - "scripts/database/Invoke-AzureDemoEfMigrationBundle.ps1"
+    - "scripts/build/Test-AzureDemoEfMigrationBundleExecution.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "tests/api.unit/AzureDemoDeploymentBoundaryTests.cs"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "All locally supported artifact, pipeline, boundary, source and full-unit checks passed."
+    - "The original line-98 diagnostic did not establish payload execution; future link fixtures have verified creation and non-execution markers."
+  decisions:
+    - "Retain lexical immutable paths until root, ancestor and payload link inspection completes."
+    - "Use structured exception evidence rather than rendered stderr as the negative-test assertion protocol."
+  assumptions: []
+  risks:
+    - "Real PowerShell-on-Linux execution remains mandatory because no supported local Linux runtime exists."
+  defects:
+    - "REPAIRED LOCALLY: ambiguous negative-test classification and incomplete root/dangling-link validation."
+  blockers: []
+  approvals: []
+  requested_action: "Independent Tester must run the real Linux EF migration bundle execution regression and confirm all marker-backed link substitutions are rejected before permission change or payload launch."
+```
+
+READY_FOR_TEST

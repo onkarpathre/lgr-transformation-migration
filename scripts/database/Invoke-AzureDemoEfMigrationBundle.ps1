@@ -95,7 +95,7 @@ if (-not [IO.Path]::IsPathRooted($ImmutableArtifactRoot) -or
     throw 'Migration execution requires explicit absolute immutable-artifact paths.'
 }
 
-$artifactRoot = (Resolve-Path -LiteralPath $ImmutableArtifactRoot -ErrorAction Stop).ProviderPath
+$artifactRoot = [IO.Path]::GetFullPath($ImmutableArtifactRoot).TrimEnd([char[]] @('\', '/'))
 $expectedBundlePath = Join-Path $artifactRoot 'migration/lgrtm-efbundle-linux-x64'
 $bundlePath = Resolve-AzureDemoArtifactPath -ArtifactRoot $artifactRoot -Path $expectedBundlePath -PathType Leaf
 $regularFileUtility = Get-RequiredLinuxUtility -Name 'test'

@@ -13,6 +13,7 @@ $appServiceSubnetValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'sc
 $privateDnsValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoPrivateDnsReconciliation.ps1') -Raw
 $sqlBootstrapValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\database\Assert-AzureDemoSqlBootstrapEvidence.ps1') -Raw
 $efBundleInvokerScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\database\Invoke-AzureDemoEfMigrationBundle.ps1') -Raw
+$deploymentArtifactUtilitiesScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\AzureDemoDeploymentArtifactUtilities.ps1') -Raw
 $seedPackageScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-AzureDemoSeedArtifact.ps1') -Raw
 $seedInvocationScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invoke-AzureDemoSeed.ps1') -Raw
 $seedResetScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invoke-AzureDemoReset.ps1') -Raw
@@ -636,6 +637,25 @@ foreach ($fragment in @(
     if (-not $efBundleInvokerScript.Contains($fragment)) {
         throw "The EF bundle native invoker is missing its fail-closed contract: $fragment"
     }
+}
+if (-not $efBundleInvokerScript.Contains('$artifactRoot = [IO.Path]::GetFullPath($ImmutableArtifactRoot)') -or
+    $efBundleInvokerScript.Contains('(Resolve-Path -LiteralPath $ImmutableArtifactRoot')) {
+    throw 'The EF bundle native invoker must preserve the lexical immutable root until symbolic-link validation.'
+}
+$artifactResolverStart = $deploymentArtifactUtilitiesScript.IndexOf('function Resolve-AzureDemoArtifactPath', [StringComparison]::Ordinal)
+$artifactResolverEnd = $deploymentArtifactUtilitiesScript.IndexOf('function ConvertTo-AzureDemoArtifactRelativePath', [StringComparison]::Ordinal)
+if ($artifactResolverStart -lt 0 -or $artifactResolverEnd -le $artifactResolverStart) {
+    throw 'The immutable artifact path resolver could not be isolated.'
+}
+$artifactResolver = $deploymentArtifactUtilitiesScript.Substring($artifactResolverStart, $artifactResolverEnd - $artifactResolverStart)
+$reparseValidationIndex = $artifactResolver.IndexOf('Assert-AzureDemoNoReparsePoints', [StringComparison]::Ordinal)
+$rootExistenceIndex = $artifactResolver.IndexOf("Test-Path -LiteralPath `$root -PathType Container", [StringComparison]::Ordinal)
+$candidateExistenceIndex = $artifactResolver.IndexOf("Test-Path -LiteralPath `$candidate -PathType `$PathType", [StringComparison]::Ordinal)
+if (-not $deploymentArtifactUtilitiesScript.Contains('[IO.File]::GetAttributes($current)') -or
+    $reparseValidationIndex -lt 0 -or
+    $rootExistenceIndex -le $reparseValidationIndex -or
+    $candidateExistenceIndex -le $reparseValidationIndex) {
+    throw 'Immutable artifact paths must reject root, ancestor, payload and dangling links before existence checks or resolution.'
 }
 if ($efBundleInvokerScript -match '(?i)xdg-open|Invoke-Item|Start-Process|UseShellExecute\s*=\s*\$true') {
     throw 'The EF bundle native invoker must not use shell or file-association execution.'

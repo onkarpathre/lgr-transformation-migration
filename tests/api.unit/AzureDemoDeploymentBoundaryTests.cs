@@ -208,6 +208,28 @@ public sealed class AzureDemoDeploymentBoundaryTests
     }
 
     [Fact]
+    public void EF_bundle_path_validation_preserves_links_until_rejection()
+    {
+        var root = FindRepositoryRoot();
+        var wrapper = File.ReadAllText(Path.Combine(root, "scripts", "database", "Invoke-AzureDemoEfMigrationBundle.ps1"));
+        var utilities = File.ReadAllText(Path.Combine(root, "scripts", "build", "AzureDemoDeploymentArtifactUtilities.ps1"));
+
+        Assert.Contains("$artifactRoot = [IO.Path]::GetFullPath($ImmutableArtifactRoot)", wrapper, StringComparison.Ordinal);
+        Assert.DoesNotContain("Resolve-Path -LiteralPath $ImmutableArtifactRoot", wrapper, StringComparison.Ordinal);
+        Assert.Contains("[IO.File]::GetAttributes($current)", utilities, StringComparison.Ordinal);
+
+        var resolverStart = utilities.IndexOf("function Resolve-AzureDemoArtifactPath", StringComparison.Ordinal);
+        var resolverEnd = utilities.IndexOf("function ConvertTo-AzureDemoArtifactRelativePath", StringComparison.Ordinal);
+        Assert.True(resolverStart >= 0 && resolverEnd > resolverStart, "The immutable artifact path resolver could not be isolated.");
+        var resolver = utilities[resolverStart..resolverEnd];
+        var reparseValidationIndex = resolver.IndexOf("Assert-AzureDemoNoReparsePoints", StringComparison.Ordinal);
+        var rootExistenceIndex = resolver.IndexOf("Test-Path -LiteralPath $root -PathType Container", StringComparison.Ordinal);
+        var candidateExistenceIndex = resolver.IndexOf("Test-Path -LiteralPath $candidate -PathType $PathType", StringComparison.Ordinal);
+        Assert.True(reparseValidationIndex >= 0 && rootExistenceIndex > reparseValidationIndex && candidateExistenceIndex > reparseValidationIndex,
+            "Symbolic-link validation must precede root and payload existence checks so dangling links cannot be misclassified as ordinary missing paths.");
+    }
+
+    [Fact]
     public void Bicep_routes_Defender_ScanResults_to_the_alert_workspace_at_the_exact_nested_scope()
     {
         var root = FindRepositoryRoot();
