@@ -220,24 +220,38 @@ $subnetTestWithCompiled = [regex]::Matches($text, "Test-AzureDemoAppServiceSubne
 if ($subnetTestWithoutCompiled -ne 1 -or $subnetTestWithCompiled -ne 1) {
     throw 'The App Service integration-subnet regression must run once against source and once against compiled Bicep.'
 }
-$runtimeCommand = '$runtimeRows = @(az webapp list-runtimes --os linux --output tsv 2>&1)'
+$runtimeErrorPath = '$runtimeErrorPath = Join-Path ''$(Agent.TempDirectory)'' "az-webapp-list-runtimes-$([guid]::NewGuid().ToString(''N'')).stderr"'
+$runtimeCommand = '$runtimeJsonRows = @(az webapp list-runtimes --os linux --output json --only-show-errors 2> $runtimeErrorPath)'
 $runtimeExitCapture = '$runtimeCommandExitCode = $LASTEXITCODE'
+$runtimeExitCheck = "if (`$runtimeCommandExitCode -ne 0) { throw 'Azure App Service runtime discovery failed; required native runtimes could not be validated.' }"
 $runtimeValidatorInvocation = '& ./scripts/build/Assert-AzureAppServiceNativeRuntimes.ps1 @runtimeValidation'
 foreach ($fragment in @(
+        $runtimeErrorPath,
         $runtimeCommand,
         $runtimeExitCapture,
-        'RuntimeRows = [string[]] $runtimeRows',
+        $runtimeExitCheck,
+        'RuntimeJson = [string]::Join([Environment]::NewLine, [string[]] $runtimeJsonRows)',
         'CommandExitCode = $runtimeCommandExitCode',
+        'Remove-Item -LiteralPath $runtimeErrorPath -Force -ErrorAction SilentlyContinue',
         $runtimeValidatorInvocation)) {
     if (-not $preDeploymentGate.Contains($fragment)) {
         throw "The PreDeploymentGate native-runtime contract is missing: $fragment"
     }
 }
-if ($preDeploymentGate.IndexOf($runtimeCommand, [StringComparison]::Ordinal) -ge
+if ($preDeploymentGate.IndexOf($runtimeErrorPath, [StringComparison]::Ordinal) -ge
+    $preDeploymentGate.IndexOf($runtimeCommand, [StringComparison]::Ordinal) -or
+    $preDeploymentGate.IndexOf($runtimeCommand, [StringComparison]::Ordinal) -ge
     $preDeploymentGate.IndexOf($runtimeExitCapture, [StringComparison]::Ordinal) -or
     $preDeploymentGate.IndexOf($runtimeExitCapture, [StringComparison]::Ordinal) -ge
+    $preDeploymentGate.IndexOf($runtimeExitCheck, [StringComparison]::Ordinal) -or
+    $preDeploymentGate.IndexOf($runtimeExitCheck, [StringComparison]::Ordinal) -ge
     $preDeploymentGate.IndexOf($runtimeValidatorInvocation, [StringComparison]::Ordinal)) {
-    throw 'Native-runtime output and exit status must be captured before fail-closed validation.'
+    throw 'Native-runtime stdout, separate stderr and exit status must be captured before fail-closed validation.'
+}
+if ($runtimeCommand.Contains('2>&1') -or
+    $preDeploymentGate.Contains('RuntimeDiagnostics =') -or
+    $preDeploymentGate.Contains('RuntimeJson = [string]::Join([Environment]::NewLine, [string[]] $runtimeError')) {
+    throw 'Native-runtime diagnostics must remain separate from the JSON catalogue.'
 }
 $privateDnsListCommand = "az network private-dns link vnet list --resource-group '`$(AZDEMO_RESOURCE_GROUP_NAME)' --zone-name `$sqlPrivateDnsZoneName --output json --only-show-errors"
 $privateDnsExitCapture = '$sqlPrivateDnsLinksExitCode = $LASTEXITCODE'
@@ -282,15 +296,22 @@ foreach ($fragment in @(
         "'NODE|24-lts'",
         "'DOTNETCORE|10.0'",
         '$CommandExitCode -ne 0',
-        '$runtimeRow.IndexOf("`t", [StringComparison]::Ordinal)',
-        '$runtimeRow.Substring(0, $tabIndex).Trim()',
-        '$runtimeIdentifiers -notcontains $requiredRuntime')) {
+        'ConvertFrom-Json -InputObject $RuntimeJson -ErrorAction Stop',
+        '$runtimeCatalogue -isnot [Array]',
+        "$runtime -isnot [pscustomobject]",
+        "$runtime.PSObject.Properties['config']",
+        "$runtime.PSObject.Properties['os']",
+        "$configProperty.Value -isnot [string]",
+        "$osProperty.Value -isnot [string]",
+        "$osProperty.Value -ceq 'Linux'",
+        '$linuxRuntimeIdentifiers.Contains($requiredRuntime)')) {
     if (-not $runtimeValidatorScript.Contains($fragment)) {
         throw "The native-runtime validator is missing its fail-closed normalization contract: $fragment"
     }
 }
 if ($runtimeValidatorScript -match $colonRuntimeIdentifierPattern -or
-    $runtimeValidatorScript -match '(?i)\$runtimes?\s+-notmatch') {
+    $runtimeValidatorScript -match '(?i)\$runtimes?\s+-notmatch' -or
+    $runtimeValidatorScript.Contains('^[A-Z][A-Z0-9]*\|')) {
     throw 'The native-runtime validator must use pipe-form identifiers and exact membership, not array -notmatch.'
 }
 if ([regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureAppServiceNativeRuntimes\.ps1\s*$').Count -ne 1) {

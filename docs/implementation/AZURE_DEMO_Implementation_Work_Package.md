@@ -2612,3 +2612,94 @@ handoff:
 ```
 
 LINUX_VERIFICATION_PENDING
+
+## Azure CLI 2.90 App Service runtime JSON-catalogue repair
+
+### Baseline, scope and traceability
+
+This bounded Developer repair started from the requested branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `ac137ffb32b6754e194eff43029d1e3a6a5de61a`. The index and worktree were clean before editing. Nothing was staged, committed, pushed, reset or stashed. The change is confined to native App Service runtime discovery, its focused and structural regressions, and this supporting documentation. App Service runtime versions, Bicep application configuration, CSP, authentication, networking, SQL, protected evidence and release gates are unchanged.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+Q-01 remains closed only for the controlled package scope already approved at the start of this document. This local pipeline-validation repair does not choose a stack, change a deployed environment, ingest protected evidence or alter a release decision. Q-08 and every existing connected-CI, staging, protected-smoke and human release/deployment gate remain unchanged.
+
+### Confirmed defect and correction
+
+The previous validator parsed the first tab-separated field and required `^[A-Z][A-Z0-9]*\|[A-Za-z0-9][A-Za-z0-9._-]*$`. Its existing three-positive/six-negative regression passed, but a synthetic reproduction using the real Azure CLI 2.90 entries `dotnet|11`, `DOTNETCORE|10.0` and `NODE|24-lts` failed with `Azure App Service runtime discovery returned malformed TSV output.` The lowercase but valid unrelated `dotnet|11` entry therefore rejected the complete catalogue before exact required-runtime membership could be proved.
+
+`PreDeploymentGate` now requests `az webapp list-runtimes --os linux --output json --only-show-errors`. Stdout is captured as JSON lines while stderr is redirected to a unique file beneath `$(Agent.TempDirectory)`; the streams are never merged. `$LASTEXITCODE` is captured on the immediately following line and explicitly checked before stdout is assembled or parsed. The stderr file is removed in `finally` and is neither logged nor passed to the validator.
+
+The validator now accepts one JSON string and the native exit code. It rejects a nonzero exit before parsing; empty or malformed JSON; a non-array or empty top-level value; non-object entries; and missing, non-string, blank or malformed `config`/`os` fields. It retrieves `config` and `os` through each object's named properties and ignores other properties. Runtime-family syntax permits upper- or lowercase letters, so unrelated `dotnet|11` is valid catalogue data. Required membership remains ordinal and exact: only `NODE|24-lts` and `DOTNETCORE|10.0` whose `os` value is exactly `Linux` satisfy the gate. `NODE|26`, `dotnet|11`, preview suffixes and required configs reported for another OS do not satisfy it. The existing two-line successful validator output is unchanged, and no support-policy rule was added or removed.
+
+The focused regression covers the three supplied Azure CLI 2.90 objects, reordered properties, additional metadata, both required runtimes missing individually, wrong OS, newer versions only, nonzero exit with valid stdout, empty/malformed JSON, empty/non-array/non-object top-level shapes, invalid and missing required fields, diagnostic contamination, and similarly named preview identifiers.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Baseline and inventory | PASS before editing: exact requested branch and HEAD; clean worktree and empty staged index. |
+| Defect reproduction | PASS as a reproduction harness, exit `0`: existing regression first passed 3 positive/6 fail-closed cases; the real mixed catalogue then produced the expected uppercase-regex validation failure. |
+| PowerShell parsing | PASS: the validator, focused regression and pipeline structural regression parse under Windows PowerShell 5.1. |
+| Native-runtime regression | PASS, exit `0`: 3 positive and 15 fail-closed cases. |
+| Pipeline structural regression | PASS, exit `0`: seven ordered stages; JSON plus `--only-show-errors`, separate temporary stderr, immediate exit capture/check, JSON validator wiring, exact Linux membership and regression execution are pinned. |
+| Local runtime | Windows `10.0.26200`; Windows PowerShell `5.1.26100.9444`. |
+| Linux/PowerShell 7/Azure CLI 2.90 | NOT RUN and not claimed: `pwsh` is unavailable on the authorized local host, and the task prohibits Azure and Azure DevOps actions. The real connected command, native stream behavior and CLI catalogue remain pending on the protected Linux validation agent. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, Entra, deployment, migration, seed, swap, endpoint smoke, rollback or approval action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_ac137ffb32b6754e194eff43029d1e3a6a5de61a"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/build/Assert-AzureAppServiceNativeRuntimes.ps1"
+    - "scripts/build/Test-AzureAppServiceNativeRuntimes.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "The real mixed Azure CLI 2.90 fixture passes while exact required Linux runtime membership remains fail closed."
+    - "The focused runtime and seven-stage pipeline structural regressions pass locally on Windows PowerShell 5.1."
+  decisions:
+    - "Use named JSON properties instead of TSV column order."
+    - "Keep Azure CLI stderr out of JSON and remove its temporary capture in finally."
+    - "Permit lowercase unrelated runtime families while requiring ordinal exact approved configs on Linux."
+  assumptions: []
+  risks:
+    - "The changed native capture has not yet executed on the protected Linux PowerShell 7/Azure CLI 2.90 agent."
+  defects:
+    - "REPAIRED LOCALLY: uppercase-only TSV validation rejected the valid lowercase dotnet|11 catalogue entry."
+  blockers: []
+  approvals: []
+  requested_action: "Independent Tester must run the focused runtime and structural regressions plus the unchanged PreDeploymentGate on the protected Linux Azure CLI 2.90 agent, confirming separate stderr, exact runtime success output and no catalogue disclosure."
+```
+
+READY_FOR_TEST

@@ -309,13 +309,20 @@ stages:
                 if ($sqlPrivateDnsLinksExitCode -ne 0) { throw 'Could not enumerate SQL private DNS virtual-network links.' }
                 $sqlPrivateDnsLinksJson = [string]::Join([Environment]::NewLine, [string[]] $sqlPrivateDnsLinks)
                 ./scripts/build/Assert-AzureDemoPrivateDnsReconciliation.ps1 -LinksJson $sqlPrivateDnsLinksJson -ExpectedLinkName $sqlPrivateDnsLinkName -ExpectedVirtualNetworkId $approvedVirtualNetworkId
-                $runtimeRows = @(az webapp list-runtimes --os linux --output tsv 2>&1)
-                $runtimeCommandExitCode = $LASTEXITCODE
-                $runtimeValidation = @{
-                  RuntimeRows = [string[]] $runtimeRows
-                  CommandExitCode = $runtimeCommandExitCode
+                $runtimeErrorPath = Join-Path '$(Agent.TempDirectory)' "az-webapp-list-runtimes-$([guid]::NewGuid().ToString('N')).stderr"
+                try {
+                  $runtimeJsonRows = @(az webapp list-runtimes --os linux --output json --only-show-errors 2> $runtimeErrorPath)
+                  $runtimeCommandExitCode = $LASTEXITCODE
+                  if ($runtimeCommandExitCode -ne 0) { throw 'Azure App Service runtime discovery failed; required native runtimes could not be validated.' }
+                  $runtimeValidation = @{
+                    RuntimeJson = [string]::Join([Environment]::NewLine, [string[]] $runtimeJsonRows)
+                    CommandExitCode = $runtimeCommandExitCode
+                  }
+                  & ./scripts/build/Assert-AzureAppServiceNativeRuntimes.ps1 @runtimeValidation
                 }
-                & ./scripts/build/Assert-AzureAppServiceNativeRuntimes.ps1 @runtimeValidation
+                finally {
+                  Remove-Item -LiteralPath $runtimeErrorPath -Force -ErrorAction SilentlyContinue
+                }
                 az deployment group what-if --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --no-pretty-print > $(Pipeline.Workspace)/bicep-what-if.json
             env:
               AZDEMO_OWNER: $(AZDEMO_OWNER)
