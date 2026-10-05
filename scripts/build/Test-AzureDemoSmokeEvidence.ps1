@@ -112,13 +112,68 @@ try {
     Assert-True ($protectedIds.Count -eq 17) 'Protected evidence catalogue must retain exactly the 17 approved hybrid/specialist checks.'
     Assert-Rejected 'automated-only check used as protected evidence' { Get-AzureDemoSmokeEvidenceRequirement -CheckId 'SMK-20' | Out-Null } 'no protected-evidence requirement'
 
+    $timestampProbeJson = '{"startedAtUtc":"2026-10-05T12:34:56.1234567Z"}'
+    $plainTimestampProbe = $timestampProbeJson | ConvertFrom-Json
+    $preservedTimestampProbe = ConvertFrom-AzureDemoSmokeEvidenceJson -Json $timestampProbeJson -SyntaxCategory 'PROBE_JSON_SYNTAX'
+    $plainTimestampType = Get-AzureDemoSafeRuntimeTypeName $plainTimestampProbe.startedAtUtc
+    $preservedTimestampType = Get-AzureDemoSafeRuntimeTypeName $preservedTimestampProbe.startedAtUtc
+    Assert-True ($preservedTimestampProbe.startedAtUtc -is [string]) "String-preserving JSON parsing returned unexpected runtime type $preservedTimestampType."
+    Write-Output "Smoke evidence timestamp deserialization types: default=$plainTimestampType; preserved=$preservedTimestampType; edition=$($PSVersionTable.PSEdition); version=$($PSVersionTable.PSVersion)."
+
     $validPath = Write-Evidence (New-Evidence 'SMK-05')
     Invoke-Validation $validPath
+
+    $validSecond = [DateTimeOffset]::UtcNow.AddMinutes(-2).ToString("yyyy-MM-dd'T'HH:mm:ss", [Globalization.CultureInfo]::InvariantCulture)
+    foreach ($zoneSuffix in @('Z', '+00:00')) {
+        foreach ($fractionalDigits in 0..7) {
+            $fraction = if ($fractionalDigits -eq 0) { '' } else { '.' + '1234567'.Substring(0, $fractionalDigits) }
+            $validTimestamp = "$validSecond$fraction$zoneSuffix"
+            $timestampEvidence = New-Evidence 'SMK-05'
+            $timestampEvidence.execution.startedAtUtc = $validTimestamp
+            $timestampEvidence.execution.completedAtUtc = $validTimestamp
+            Invoke-Validation (Write-Evidence $timestampEvidence)
+        }
+    }
 
     Assert-Rejected 'missing evidence' { Invoke-Validation (Join-Path $temporaryDirectory 'missing.json') } 'required immutable artifact path'
     $malformedPath = Join-Path $temporaryDirectory 'SMK-05.json'
     [IO.File]::WriteAllText($malformedPath, '{ invalid', $utf8NoBom)
     Assert-Rejected 'malformed evidence' { Invoke-Validation $malformedPath } 'EVIDENCE_JSON_SYNTAX'
+
+    foreach ($invalidTimestampCase in @(
+            @{ Name = 'nonzero positive offset'; Value = '2026-10-05T12:34:56+01:00'; Category = 'EXECUTION_TIMESTAMP_SYNTAX' },
+            @{ Name = 'nonzero negative offset'; Value = '2026-10-05T12:34:56-01:00'; Category = 'EXECUTION_TIMESTAMP_SYNTAX' },
+            @{ Name = 'missing timezone'; Value = '2026-10-05T12:34:56'; Category = 'EXECUTION_TIMESTAMP_SYNTAX' },
+            @{ Name = 'invalid calendar date'; Value = '2026-02-30T12:34:56Z'; Category = 'EXECUTION_TIMESTAMP_SYNTAX' },
+            @{ Name = 'leading whitespace'; Value = ' 2026-10-05T12:34:56Z'; Category = 'EXECUTION_TIMESTAMP_SYNTAX' },
+            @{ Name = 'trailing whitespace'; Value = '2026-10-05T12:34:56Z '; Category = 'EXECUTION_TIMESTAMP_SYNTAX' },
+            @{ Name = 'excessive fractional precision'; Value = '2026-10-05T12:34:56.12345678Z'; Category = 'EXECUTION_TIMESTAMP_SYNTAX' }
+        )) {
+        $invalidTimestampEvidence = New-Evidence 'SMK-05'
+        $invalidTimestampEvidence.execution.startedAtUtc = $invalidTimestampCase.Value
+        $invalidTimestampEvidence.execution.completedAtUtc = $invalidTimestampCase.Value
+        $invalidTimestampPath = Write-Evidence $invalidTimestampEvidence
+        Assert-Rejected $invalidTimestampCase.Name { Invoke-Validation $invalidTimestampPath } $invalidTimestampCase.Category
+    }
+
+    $numericTimestamp = New-Evidence 'SMK-05'
+    $numericTimestamp.execution.startedAtUtc = 12345
+    Assert-Rejected 'numeric started timestamp' { Invoke-Validation (Write-Evidence $numericTimestamp) } 'EXECUTION_TIMESTAMP_TYPE (field=startedAtUtc; runtimeType='
+
+    $booleanTimestamp = New-Evidence 'SMK-05'
+    $booleanTimestamp.execution.completedAtUtc = $false
+    Assert-Rejected 'boolean completed timestamp' { Invoke-Validation (Write-Evidence $booleanTimestamp) } 'EXECUTION_TIMESTAMP_TYPE (field=completedAtUtc; runtimeType=System.Boolean)'
+
+    $orderedTimestampBase = [DateTimeOffset]::UtcNow.AddMinutes(-3)
+    $reversedTimestamps = New-Evidence 'SMK-05'
+    $reversedTimestamps.execution.startedAtUtc = $orderedTimestampBase.AddMinutes(1).ToString('O')
+    $reversedTimestamps.execution.completedAtUtc = $orderedTimestampBase.ToString('O')
+    Assert-Rejected 'completed before started' { Invoke-Validation (Write-Evidence $reversedTimestamps) } 'EXECUTION_TIMESTAMP_ORDER'
+
+    $futureTimestamps = New-Evidence 'SMK-05'
+    $futureTimestamps.execution.startedAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(9).ToString('O')
+    $futureTimestamps.execution.completedAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(10).ToString('O')
+    Assert-Rejected 'excessive future timestamp' { Invoke-Validation (Write-Evidence $futureTimestamps) } 'EXECUTION_TIMESTAMP_FUTURE'
 
     $wrongCommitPath = Write-Evidence (New-Evidence 'SMK-05' @{ sourceCommit = ('3' * 40) })
     Assert-Rejected 'wrong commit' { Invoke-Validation $wrongCommitPath } 'RELEASE_PROVENANCE'
@@ -134,6 +189,14 @@ try {
     $wrongRun.origin.pipelineRunId = '999'
     $wrongRunPath = Write-Evidence $wrongRun
     Assert-Rejected 'wrong pipeline origin' { Invoke-Validation $wrongRunPath } 'EVIDENCE_ORIGIN'
+
+    $wrongLocation = New-Evidence 'SMK-05'
+    $wrongLocation.execution.location = 'substituted-location'
+    Assert-Rejected 'wrong execution location' { Invoke-Validation (Write-Evidence $wrongLocation) } 'EXECUTION_PROVENANCE'
+
+    $wrongIdentity = New-Evidence 'SMK-05'
+    $wrongIdentity.execution.identityKind = 'substituted-identity'
+    Assert-Rejected 'wrong execution identity' { Invoke-Validation (Write-Evidence $wrongIdentity) } 'EXECUTION_PROVENANCE'
 
     $fixtureEvidence = New-Evidence 'SMK-05'
     $fixtureEvidence.execution.syntheticFixture = $true
@@ -184,4 +247,4 @@ finally {
     if (Test-Path -LiteralPath $temporaryDirectory) { Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force }
 }
 
-Write-Output 'Azure demo smoke evidence contract passed valid protected-runtime and previous-release fixtures plus missing, malformed, wrong-commit, wrong-artifact, substituted-target, wrong-origin, fixture, assertion, attachment and current-release-substitution rejection cases.'
+Write-Output 'Azure demo smoke evidence contract passed valid protected-runtime and previous-release fixtures; Z/+00:00 timestamps at 0-7 fractional digits; timestamp type, syntax, ordering and future-time rejection; plus all retained missing, malformed, substitution, identity/location, assertion, attachment and fixture rejection cases.'

@@ -33,11 +33,73 @@ function Get-AzureDemoSmokeEvidenceRequirement {
     return $requirements[$CheckId]
 }
 
+function ConvertFrom-AzureDemoSmokeEvidenceJson {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $Json,
+        [Parameter(Mandatory)] [string] $SyntaxCategory
+    )
+
+    $convertFromJson = Get-Command -Name ConvertFrom-Json -CommandType Cmdlet -ErrorAction Stop
+    $parameters = @{
+        InputObject = $Json
+        ErrorAction = 'Stop'
+    }
+
+    if ($convertFromJson.Parameters.ContainsKey('DateKind')) {
+        $parameters.DateKind = 'String'
+    }
+    elseif ($PSVersionTable.PSEdition -ne 'Desktop' -or
+        $PSVersionTable.PSVersion.Major -ne 5 -or
+        $PSVersionTable.PSVersion.Minor -lt 1) {
+        throw "Smoke evidence rejected: JSON_STRING_PRESERVATION_RUNTIME (edition=$($PSVersionTable.PSEdition); version=$($PSVersionTable.PSVersion))."
+    }
+
+    try {
+        return ConvertFrom-Json @parameters
+    }
+    catch {
+        throw "Smoke evidence rejected: $SyntaxCategory."
+    }
+}
+
+function Get-AzureDemoSafeRuntimeTypeName {
+    param([AllowNull()] [object] $Value)
+    if ($null -eq $Value) { return '<null>' }
+    return $Value.GetType().FullName
+}
+
 function Test-AzureDemoUtcTimestamp {
-    param([string] $Value, [ref] $Parsed)
-    if ($Value -cnotmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$') { return $false }
+    param([AllowNull()] [object] $Value, [ref] $Parsed)
+    if ($Value -isnot [string] -or $Value -cnotmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$') { return $false }
+
+    $timestampFormats = [string[]] @(
+        "yyyy-MM-dd'T'HH:mm:ss'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.f'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.ff'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.ffff'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.fffff'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+        "yyyy-MM-dd'T'HH:mm:sszzz",
+        "yyyy-MM-dd'T'HH:mm:ss.fzzz",
+        "yyyy-MM-dd'T'HH:mm:ss.ffzzz",
+        "yyyy-MM-dd'T'HH:mm:ss.fffzzz",
+        "yyyy-MM-dd'T'HH:mm:ss.ffffzzz",
+        "yyyy-MM-dd'T'HH:mm:ss.fffffzzz",
+        "yyyy-MM-dd'T'HH:mm:ss.ffffffzzz",
+        "yyyy-MM-dd'T'HH:mm:ss.fffffffzzz"
+    )
+    $timestampStyles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
     $timestamp = [DateTimeOffset]::MinValue
-    if (-not [DateTimeOffset]::TryParse($Value, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref] $timestamp) -or $timestamp.Offset -ne [TimeSpan]::Zero) {
+    if (-not [DateTimeOffset]::TryParseExact(
+            [string] $Value,
+            $timestampFormats,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $timestampStyles,
+            [ref] $timestamp
+        ) -or $timestamp.Offset -ne [TimeSpan]::Zero) {
         return $false
     }
     $Parsed.Value = $timestamp
@@ -86,7 +148,8 @@ function Assert-AzureDemoSmokeEvidence {
     $requirement = Get-AzureDemoSmokeEvidenceRequirement -CheckId $CheckId
     $resolvedRoot = (Resolve-Path -LiteralPath $EvidenceRoot).ProviderPath
     $resolvedEvidence = Resolve-AzureDemoArtifactPath -ArtifactRoot $resolvedRoot -Path ([IO.Path]::GetFullPath($EvidencePath)) -PathType Leaf
-    try { $evidence = Get-Content -LiteralPath $resolvedEvidence -Raw | ConvertFrom-Json -ErrorAction Stop } catch { throw 'Smoke evidence rejected: EVIDENCE_JSON_SYNTAX.' }
+    $evidenceJson = Get-Content -LiteralPath $resolvedEvidence -Raw
+    $evidence = ConvertFrom-AzureDemoSmokeEvidenceJson -Json $evidenceJson -SyntaxCategory 'EVIDENCE_JSON_SYNTAX'
 
     Assert-AzureDemoExactProperties $evidence @('schemaVersion', 'evidenceClass', 'checkId', 'status', 'sourceCommit', 'artifactManifestSha256', 'infrastructureDeploymentId', 'target', 'origin', 'execution', 'assertions', 'previousRelease') 'EVIDENCE_SCHEMA'
     if ($evidence.schemaVersion -cne '1' -or $evidence.evidenceClass -cne 'protected-runtime' -or $evidence.checkId -cne $CheckId -or $evidence.status -cne 'PASS') {
@@ -113,10 +176,25 @@ function Assert-AzureDemoSmokeEvidence {
     Assert-AzureDemoExactProperties $evidence.execution @('startedAtUtc', 'completedAtUtc', 'location', 'identityKind', 'correlationId', 'syntheticFixture') 'EXECUTION_SCHEMA'
     $started = [DateTimeOffset]::MinValue
     $completed = [DateTimeOffset]::MinValue
-    if (-not (Test-AzureDemoUtcTimestamp ([string] $evidence.execution.startedAtUtc) ([ref] $started)) -or
-        -not (Test-AzureDemoUtcTimestamp ([string] $evidence.execution.completedAtUtc) ([ref] $completed)) -or
-        $completed -lt $started -or $completed -gt [DateTimeOffset]::UtcNow.AddMinutes(5) -or
-        $evidence.execution.location -cne $requirement.Location -or $evidence.execution.identityKind -cne $requirement.IdentityKind -or
+    foreach ($timestampField in @('startedAtUtc', 'completedAtUtc')) {
+        $timestampValue = $evidence.execution.PSObject.Properties[$timestampField].Value
+        $runtimeType = Get-AzureDemoSafeRuntimeTypeName $timestampValue
+        if ($timestampValue -isnot [string]) {
+            throw "Smoke evidence rejected: EXECUTION_TIMESTAMP_TYPE (field=$timestampField; runtimeType=$runtimeType)."
+        }
+        $parsedTimestamp = [DateTimeOffset]::MinValue
+        if (-not (Test-AzureDemoUtcTimestamp $timestampValue ([ref] $parsedTimestamp))) {
+            throw "Smoke evidence rejected: EXECUTION_TIMESTAMP_SYNTAX (field=$timestampField; runtimeType=$runtimeType)."
+        }
+        if ($timestampField -ceq 'startedAtUtc') { $started = $parsedTimestamp } else { $completed = $parsedTimestamp }
+    }
+    if ($completed -lt $started) {
+        throw 'Smoke evidence rejected: EXECUTION_TIMESTAMP_ORDER (field=completedAtUtc; runtimeType=System.String).'
+    }
+    if ($completed -gt [DateTimeOffset]::UtcNow.AddMinutes(5)) {
+        throw 'Smoke evidence rejected: EXECUTION_TIMESTAMP_FUTURE (field=completedAtUtc; runtimeType=System.String).'
+    }
+    if ($evidence.execution.location -cne $requirement.Location -or $evidence.execution.identityKind -cne $requirement.IdentityKind -or
         [string]::IsNullOrWhiteSpace([string] $evidence.execution.correlationId) -or $evidence.execution.syntheticFixture -isnot [bool] -or $evidence.execution.syntheticFixture) {
         throw 'Smoke evidence rejected: EXECUTION_PROVENANCE.'
     }
@@ -156,7 +234,8 @@ function Assert-AzureDemoSmokeEvidence {
         if ($previousManifestHash -cne [string] $evidence.previousRelease.manifestSha256 -or $previousManifestHash -cne [string] $evidence.previousRelease.artifactManifestSha256) {
             throw 'Smoke evidence rejected: PREVIOUS_RELEASE_MANIFEST_HASH.'
         }
-        try { $previousManifest = Get-Content -LiteralPath $resolvedPreviousManifest -Raw | ConvertFrom-Json -ErrorAction Stop } catch { throw 'Smoke evidence rejected: PREVIOUS_RELEASE_MANIFEST_JSON.' }
+        $previousManifestJson = Get-Content -LiteralPath $resolvedPreviousManifest -Raw
+        $previousManifest = ConvertFrom-AzureDemoSmokeEvidenceJson -Json $previousManifestJson -SyntaxCategory 'PREVIOUS_RELEASE_MANIFEST_JSON'
         if ($previousManifest.sourceCommit -cne [string] $evidence.previousRelease.sourceCommit) { throw 'Smoke evidence rejected: PREVIOUS_RELEASE_MANIFEST_COMMIT.' }
     }
     elseif ($null -ne $evidence.previousRelease) {
