@@ -1721,6 +1721,118 @@ handoff:
 
 READY_FOR_TEST
 
+## EF migration bundle DbContext creation repair
+
+### Baseline, scope and traceability
+
+The Developer repair started from the exact requested baseline: branch `fix/mtp-azure-demo-reconciliation`, commit `428686548f743158e5e5b332a7ab1b6cc30c6a44`, clean worktree and empty staged index. It remains within `AZURE-DEMO-001`, `DEV-AC-06`, `NF-03`, `NF-07`, `NF-10`, `NF-12`, `R-09` and `R-11`. The approved local/non-production SQL POC stack in ADR-006 covers this bounded EF configuration repair; wider production Q-01 approval remains outside this work.
+
+No EF migration, model snapshot, schema, seed content, dependency, web startup, identity, network, service connection, approval control or deployment default changed. No Azure, Azure DevOps or SQL system was accessed, and no migration or seed was executed.
+
+### Confirmed cause and runtime evidence boundary
+
+The baseline had no `IDesignTimeDbContextFactory<AppDbContext>`. EF therefore attempted application-service-provider discovery through `Program.cs`. That web bootstrap adds `appsettings.LocalTest.json` as a non-optional relative file whenever the ASP.NET environment is `Development` or `Testing`. The protected error resolved that relative file as `/mnt/vss/_work/1/s/appsettings.LocalTest.json`, confirming that protected bundle execution entered web bootstrap from the repository working directory under one of those two environment names. `AppDbContext` also requires both `DbContextOptions<AppDbContext>` and `ICurrentCustomerContext`, so EF's subsequent constructor fallback could not satisfy the context.
+
+Local verbose EF 10.0.11 execution with both `DOTNET_ENVIRONMENT` and `ASPNETCORE_ENVIRONMENT` unset reported `Using environment 'Development'`, found `MigrationDbContextFactory`, and then reported `Using DbContext factory 'MigrationDbContextFactory'`. The local observation establishes the EF CLI default but does not prove which protected-agent variable or EF default selected Development/Testing in the failed bundle. The protected task did not record those variables, so their exact inherited values remain an unresolved runtime fact. The native wrapper sets neither a working directory nor an environment name; its shell-disabled child therefore inherits the pipeline process working directory and environment.
+
+### Chosen migration-context contract
+
+`MigrationDbContextFactory` is now the single EF design-time/bundle creation boundary. It constructs `AppDbContext` directly with the SQL Server provider and an inert migration-only customer context. It reads no JSON file, environment name, web-host service or connection string. It deliberately configures no database target: EF bundle execution must inject the already guarded connection through `--connection`, while offline model, migration-list and script operations can create the context without a connection.
+
+The existing SQL Server defaults are retained. Tests prove provider `Microsoft.EntityFrameworkCore.SqlServer`, the `AppDbContext` assembly and model snapshot, all eight existing migrations in order, and the default `__EFMigrationsHistory` creation script. The runtime web registration remains unchanged. The protected path remains `LGR_AZURE_DEMO_SQL_CONNECTION_STRING` -> exact passwordless workload-identity target guard -> shell-disabled wrapper -> separated `--connection` argument. Missing configuration is rejected before permission change or payload execution, and the connection value is never written to diagnostics by the new tests.
+
+The native wrapper retains exact-commit and hash validation, lexical path and symbolic-link rejection, regular-file checks, bundle-only `u+x`, post-permission hash verification, `UseShellExecute = false`, separated arguments, process-specific exit-code enforcement and task `finally` token/environment cleanup. Its Linux regression now also proves that a missing connection cannot reach permission change or execution. The DataTool remains independently configured from `LGR_AZURE_DEMO_SQL_CONNECTION_STRING`, uses `UseSqlServer(connectionString)`, and calls `GetPendingMigrationsAsync()` before its first mutation; its refusal to seed when migrations are pending was not weakened.
+
+### Packaging and configuration dependency findings
+
+- EF `migrations list --no-connect` selected the dedicated factory from an empty temporary directory for unset, Development, Testing and accidental LocalTest environment/authentication selections. No local configuration file was read or created.
+- Offline idempotent-script generation selected the factory and emitted all eight migrations plus `__EFMigrationsHistory` without contacting a database.
+- Application packaging continues to include only `appsettings.json` and `appsettings.AzureDemo.json`; LocalTest, Development and Testing files remain prohibited and excluded.
+- The published DataTool still requires only its explicit immutable artifact/seed manifest arguments and process connection environment; it does not discover a repository or local appsettings file.
+- Native `linux-x64` bundle generation could not be completed on this host because NuGet access is blocked and the required target-runtime restore metadata is not cached. Verbose failure was `NU1301` while resolving project metadata for `linux-x64`, before bundle construction. This is unavailable evidence, not a DbContext failure or a passing bundle check.
+
+### Changed files
+
+- `src/api/Infrastructure/MigrationDbContextFactory.cs`
+- `tests/api.unit/MigrationDbContextFactoryTests.cs`
+- `scripts/build/Test-EfMigrationDbContextCreation.ps1`
+- `scripts/build/Test-AzureDemoEfMigrationBundleExecution.ps1`
+- `scripts/build/Test-AzureDemoImmutableSeedArtifact.ps1`
+- `scripts/build/Test-AzurePipelineStructure.ps1`
+- `azure-pipelines.yml`
+- `docs/implementation/AZURE_DEMO_Implementation_Work_Package.md`
+
+### Local verification
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `428686548f743158e5e5b332a7ab1b6cc30c6a44`; clean worktree; empty staged index. |
+| Release build | PASS, exit `0`: `dotnet build LgrTransformationMigration.sln --configuration Release --no-restore`; four `NU1900` warnings reported unavailable NuGet vulnerability metadata. |
+| Focused factory unit test | PASS, exit `0`: 1/1; created the context from an empty temporary directory and verified provider, no connection, migration assembly/snapshot, all eight migrations and history table SQL without database access. |
+| EF environment/context regression | PASS, exit `0`: actual EF 10.0.11 `migrations list --no-connect --verbose` selected `MigrationDbContextFactory` and discovered all eight migrations from an empty temporary directory for unset, Development, Testing and accidental LocalTest selections. |
+| Idempotent migration SQL | PASS, exit `0`: offline `migrations script --idempotent --no-build` discovered all eight migrations and `__EFMigrationsHistory`; no database connection was opened and the generated validation file was removed. |
+| Entire unit suite | PASS, exit `0`: 207/207. |
+| Entire integration suite | PASS, exit `0`: 145/145. |
+| Pipeline, target and identity regressions | PASS: seven-stage structural contract; one valid/seven invalid target cases; one valid/15 invalid identity cases; 20 migration-artifact parsing cases. |
+| Packaging/seed/source regressions | PASS: immutable seed prerequisite and path contract; application prohibited-file/hash/root checks; deterministic package/hash checks across the existing 1,803-file ignored fixture; source/security boundary across 187 source/configuration files. The existing fixture is structural evidence, not a regenerated artifact for this worktree. |
+| Formatting and diff hygiene | PASS: focused `dotnet format --verify-no-changes`; four changed PowerShell files parsed with zero errors; `git diff --check` passed with only Git line-ending notices. |
+| Native Linux bundle regression | NOT RUN and not claimed. This Windows host has no `pwsh`, Docker or Podman; `wsl.exe --status` exits `50` because WSL is not installed. The regression remains required exactly once in the unprotected `ubuntu-latest` validation job. |
+| Linux bundle generation | UNAVAILABLE and not passed: `linux-x64` bundle creation failed on blocked NuGet access with `NU1301`; no bundle was produced. |
+| Connected dependency checks | UNAVAILABLE and not passed: both vulnerable and deprecated package queries exited `1` because `https://api.nuget.org/v3/index.json` is unreachable. No dependency changed. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, protected pipeline, migration, seed, deployment, swap or rollback action occurred. `sql-bootstrap.json` and approval evidence were neither accessed nor regenerated. |
+
+### Remaining verification
+
+Independent Linux CI must execute the new context-creation regression and existing real native-wrapper regression. Package CI must build the `linux-x64` migration bundle with connected pinned dependencies. Protected deployment must then rerun the exact reviewed bundle under the approved workload identity and SQL target, prove the factory is selected with the protected `--connection` handoff, and report the bundle process exit code. This work does not claim that migrations were applied.
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_428686548f743158e5e5b332a7ab1b6cc30c6a44"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "src/api/Infrastructure/MigrationDbContextFactory.cs"
+    - "tests/api.unit/MigrationDbContextFactoryTests.cs"
+    - "scripts/build/Test-EfMigrationDbContextCreation.ps1"
+    - "scripts/build/Test-AzureDemoEfMigrationBundleExecution.ps1"
+    - "scripts/build/Test-AzureDemoImmutableSeedArtifact.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "azure-pipelines.yml"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "All locally available build, context creation, unit, integration, pipeline, guard, artifact, seed, source-boundary, formatting and diff checks passed."
+    - "Linux-native execution, connected bundle production, connected dependency analysis and protected deployment remain explicitly outstanding."
+  decisions:
+    - "Use an EF design-time factory with a provider-only, target-free context instead of web-host bootstrap."
+    - "Keep the guarded protected --connection argument as the only runtime migration target handoff."
+  assumptions:
+    - "The exact protected DOTNET_ENVIRONMENT/ASPNETCORE_ENVIRONMENT value was not captured; the missing LocalTest path proves only that web bootstrap evaluated Development or Testing."
+  risks:
+    - "Independent Linux and protected workload-identity execution evidence remains mandatory."
+  defects:
+    - "REPAIRED LOCALLY: migration context creation depended on web startup and a non-deployed LocalTest configuration file."
+  blockers: []
+  approvals: []
+  requested_action: "Independent Tester must execute Linux validation, build the native bundle with connected pinned dependencies, and then retain the protected no-claim migration retest under the approved identity and SQL target."
+```
+
+READY_FOR_TEST
+
 ## Linux EF bundle symbolic-link regression repair
 
 ### Baseline, scope and traceability

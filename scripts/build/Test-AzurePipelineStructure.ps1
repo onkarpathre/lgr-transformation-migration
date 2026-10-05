@@ -125,6 +125,7 @@ $requiredFragments = @(
     'artifact: dependency-sboms',
     "New-AzureDemoPackages.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'",
     'Test-EfMigrationArtifactParsing.ps1',
+    'Test-EfMigrationDbContextCreation.ps1',
     "New-EfMigrationArtifacts.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/migration'",
     "New-AzureDemoSeedArtifact.ps1 -PackageDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'",
     'New-AzureDemoDeploymentArtifactManifest.ps1',
@@ -638,6 +639,14 @@ foreach ($fragment in @(
         throw "The EF bundle native invoker is missing its fail-closed contract: $fragment"
     }
 }
+$connectionReadIndex = $efBundleInvokerScript.IndexOf("GetEnvironmentVariable('LGR_AZURE_DEMO_SQL_CONNECTION_STRING'", [StringComparison]::Ordinal)
+$connectionFailureIndex = $efBundleInvokerScript.IndexOf('The protected migration stage must supply LGR_AZURE_DEMO_SQL_CONNECTION_STRING.', [StringComparison]::Ordinal)
+$permissionChangeIndex = $efBundleInvokerScript.IndexOf("@('u+x', '--', `$bundlePath)", [StringComparison]::Ordinal)
+$connectionHandoffIndex = $efBundleInvokerScript.IndexOf("-ArgumentList @('--connection', `$connectionString)", [StringComparison]::Ordinal)
+if ($connectionReadIndex -lt 0 -or $connectionFailureIndex -le $connectionReadIndex -or
+    $permissionChangeIndex -le $connectionFailureIndex -or $connectionHandoffIndex -le $permissionChangeIndex) {
+    throw 'The EF bundle native invoker must fail clearly on missing protected connection configuration before permission change and pass only that value as the separated bundle connection argument.'
+}
 if (-not $efBundleInvokerScript.Contains('$artifactRoot = [IO.Path]::GetFullPath($ImmutableArtifactRoot)') -or
     $efBundleInvokerScript.Contains('(Resolve-Path -LiteralPath $ImmutableArtifactRoot')) {
     throw 'The EF bundle native invoker must preserve the lexical immutable root until symbolic-link validation.'
@@ -669,6 +678,10 @@ $validateStage = $text.Substring(
 if (-not $validateStage.Contains('pool: { vmImage: ubuntu-latest }') -or
     -not $validateStage.Contains('Test-AzureDemoEfMigrationBundleExecution.ps1')) {
     throw 'The native EF bundle execution regression must run in the unprotected Ubuntu validation stage.'
+}
+if ([regex]::Matches($validateStage, '(?m)^\s*\./scripts/build/Test-EfMigrationDbContextCreation\.ps1 -Configuration Release -NoBuild\s*$').Count -ne 1 -or
+    -not $validateStage.Contains('displayName: Create EF migration context without local configuration on Linux')) {
+    throw 'The real EF migration-context creation regression must run exactly once in the unprotected Ubuntu validation stage.'
 }
 
 foreach ($fragment in @(

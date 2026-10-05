@@ -106,6 +106,16 @@ if ($dataTool.Contains('FindRepositoryRoot') -or -not $dataTool.Contains('Requir
     throw 'Published data tool still depends on repository-root discovery.'
 }
 
+$connectionRead = $dataTool.IndexOf('Environment.GetEnvironmentVariable("LGR_AZURE_DEMO_SQL_CONNECTION_STRING")', [StringComparison]::Ordinal)
+$providerConfiguration = $dataTool.IndexOf('UseSqlServer(connectionString)', [StringComparison]::Ordinal)
+$migrationPrerequisite = $dataTool.IndexOf('GetPendingMigrationsAsync()', [StringComparison]::Ordinal)
+$firstMutation = $dataTool.IndexOf('database.SqlInstances.Add(', [StringComparison]::Ordinal)
+if ($connectionRead -lt 0 -or $providerConfiguration -le $connectionRead -or
+    $migrationPrerequisite -le $providerConfiguration -or $firstMutation -le $migrationPrerequisite -or
+    -not $dataTool.Contains('The data tool never migrates; apply the reviewed migration bundle first.')) {
+    throw 'Published data tool does not retain its explicit SQL handoff and pending-migration prerequisite before seed mutation.'
+}
+
 $idempotentGuards = [regex]::Matches($dataTool, 'if \(!await database\.[A-Za-z]+\.AnyAsync\(x => x\.Id == [a-zA-Z]+Id\)\)')
 $idempotentAdds = [regex]::Matches($dataTool, 'database\.[A-Za-z]+\.Add\(new ')
 if ($idempotentGuards.Count -ne 5 -or $idempotentAdds.Count -ne 5 -or

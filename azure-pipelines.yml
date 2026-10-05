@@ -85,10 +85,14 @@ stages:
         node --version
         npm --version
         dotnet restore LgrTransformationMigration.sln --locked-mode
-        dotnet format LgrTransformationMigration.sln --verify-no-changes --no-restore --include src/api/Program.cs src/api/Infrastructure/IdentityAuthorization.cs src/api/Infrastructure/AzureDemoInfrastructure.cs src/api/Infrastructure/HealthAndSecurity.cs src/api/Services/Discovery/DiscoveryImportOptions.cs src/api/Services/Discovery/ImportFileStorage.cs tests/api.unit/AzureDemoConfigurationTests.cs tests/api.unit/AzureDemoDeploymentBoundaryTests.cs tools/AzureDemo.DataTool/Program.cs
+        dotnet format LgrTransformationMigration.sln --verify-no-changes --no-restore --include src/api/Program.cs src/api/Infrastructure/IdentityAuthorization.cs src/api/Infrastructure/AzureDemoInfrastructure.cs src/api/Infrastructure/HealthAndSecurity.cs src/api/Infrastructure/MigrationDbContextFactory.cs src/api/Services/Discovery/DiscoveryImportOptions.cs src/api/Services/Discovery/ImportFileStorage.cs tests/api.unit/AzureDemoConfigurationTests.cs tests/api.unit/AzureDemoDeploymentBoundaryTests.cs tests/api.unit/MigrationDbContextFactoryTests.cs tools/AzureDemo.DataTool/Program.cs
         dotnet build LgrTransformationMigration.sln --configuration Release --no-restore
         dotnet test LgrTransformationMigration.sln --configuration Release --no-build --logger "trx;LogFilePrefix=azure-demo"
       displayName: Locked restore, format, build and .NET tests
+    - pwsh: |
+        dotnet tool restore
+        ./scripts/build/Test-EfMigrationDbContextCreation.ps1 -Configuration Release -NoBuild
+      displayName: Create EF migration context without local configuration on Linux
     - pwsh: |
         dotnet list LgrTransformationMigration.sln package --vulnerable --include-transitive
         dotnet list LgrTransformationMigration.sln package --deprecated --include-transitive

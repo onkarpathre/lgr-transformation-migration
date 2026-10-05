@@ -238,6 +238,19 @@ catch {
 '@ -replace "`r`n", "`n"
     [IO.File]::WriteAllText($regressionDriver, $driverContent, [Text.UTF8Encoding]::new($false))
 
+    [Environment]::SetEnvironmentVariable('LGR_AZURE_DEMO_SQL_CONNECTION_STRING', $null, [EnvironmentVariableTarget]::Process)
+    $missingConnectionMarker = Join-Path $temporaryParent 'missing connection execution marker.txt'
+    $missingConnection = New-SyntheticBundleArtifact -Name 'missing protected connection' -Content @"
+#!/bin/sh
+printf 'executed' > $(ConvertTo-ShellSingleQuotedLiteral $missingConnectionMarker)
+exit 0
+"@
+    Assert-Rejected -Result (Invoke-SyntheticBundle -Artifact $missingConnection) -ExpectedMessage 'The protected migration stage must supply LGR_AZURE_DEMO_SQL_CONNECTION_STRING.' -Scenario 'missing protected connection configuration'
+    if ((Test-Path -LiteralPath $missingConnectionMarker) -or
+        (([IO.File]::GetUnixFileMode($missingConnection.Bundle) -band [IO.UnixFileMode]::UserExecute) -ne 0)) {
+        throw 'Missing protected connection configuration reached permission adjustment or bundle execution.'
+    }
+
     [Environment]::SetEnvironmentVariable('LGR_AZURE_DEMO_SQL_CONNECTION_STRING', $syntheticConnection, [EnvironmentVariableTarget]::Process)
 
     $successMarker = Join-Path $temporaryParent 'successful execution marker.txt'
@@ -385,4 +398,4 @@ finally {
     }
 }
 
-Write-Output 'Linux EF migration bundle execution regression passed permission, native launch, wait, exit, path, tamper, bundle/ancestor/root/dangling symlink, association and hash checks.'
+Write-Output 'Linux EF migration bundle execution regression passed required-connection, permission, native launch, wait, exit, path, tamper, bundle/ancestor/root/dangling symlink, association and hash checks.'
