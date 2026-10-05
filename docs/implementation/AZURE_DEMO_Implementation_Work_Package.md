@@ -1862,6 +1862,116 @@ handoff:
 
 NEEDS_ARCHITECTURE_DECISION
 
+## PowerShell 7 HTTP redirect regression repair
+
+### Baseline, authority and traceability
+
+This bounded Developer repair started on the requested branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `6881b1da10be389f938fec5bcf7a10eddcfc8eba`. The tracked, staged and untracked worktree was clean before editing. Nothing was reset, stashed, staged, committed or pushed. The repair is confined to the local HTTP smoke helper, its real loopback fixture regression and this implementation record. It does not change product scope, tenant/identity controls, CSP, generated-hostname behavior, Bicep, evidence contracts, release gates or any protected action.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-06", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+Q-01 remains closed only for the controlled package scope already recorded in this document. Q-08 and the existing protected evidence, SMK-19, staging, release and human-approval blockers remain unchanged. This local test/helper correction is separable from those gates.
+
+### Confirmed cause and evidence
+
+The failing assertion is the first redirect iteration in `Test-AzureDemoSmokeHttp.ps1`: the real loopback fixture returns HTTP 301 with `Location: https://127.0.0.1/fixture`, then `Invoke-FixtureRequest` calls `Invoke-AzureDemoSmokeHttpRequest`. The fixture-ready file is written only after the listener has successfully bound, and the request helper waits for the fixture process to exit successfully before returning. The reported failure therefore occurred after readiness, request acceptance and clean fixture exit; it was not a startup, binding or readiness failure.
+
+PowerShell 7's web-cmdlet implementation processes the response first and then emits the non-terminating `MaximumRedirectExceeded` error when `MaximumRedirection` is zero and the status is a redirect. `SkipHttpErrorCheck` correctly preserves ordinary HTTP error responses. The helper nevertheless specified `-ErrorAction Stop`, promoting the redirect-limit error before the assignment retained the already-written response. The catch path handled only a runtime variant whose exception exposes a `Response` property. For the `MaximumRedirectExceeded` `InvalidOperationException`, no response property exists, so status remained null and the valid 301 was returned as `TransportSucceeded = false`. The assertion then reported only that PowerShell had not preserved the response.
+
+This is runtime/version-dependent web-cmdlet pipeline behavior, not redirect following and not a valid HTTP response becoming a network failure. The CI excerpt did not include its PowerShell version or the discarded result shape. The repaired regression now emits those safe values on every local fixture so a future failure identifies the actual runtime, returned wrapper type, raw response type, status, bounded exception type and bounded category without emitting headers, cookies, tokens, query strings, response bodies or exception messages.
+
+### Bounded implementation
+
+- `Invoke-AzureDemoSmokeHttpRequest` keeps `MaximumRedirection 0` and `SkipHttpErrorCheck`, captures success-pipeline output separately from the redirect-limit error, and accepts the response only when there is exactly one HTTP-shaped result and either no error or only `MaximumRedirectExceeded` for a 3xx response.
+- The existing exception-response compatibility path remains for PowerShell variants that retain the original 3xx on an exception. It walks inner exceptions but still requires the response and `Location` header; a status alone cannot pass redirect validation.
+- Multiple or non-HTTP pipeline objects fail closed as `unexpected-output`. HTTP responses remain distinct from DNS, TLS, connection, timeout and other transport failures. The nested exception classifier now recognizes TLS and timeout causes as well as socket categories.
+- `Test-AzureDemoSmokeHttp.ps1` still exercises the real loopback listener for 301, 302, 307, 308, 200, 500, cross-host rejection and abrupt close. Exact HTTPS scheme, host, default port and path validation is unchanged. No redirect is followed and certificate validation is not disabled.
+- Fixture readiness now also fails immediately if the child exits before binding. Normal completion uses the timeout result directly; forced cleanup kills, waits for exit and disposes the process. Synthetic authorization, cookie and query secrets are supplied only to the abrupt-close test, and both structured and assertion diagnostics prove they are absent.
+
+### Exact changed files
+
+- `scripts/smoke/AzureDemoSmokeUtilities.ps1`
+- `scripts/build/Test-AzureDemoSmokeHttp.ps1`
+- `docs/implementation/AZURE_DEMO_Implementation_Work_Package.md`
+
+No CSP, generated-hostname, Bicep, protected-evidence or release-gate file was changed.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Baseline and preservation | PASS: requested branch and exact HEAD confirmed; initial tracked/staged/untracked state clean; no Git state mutation. |
+| PowerShell parsing | PASS, exit `0`: both changed scripts parsed with zero errors under Windows PowerShell 5.1. This is syntax evidence only. |
+| Smoke target resolution | PASS, exit `0`: generated-host, exact-identity, staging/production, unsafe URI and catalogue-order cases; 12 invalid resolver cases rejected. |
+| Smoke evidence contract | PASS, exit `0`: valid synthetic protected-runtime/previous-release contracts and all existing fail-closed substitution cases. This is not protected evidence. |
+| Pipeline structure | PASS, exit `0`: seven ordered stages retained. |
+| Source/security boundary | PASS, exit `0`: 194 source/configuration files. |
+| Focused deployment boundary | PASS, exit `0`: 13/13. NuGet advisory lookup emitted existing `NU1900` warnings because the connected service index was unavailable; no restore or dependency change occurred. |
+| Supplemental pipeline-shape check | PASS, exit `0`: a local injected response-plus-`MaximumRedirectExceeded` shape retained status 301 and exact destination; multiple output failed closed. This supports the control-flow repair but is not claimed as real PowerShell 7/Linux HTTP evidence. |
+| Supplemental nested exception classification | PASS, exit `0`: synthetic connection-refused, TLS and timeout exception chains produced distinct bounded categories. This is classifier evidence, not a live network test. |
+| Real PowerShell 7/Linux HTTP fixture | UNAVAILABLE locally and not passed: `pwsh`, Docker and Podman are absent; `wsl.exe --status` exits `50` because WSL is not installed. The Windows PowerShell guard ran and correctly exited `1`. CI must run the real 301/302/307/308, 200/500, cross-host, abrupt-close, redaction, readiness and cleanup fixtures. |
+| Preliminary supplemental attempts | NOT EVIDENCE: the first ad-hoc dot-source attempt was blocked by local execution policy; two transport simulations under Windows PowerShell 5.1 wrapped the injected exception as `RuntimeException` and were rejected. The process-scope policy was then bounded to the test process, and only the final passing supplemental checks above are cited. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, Entra, endpoint, deployment, migration, seed, smoke, swap, rollback or approval action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_6881b1da10be389f938fec5bcf7a10eddcfc8eba"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-06", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "scripts/smoke/AzureDemoSmokeUtilities.ps1"
+    - "scripts/build/Test-AzureDemoSmokeHttp.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "All locally available focused smoke, source, pipeline, boundary, parser and supplemental control-flow checks passed."
+    - "Real PowerShell 7/Linux loopback HTTP execution remains explicitly unavailable and unclaimed."
+  decisions:
+    - "Capture the one original response before handling PowerShell's separate redirect-limit error."
+    - "Retain no-follow and exact redirect-destination validation; fail closed on ambiguous pipeline output."
+    - "Expose only bounded runtime/type/status/category diagnostics."
+  assumptions: []
+  risks:
+    - "The changed path still requires independent execution on the ubuntu-latest PowerShell 7 agent."
+    - "Existing protected smoke-evidence and SMK-19 blockers remain unresolved and unchanged."
+  defects:
+    - "REPAIRED LOCALLY: ErrorAction Stop discarded PowerShell 7's already-written no-follow redirect response before assignment."
+  blockers:
+    - "PowerShell 7/Linux execution is unavailable in the local environment."
+    - "Existing protected smoke-evidence delivery and real SMK-19 previous-release evidence remain absent."
+  approvals: []
+  requested_action: "Independent Tester must run Test-AzureDemoSmokeHttp.ps1 on the ubuntu-latest PowerShell 7 agent and retain its safe per-fixture diagnostics before the unchanged downstream gates proceed."
+```
+
+READY_FOR_TEST
+
 ## Azure demo smoke target resolution and safe diagnostics repair
 
 ### Baseline, authority and traceability
@@ -2408,6 +2518,6 @@ READY_FOR_TEST
 
 ## Current worktree terminal state
 
-The later smoke-evidence continuation in this document supersedes older per-repair terminal labels for the present uncommitted worktree. Its validated local implementation is complete, but the protected evidence ingestion route, operational producer identities and real SMK-19 previous-release source require the named architecture/governance decision before the pipeline can consume protected smoke evidence.
+The PowerShell 7 HTTP redirect repair recorded above is the latest bounded implementation change and is ready for independent Linux/PowerShell 7 testing. The broader smoke-evidence continuation still governs the overall worktree: its validated local implementation is complete, but the protected evidence ingestion route, operational producer identities and real SMK-19 previous-release source require the named architecture/governance decision before the pipeline can consume protected smoke evidence.
 
 NEEDS_ARCHITECTURE_DECISION

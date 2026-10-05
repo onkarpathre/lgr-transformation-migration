@@ -56,12 +56,11 @@ function Get-AzureDemoSmokeExceptionCategory {
     param([Parameter(Mandatory)] [System.Management.Automation.ErrorRecord] $ErrorRecord)
 
     $exception = $ErrorRecord.Exception
-    $exceptionType = $exception.GetType().FullName
-    if ($exceptionType -match 'Timeout|TaskCanceled') { return 'timeout' }
-    if ($exceptionType -match 'AuthenticationException') { return 'tls' }
-
     $current = $exception
     while ($null -ne $current) {
+        $currentType = $current.GetType().FullName
+        if ($currentType -match 'Timeout|TaskCanceled') { return 'timeout' }
+        if ($currentType -match 'AuthenticationException') { return 'tls' }
         if ($current -is [Net.Sockets.SocketException]) {
             switch ($current.SocketErrorCode) {
                 ([Net.Sockets.SocketError]::HostNotFound) { return 'name-resolution' }
@@ -74,8 +73,34 @@ function Get-AzureDemoSmokeExceptionCategory {
         $current = $current.InnerException
     }
 
+    $exceptionType = $exception.GetType().FullName
     if ($exceptionType -match 'HttpRequestException|WebException') { return 'transport' }
     return 'request-failure'
+}
+
+function Get-AzureDemoSmokeSafeTypeName {
+    [CmdletBinding()]
+    param([AllowNull()] [object] $InputObject)
+
+    if ($null -eq $InputObject) { return 'none' }
+    return $InputObject.GetType().FullName
+}
+
+function Get-AzureDemoSmokeExceptionResponse {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [System.Management.Automation.ErrorRecord] $ErrorRecord)
+
+    $current = $ErrorRecord.Exception
+    while ($null -ne $current) {
+        $responseProperty = $current.PSObject.Properties['Response']
+        if ($null -ne $responseProperty -and $null -ne $responseProperty.Value) {
+            return $responseProperty.Value
+        }
+
+        $current = $current.InnerException
+    }
+
+    return $null
 }
 
 function Get-AzureDemoSmokeHeaderValue {
@@ -102,9 +127,41 @@ function Invoke-AzureDemoSmokeHttpRequest {
         [hashtable] $Headers = @{}
     )
 
+    $pipelineOutput = @()
+    $requestErrors = @()
+    $terminatingError = $null
     try {
-        $response = Invoke-WebRequest -Uri $Uri -Method $Method -Headers $Headers -MaximumRedirection 0 -SkipHttpErrorCheck -TimeoutSec 30 -ErrorAction Stop
-        $statusCode = [int] $response.StatusCode
+        # PowerShell 7 writes a redirect response to the success pipeline and then
+        # emits MaximumRedirectExceeded when MaximumRedirection is zero. Do not
+        # promote that expected error before the response can be captured.
+        $pipelineOutput = @(Invoke-WebRequest -Uri $Uri -Method $Method -Headers $Headers -MaximumRedirection 0 -SkipHttpErrorCheck -TimeoutSec 30 -ErrorAction SilentlyContinue -ErrorVariable requestErrors)
+    }
+    catch {
+        $terminatingError = $_
+    }
+
+    $response = if ($pipelineOutput.Count -eq 1) { $pipelineOutput[0] } else { $null }
+    $responseHasHttpShape = $null -ne $response -and
+        $null -ne $response.PSObject.Properties['StatusCode'] -and
+        $null -ne $response.PSObject.Properties['Headers']
+    $responseStatusCode = if ($responseHasHttpShape) { [int] $response.StatusCode } else { $null }
+    $errorRecords = @($requestErrors)
+    $redirectLimitErrors = @($errorRecords | Where-Object { $_.FullyQualifiedErrorId -like 'MaximumRedirectExceeded*' })
+    $hasOnlyExpectedRedirectError = $errorRecords.Count -gt 0 -and
+        $redirectLimitErrors.Count -eq $errorRecords.Count -and
+        $responseStatusCode -ge 300 -and $responseStatusCode -lt 400
+    $requestError = if ($null -ne $terminatingError) {
+        $terminatingError
+    }
+    elseif ($errorRecords.Count -gt 0) {
+        $errorRecords[-1]
+    }
+    else {
+        $null
+    }
+
+    if ($responseHasHttpShape -and ($errorRecords.Count -eq 0 -or $hasOnlyExpectedRedirectError)) {
+        $statusCode = $responseStatusCode
         return [pscustomobject]@{
             TransportSucceeded = $true
             StatusCode = $statusCode
@@ -117,13 +174,37 @@ function Invoke-AzureDemoSmokeHttpRequest {
                 hostname = $Uri.DnsSafeHost
                 path = $Uri.AbsolutePath
                 httpStatus = $statusCode
-                exceptionCategory = 'none'
+                runtimeVersion = $PSVersionTable.PSVersion.ToString()
+                resultType = Get-AzureDemoSmokeSafeTypeName -InputObject $response
+                exceptionType = if ($null -eq $requestError) { 'none' } else { Get-AzureDemoSmokeSafeTypeName -InputObject $requestError.Exception }
+                exceptionCategory = if ($hasOnlyExpectedRedirectError) { 'redirect-response' } else { 'none' }
             }
         }
     }
-    catch {
-        $responseProperty = $_.Exception.PSObject.Properties['Response']
-        $exceptionResponse = if ($null -eq $responseProperty) { $null } else { $responseProperty.Value }
+
+    if ($pipelineOutput.Count -gt 0) {
+        return [pscustomobject]@{
+            TransportSucceeded = $false
+            StatusCode = $null
+            Headers = @{}
+            Content = ''
+            RawContentLength = 0L
+            Diagnostic = [pscustomobject][ordered]@{
+                checkId = $CheckId
+                scheme = $Uri.Scheme
+                hostname = $Uri.DnsSafeHost
+                path = $Uri.AbsolutePath
+                httpStatus = $null
+                runtimeVersion = $PSVersionTable.PSVersion.ToString()
+                resultType = if ($pipelineOutput.Count -eq 1) { Get-AzureDemoSmokeSafeTypeName -InputObject $pipelineOutput[0] } else { "multiple-output:$($pipelineOutput.Count)" }
+                exceptionType = if ($null -eq $requestError) { 'none' } else { Get-AzureDemoSmokeSafeTypeName -InputObject $requestError.Exception }
+                exceptionCategory = 'unexpected-output'
+            }
+        }
+    }
+
+    if ($null -ne $requestError) {
+        $exceptionResponse = Get-AzureDemoSmokeExceptionResponse -ErrorRecord $requestError
         $statusCode = $null
         $statusProperty = if ($null -eq $exceptionResponse) { $null } else { $exceptionResponse.PSObject.Properties['StatusCode'] }
         if ($null -ne $statusProperty -and $null -ne $statusProperty.Value) {
@@ -148,6 +229,9 @@ function Invoke-AzureDemoSmokeHttpRequest {
                     hostname = $Uri.DnsSafeHost
                     path = $Uri.AbsolutePath
                     httpStatus = $statusCode
+                    runtimeVersion = $PSVersionTable.PSVersion.ToString()
+                    resultType = Get-AzureDemoSmokeSafeTypeName -InputObject $exceptionResponse
+                    exceptionType = Get-AzureDemoSmokeSafeTypeName -InputObject $requestError.Exception
                     exceptionCategory = 'redirect-response'
                 }
             }
@@ -165,8 +249,30 @@ function Invoke-AzureDemoSmokeHttpRequest {
                 hostname = $Uri.DnsSafeHost
                 path = $Uri.AbsolutePath
                 httpStatus = $statusCode
-                exceptionCategory = Get-AzureDemoSmokeExceptionCategory -ErrorRecord $_
+                runtimeVersion = $PSVersionTable.PSVersion.ToString()
+                resultType = 'none'
+                exceptionType = Get-AzureDemoSmokeSafeTypeName -InputObject $requestError.Exception
+                exceptionCategory = Get-AzureDemoSmokeExceptionCategory -ErrorRecord $requestError
             }
+        }
+    }
+
+    return [pscustomobject]@{
+        TransportSucceeded = $false
+        StatusCode = $null
+        Headers = @{}
+        Content = ''
+        RawContentLength = 0L
+        Diagnostic = [pscustomobject][ordered]@{
+            checkId = $CheckId
+            scheme = $Uri.Scheme
+            hostname = $Uri.DnsSafeHost
+            path = $Uri.AbsolutePath
+            httpStatus = $null
+            runtimeVersion = $PSVersionTable.PSVersion.ToString()
+            resultType = 'none'
+            exceptionType = 'none'
+            exceptionCategory = 'missing-result'
         }
     }
 }

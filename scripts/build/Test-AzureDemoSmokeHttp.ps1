@@ -61,19 +61,35 @@ function Invoke-FixtureRequest([int] $StatusCode, [string] $Location, [bool] $Cl
     $process = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $arguments -PassThru
     try {
         $deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
-        while (-not (Test-Path -LiteralPath $ready) -and [DateTimeOffset]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 25 }
+        while (-not (Test-Path -LiteralPath $ready) -and -not $process.HasExited -and [DateTimeOffset]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 25 }
+        if ($process.HasExited) { throw "Local HTTP fixture exited before readiness with code $($process.ExitCode)." }
         Assert-True (Test-Path -LiteralPath $ready) 'Local HTTP fixture did not become ready.'
         $uri = [uri] "http://127.0.0.1:$port/fixture$Query"
-        $result = Invoke-AzureDemoSmokeHttpRequest -CheckId 'SMK-01' -Uri $uri
-        $process.WaitForExit(10000) | Out-Null
-        Assert-True $process.HasExited 'Local HTTP fixture did not exit.'
+        $requestHeaders = if ($CloseAbruptly) { @{ Authorization = 'Bearer must-not-appear'; Cookie = 'session=must-not-appear' } } else { @{} }
+        $result = Invoke-AzureDemoSmokeHttpRequest -CheckId 'SMK-01' -Uri $uri -Headers $requestHeaders
+        Assert-True ($process.WaitForExit(10000)) 'Local HTTP fixture did not exit.'
         Assert-True ($process.ExitCode -eq 0) 'Local HTTP fixture exited unsuccessfully.'
         return [pscustomobject]@{ Uri = $uri; Result = $result }
     }
     finally {
-        if (-not $process.HasExited) { $process.Kill() }
+        if (-not $process.HasExited) {
+            $process.Kill()
+            $process.WaitForExit(5000) | Out-Null
+        }
         $process.Dispose()
     }
+}
+
+function Format-SafeFixtureDiagnostic([object] $Fixture) {
+    $diagnostic = $Fixture.Result.Diagnostic
+    return 'runtime={0}; returnedType={1}; responseType={2}; transportSucceeded={3}; status={4}; exceptionType={5}; exceptionCategory={6}' -f
+        $diagnostic.runtimeVersion,
+        $Fixture.Result.GetType().FullName,
+        $diagnostic.resultType,
+        $Fixture.Result.TransportSucceeded,
+        $(if ($null -eq $Fixture.Result.StatusCode) { 'none' } else { $Fixture.Result.StatusCode }),
+        $diagnostic.exceptionType,
+        $diagnostic.exceptionCategory
 }
 
 $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("azdemo-smoke-http-{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -81,22 +97,28 @@ New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
 try {
     foreach ($statusCode in 301, 302, 307, 308) {
         $fixture = Invoke-FixtureRequest $statusCode 'https://127.0.0.1/fixture' $false
-        Assert-True $fixture.Result.TransportSucceeded "PowerShell 7 did not preserve HTTP $statusCode as an HTTP response."
-        Assert-True ($fixture.Result.StatusCode -eq $statusCode) "PowerShell 7 changed HTTP $statusCode."
-        Assert-True (Test-AzureDemoHttpsRedirectResponse -RequestUri $fixture.Uri -RequestResult $fixture.Result) "HTTP $statusCode was not accepted as the exact HTTPS redirect."
+        $safeDiagnostic = Format-SafeFixtureDiagnostic $fixture
+        Write-Output "HTTP $statusCode fixture: $safeDiagnostic"
+        Assert-True $fixture.Result.TransportSucceeded "PowerShell 7 did not preserve HTTP $statusCode as an HTTP response. $safeDiagnostic"
+        Assert-True ($fixture.Result.StatusCode -eq $statusCode) "PowerShell 7 changed HTTP $statusCode. $safeDiagnostic"
+        Assert-True (Test-AzureDemoHttpsRedirectResponse -RequestUri $fixture.Uri -RequestResult $fixture.Result) "HTTP $statusCode was not accepted as the exact HTTPS redirect. $safeDiagnostic"
     }
 
     foreach ($statusCode in 200, 500) {
         $fixture = Invoke-FixtureRequest $statusCode '' $false
-        Assert-True $fixture.Result.TransportSucceeded "HTTP $statusCode was misclassified as a transport failure."
-        Assert-True (-not (Test-AzureDemoHttpsRedirectResponse -RequestUri $fixture.Uri -RequestResult $fixture.Result)) "Unrelated HTTP $statusCode was accepted as an HTTPS redirect."
+        $safeDiagnostic = Format-SafeFixtureDiagnostic $fixture
+        Write-Output "HTTP $statusCode fixture: $safeDiagnostic"
+        Assert-True $fixture.Result.TransportSucceeded "HTTP $statusCode was misclassified as a transport failure. $safeDiagnostic"
+        Assert-True (-not (Test-AzureDemoHttpsRedirectResponse -RequestUri $fixture.Uri -RequestResult $fixture.Result)) "Unrelated HTTP $statusCode was accepted as an HTTPS redirect. $safeDiagnostic"
     }
 
     $wrongLocation = Invoke-FixtureRequest 302 'https://other.invalid/fixture' $false
     Assert-True (-not (Test-AzureDemoHttpsRedirectResponse -RequestUri $wrongLocation.Uri -RequestResult $wrongLocation.Result)) 'Cross-host redirect was accepted.'
 
     $transportFailure = Invoke-FixtureRequest 200 '' $true '?token=must-not-appear'
-    Assert-True (-not $transportFailure.Result.TransportSucceeded) 'Abrupt connection close was accepted as an HTTP response.'
+    $transportDiagnostic = Format-SafeFixtureDiagnostic $transportFailure
+    Write-Output "Abrupt-close fixture: $transportDiagnostic"
+    Assert-True (-not $transportFailure.Result.TransportSucceeded) "Abrupt connection close was accepted as an HTTP response. $transportDiagnostic"
     $diagnosticJson = $transportFailure.Result.Diagnostic | ConvertTo-Json -Compress
     Assert-True ($diagnosticJson.Contains('"checkId":"SMK-01"')) 'Redacted diagnostic omitted the check ID.'
     Assert-True ($diagnosticJson.Contains('"scheme":"http"')) 'Redacted diagnostic omitted the scheme.'
@@ -105,6 +127,9 @@ try {
     Assert-True ($diagnosticJson.Contains('"exceptionCategory":')) 'Redacted diagnostic omitted the exception category.'
     Assert-True (-not $diagnosticJson.Contains('must-not-appear')) 'Redacted diagnostic exposed the query string.'
     Assert-True (-not $diagnosticJson.Contains('token=')) 'Redacted diagnostic exposed a token-like query name.'
+    Assert-True (-not $diagnosticJson.Contains('Authorization')) 'Redacted diagnostic exposed an authorization header name.'
+    Assert-True (-not $diagnosticJson.Contains('Cookie')) 'Redacted diagnostic exposed a cookie header name.'
+    Assert-True (-not $transportDiagnostic.Contains('must-not-appear')) 'Safe fixture diagnostic exposed a sensitive value.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryDirectory) { Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force }
