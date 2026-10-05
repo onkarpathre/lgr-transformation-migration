@@ -1652,3 +1652,71 @@ handoff:
 ```
 
 READY_FOR_EF_BUNDLE_EXECUTION_RETEST
+
+## Linux CI dependent unit assertion repair
+
+### Confirmed regression cause and bounded correction
+
+Linux CI against `720688160cc30e109a1a19c3bbd9b06a892e3e70` passed locked restore, Release build and all 145 integration tests, then reported 204 passing unit tests and one failure in `AzureDemoDeploymentBoundaryTests.Deferred_internal_LGR_naming_remains_unchanged`. The naming contract was not removed: the protected EF migration `AzureCLI@2` task invokes `./scripts/database/Invoke-AzureDemoEfMigrationBundle.ps1` with the exact immutable artifact root, deployment manifest and source commit, while that wrapper retains the sole reviewed executable identity `migration/lgrtm-efbundle-linux-x64`.
+
+The boundary test had continued to require the bundle filename directly in `azure-pipelines.yml` after execution ownership moved into the wrapper. The correction isolates the named EF migration task and requires exactly one active line containing the complete approved wrapper invocation. It separately requires exactly one active wrapper assignment to the approved bundle identity. Existing solution, project, namespace, connection-string, variable-group, service-connection, pipeline, environment, managed-pool and retired-name assertions remain unchanged. The assertions cannot be satisfied by a YAML comment, unused variable or concatenated global file search.
+
+No pipeline or wrapper implementation change was required. The existing wrapper still requires Linux, absolute immutable-artifact paths, complete deployment-artifact validation, regular-file checks, a bundle-only `u+x`, post-permission execute-mode and SHA-256 validation, `UseShellExecute = false`, separated native arguments, process completion and that process's zero exit code. The pipeline structural validator still proves that migration failure cannot continue to seed or application deployment.
+
+The previous Build 40 handoff checks missed this dependent unit assertion: they validated the new PowerShell scripts and pipeline structure but did not rerun the entire unit suite after moving the bundle identity out of YAML and into the wrapper. This addendum records that evidence gap rather than treating the original handoff as complete.
+
+### Local regression evidence
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `720688160cc30e109a1a19c3bbd9b06a892e3e70`; clean worktree; empty staged index. |
+| Pre-edit failing assertion | REPRODUCED, exit `1`: `dotnet test tests/api.unit/LgrTransformationMigration.Api.UnitTests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~AzureDemoDeploymentBoundaryTests.Deferred_internal_LGR_naming_remains_unchanged" --logger "console;verbosity=minimal"` failed only at the stale YAML filename assertion. |
+| Focused boundary tests | PASS, exit `0`: `dotnet test tests/api.unit/LgrTransformationMigration.Api.UnitTests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~AzureDemoDeploymentBoundaryTests" --logger "console;verbosity=minimal"` passed 10/10. NuGet vulnerability metadata was unavailable and emitted `NU1900`; package restoration was not performed. |
+| Entire unit suite | PASS, exit `0`: `dotnet test tests/api.unit/LgrTransformationMigration.Api.UnitTests.csproj --configuration Release --no-build --no-restore --logger "console;verbosity=minimal"` passed 205/205. |
+| Pipeline structural validation | PASS, exit `0`: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build/Test-AzurePipelineStructure.ps1` passed all seven ordered stages and retained the Linux execution-regression wiring. |
+| Focused formatting | PASS, exit `0`: `dotnet format LgrTransformationMigration.sln --verify-no-changes --no-restore --include tests/api.unit/AzureDemoDeploymentBoundaryTests.cs`. |
+| Real PowerShell-on-Linux bundle regression | NOT RUN and not claimed as passed. This host has no `pwsh`, Docker or Podman; the test remains wired exactly once into the unprotected `Validate/Application` `ubuntu-latest` job and still requires Linux CI execution. |
+| Protected/external execution | NOT RUN: no Azure, Azure DevOps, SQL, pipeline, deployment, migration, seed, swap or rollback action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_720688160cc30e109a1a19c3bbd9b06a892e3e70"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01", "C-11"]
+    functional_requirements: ["F-01", "F-02", "F-13", "F-14", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals: []
+  artefacts:
+    - "tests/api.unit/AzureDemoDeploymentBoundaryTests.cs"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "The stale pre-edit assertion was reproduced, and the final focused boundary and full unit suites passed."
+    - "Pipeline structure proves the exact wrapper invocation and one Ubuntu validation-stage Linux execution regression."
+  decisions:
+    - "Follow the actual YAML-to-wrapper execution boundary while preserving the exact deferred internal bundle identity."
+  assumptions: []
+  risks:
+    - "The Linux-native regression still requires execution on a real Linux CI agent."
+  defects:
+    - "REPAIRED LOCALLY: the unit boundary test searched the YAML for a bundle identity now owned by the approved wrapper."
+    - "PREVIOUS HANDOFF EVIDENCE GAP: the dependent unit assertion was not rerun after the execution-structure change."
+  blockers:
+    - "Real PowerShell-on-Linux regression evidence remains outstanding."
+    - "Independent protected Azure DevOps bundle execution retest remains required; no database migration is claimed."
+  approvals: []
+  requested_action: "Independent Tester must run the full Linux validation job, confirm the native execution regression passes, and retain the protected migration retest requirement."
+```
+
+READY_FOR_TEST

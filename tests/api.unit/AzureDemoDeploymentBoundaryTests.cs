@@ -175,13 +175,30 @@ public sealed class AzureDemoDeploymentBoundaryTests
     public void Deferred_internal_LGR_naming_remains_unchanged()
     {
         var root = FindRepositoryRoot();
+        var pipeline = File.ReadAllText(Path.Combine(root, "azure-pipelines.yml"));
+        var bundleWrapper = File.ReadAllText(Path.Combine(root, "scripts", "database", "Invoke-AzureDemoEfMigrationBundle.ps1"));
+
+        const string migrationTaskDisplayName = "displayName: Execute reviewed EF bundle with dedicated migration workload identity";
+        var migrationTaskDisplayNameIndex = pipeline.IndexOf(migrationTaskDisplayName, StringComparison.Ordinal);
+        Assert.True(migrationTaskDisplayNameIndex >= 0, "The approved EF migration task is missing from azure-pipelines.yml.");
+
+        var migrationTaskStartIndex = pipeline.LastIndexOf("          - task: AzureCLI@2", migrationTaskDisplayNameIndex, StringComparison.Ordinal);
+        var migrationTaskEndIndex = pipeline.IndexOf("          - task:", migrationTaskDisplayNameIndex + migrationTaskDisplayName.Length, StringComparison.Ordinal);
+        Assert.True(migrationTaskStartIndex >= 0 && migrationTaskEndIndex > migrationTaskStartIndex, "The approved EF migration AzureCLI task could not be isolated.");
+        var migrationTask = pipeline[migrationTaskStartIndex..migrationTaskEndIndex];
+
+        const string approvedWrapperInvocation = "./scripts/database/Invoke-AzureDemoEfMigrationBundle.ps1 -ImmutableArtifactRoot '$(Pipeline.Workspace)/azure-demo-immutable' -DeploymentManifestPath '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -ExpectedSourceCommit '$(Build.SourceVersion)'";
+        var activeWrapperInvocationPattern = $@"(?m)^\s+{System.Text.RegularExpressions.Regex.Escape(approvedWrapperInvocation)}\s*$";
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(migrationTask, activeWrapperInvocationPattern).Cast<System.Text.RegularExpressions.Match>());
+
+        const string approvedBundleIdentity = "$expectedBundlePath = Join-Path $artifactRoot 'migration/lgrtm-efbundle-linux-x64'";
+        var activeBundleIdentityPattern = $@"(?m)^\s*{System.Text.RegularExpressions.Regex.Escape(approvedBundleIdentity)}\s*$";
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(bundleWrapper, activeBundleIdentityPattern).Cast<System.Text.RegularExpressions.Match>());
 
         Assert.True(File.Exists(Path.Combine(root, "LgrTransformationMigration.sln")));
         Assert.True(File.Exists(Path.Combine(root, "src", "api", "LgrTransformationMigration.Api.csproj")));
         Assert.Contains("namespace LgrTransformationMigration.Api.Infrastructure", File.ReadAllText(Path.Combine(root, "src", "api", "Infrastructure", "AzureDemoInfrastructure.cs")), StringComparison.Ordinal);
         Assert.Contains("ConnectionStrings__LgrDatabase", File.ReadAllText(Path.Combine(root, "infra", "bicep", "modules", "appservice.bicep")), StringComparison.Ordinal);
-        Assert.Contains("lgrtm-efbundle-linux-x64", File.ReadAllText(Path.Combine(root, "azure-pipelines.yml")), StringComparison.Ordinal);
-        var pipeline = File.ReadAllText(Path.Combine(root, "azure-pipelines.yml"));
         Assert.Contains("vg-mtp-azdemo-public", pipeline, StringComparison.Ordinal);
         Assert.Contains("sc-mtp-azure-demo-dev", pipeline, StringComparison.Ordinal);
         Assert.Contains("mtp-azure-demo-deploy", pipeline, StringComparison.Ordinal);
