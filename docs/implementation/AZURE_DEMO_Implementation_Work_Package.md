@@ -37,7 +37,7 @@ traceability:
 - **App Service native-runtime repair baseline:** branch `fix/mtp-azure-demo-reconciliation`, commit `8f10616a7325ba0808370bd3f711bb34314059ce`, initially clean with an empty index and aligned local `origin`/`azure` remote-tracking refs on 2026-10-03.
 - **Previous repair scope:** commit `1ae167d` resolves the final Tester monitoring defect `AZD-TST-001`; `AZD-TST-003` is limited to stable reconciliation wording in this evidence document and does not change that earlier technical implementation or its results.
 - **Data/environment boundary:** local and isolated validation using synthetic data only.
-- **Developer state:** `READY_FOR_COMPILED_SUBNET_REGRESSION_RETEST`.
+- **Developer state:** `READY_FOR_EF_BUNDLE_EXECUTION_RETEST` with the real Linux regression and protected execution retest outstanding.
 
 ```yaml
 candidate_reconciliation:
@@ -1565,3 +1565,90 @@ handoff:
 ```
 
 READY_FOR_IMMUTABLE_SEED_ARTIFACT_RETEST
+
+## Build 40 EF migration bundle execution repair
+
+### False-success failure and confirmed code-level cause
+
+Azure DevOps build 40 passed the migration identity and exact target guards, then emitted `xdg-open: no method available for opening .../migration/lgrtm-efbundle-linux-x64`. The migration task nevertheless completed successfully and allowed the independent seed task to start. The seed tool correctly refused to continue because pending EF migrations remained, reporting that the reviewed migration bundle must be applied first. Build 40 therefore supplies no evidence that any migration was applied.
+
+The pipeline defect is confirmed in code: it called the extensionless downloaded bundle with PowerShell's call operator and then inspected ambient `$LASTEXITCODE`. It did not establish or verify executable permission, disable shell/document-association execution through an explicit native-process contract, retain the launched process object, or read that process's own exit code. A file-association attempt could therefore produce the observed `xdg-open` message while the following `$LASTEXITCODE` check observed no bundle-specific failure. Missing execute permission is consistent with the evidence and is the leading runtime hypothesis, but the downloaded build-40 file's mode was not measured and is not claimed as fact.
+
+### Bounded repair
+
+`Invoke-AzureDemoEfMigrationBundle.ps1` now accepts only absolute immutable-root, root-manifest and exact-commit inputs. It derives the sole executable location as `migration/lgrtm-efbundle-linux-x64`, reuses the existing traversal and symlink/reparse-point rejection, requires Linux `/usr/bin/test` or `/bin/test` to confirm a regular file, and validates the complete downloaded immutable artifact and SHA-256 set before permission or execution. The preceding unchanged migration-identity guard continues to bind the migration manifest and its two exact artifact hashes to the approved release commit.
+
+On Linux the wrapper invokes an absolute `chmod` executable as a native process with separated arguments `u+x`, `--` and the one validated bundle path. It waits for completion and rejects launch failure, absent status or nonzero exit. It then re-resolves the bundle, rechecks regular-file and user-execute state, and proves the SHA-256 is unchanged. It does not recursively alter the artifact root.
+
+The bundle itself is launched with `System.Diagnostics.ProcessStartInfo`, a scalar absolute executable path, `UseShellExecute = false` and one `ArgumentList` entry per argument. Standard output and error remain inherited for live diagnostic output, so there is no redirected-stream deadlock and the wrapper never prints the workload-identity token, federated assertion or connection string. The process is explicitly awaited and its own `ExitCode` is required to be zero. Launch and status errors are sanitised and do not include arguments.
+
+The existing migration task retains `sc-mtp-azure-demo-migration-dev-v2`, identity/token/tenant/release/target guards, workload-identity environment variables and `finally` cleanup. The seed task remains a later default-success-gated task and retains its pending-migration prerequisite; API/web slot deployment remains later still. Any wrapper failure therefore stops migration, seed and application deployment. `sc-mtp-azure-demo-dev`, `mdp-mtp-dev-uks-001`, default-false deployment/rollback parameters, exact-commit approvals and the seven-stage structure are unchanged.
+
+### Regression coverage and local evidence
+
+The new Linux-only regression uses harmless temporary shell-script fixtures and no Azure or SQL access. It covers a downloaded file initially without execute permission, separated arguments and paths containing spaces, waiting for delayed successful completion, nonzero exit, missing bundle, invalid executable format, a fake `xdg-open` trap, pre-execution tamper rejection, symlink substitution rejection and an unchanged SHA-256 after `u+x`. It fails immediately when not running under real PowerShell on Linux and is wired once into the existing unprotected `Validate/Application` `ubuntu-latest` job; Windows parsing is not represented as Linux execution evidence.
+
+| Check | Result |
+|---|---|
+| Exact baseline | PASS before editing: branch `fix/mtp-azure-demo-reconciliation`; HEAD `e510189848cf7b571e62a710fe27b61d2c0e6d21`; clean worktree; empty staged index; local `origin` and `azure` tracking refs both exactly aligned with HEAD. |
+| PowerShell parsing | PASS: the two new scripts and modified pipeline structural regression parsed with zero errors under Windows PowerShell 5.1. |
+| Pipeline structure and cleanup | PASS, exit `0`: seven ordered stages, default-disabled deploy/rollback, approved service connections and agent pool, identity/target/SQL evidence guards, immutable invocation, native-process contract, migration-before-seed-before-deploy ordering, and both `finally` cleanup paths remain enforced. |
+| Migration identity | PASS, exit `0`: one accepted and 15 fail-closed cases. |
+| Migration target | PASS, exit `0`: one accepted and seven fail-closed cases. |
+| Immutable seed/artifact | PASS, exit `0`: Package publication, complete hash manifest, protected seed execution/reset/idempotency and fail-closed path/content checks against the unchanged ignored baseline artifact. |
+| Package/hash generation regression | PASS, exit `0`: repository boundary, ZIP, exact-file manifest, SHA-256 and deterministic generation checks for 1,803 unchanged local payload files. No artifact or approval evidence was regenerated. |
+| Application artifact regression | PASS, exit `0`: hash, root-layout and prohibited-file checks. |
+| Durable SQL-bootstrap evidence | PASS, exit `0`: 27 accepted, 45 fail-closed, five executable-resolution and three culture-execution cases across 17 safe rejection categories. |
+| Database-principal SQL | PASS, exit `0`: seven external variables, correct database, 30 invalid guard cases and three approved `CREATE USER` shapes. |
+| Source/security boundary | PASS, exit `0`: 185 source/configuration files and no generated/binary, secret, LocalTest or prohibited-capability finding. |
+| Real PowerShell-on-Linux bundle regression | UNAVAILABLE locally: `pwsh.exe` is absent; Docker and Podman are absent; `wsl.exe --status` exited `50` because WSL is not installed. The regression is mandatory in the unprotected `ubuntu-latest` validation job before protected execution retest. |
+| Protected/external execution | NOT RUN: no Azure, Azure DevOps, SQL, real migration bundle, deployment, migration, seed, swap or rollback action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_e510189848cf7b571e62a710fe27b61d2c0e6d21"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01", "C-11"]
+    functional_requirements: ["F-01", "F-02", "F-13", "F-14", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-10", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-02", "D-03", "D-04", "D-05", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/database/Invoke-AzureDemoEfMigrationBundle.ps1"
+    - "scripts/build/Test-AzureDemoEfMigrationBundleExecution.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Exact clean baseline, empty index and aligned origin/azure refs confirmed before editing."
+    - "All locally available pipeline, identity, target, immutable artifact/seed, package/hash, application artifact, SQL evidence, SQL guard and source-boundary checks passed."
+    - "Real Linux execution coverage is implemented and wired but remains outstanding because no local Linux PowerShell runtime is available."
+  decisions:
+    - "Execute only the exact hash-validated bundle as a shell-disabled native process and inspect only that process's exit status."
+    - "Adjust permission only on the validated bundle and prove its approved content hash remains unchanged."
+  assumptions:
+    - "Build 40's downloaded mode was not measured; missing execute permission remains a runtime hypothesis rather than a claimed fact."
+  risks:
+    - "The new Linux-native regression must pass on ubuntu-latest before the protected execution retest."
+    - "The protected pipeline must independently prove the downloaded Azure DevOps artifact's runtime mode and native launch behavior."
+  defects:
+    - "REPAIRED LOCALLY: build 40 could report migration success after file-association failure without observing a bundle process exit code."
+  blockers:
+    - "Real PowerShell-on-Linux regression evidence is outstanding."
+    - "Independent protected Azure DevOps bundle execution retest remains required; no database migration is claimed."
+  approvals: []
+  requested_action: "Independent Tester must first run the unprotected Ubuntu regression, then retest the protected migration task and prove native bundle completion before seed or slot deployment."
+```
+
+READY_FOR_EF_BUNDLE_EXECUTION_RETEST

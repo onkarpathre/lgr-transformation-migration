@@ -12,6 +12,7 @@ $runtimeValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\bui
 $appServiceSubnetValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoAppServiceSubnet.ps1') -Raw
 $privateDnsValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Assert-AzureDemoPrivateDnsReconciliation.ps1') -Raw
 $sqlBootstrapValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\database\Assert-AzureDemoSqlBootstrapEvidence.ps1') -Raw
+$efBundleInvokerScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\database\Invoke-AzureDemoEfMigrationBundle.ps1') -Raw
 $seedPackageScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-AzureDemoSeedArtifact.ps1') -Raw
 $seedInvocationScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invoke-AzureDemoSeed.ps1') -Raw
 $seedResetScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invoke-AzureDemoReset.ps1') -Raw
@@ -98,11 +99,12 @@ $requiredFragments = @(
     'slotName: staging',
     'ManualValidation@0',
     'az deployment group what-if',
-    'lgrtm-efbundle-linux-x64',
     'Invoke-AzureDemoSmokeTests.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
     'Assert-AzureDemoMigrationIdentity.ps1',
+    'Test-AzureDemoEfMigrationBundleExecution.ps1',
+    'Invoke-AzureDemoEfMigrationBundle.ps1',
     'Assert-AzureDemoSqlBootstrapEvidence.ps1',
     'Test-AzureDemoSqlBootstrapEvidence.ps1',
     'Test-AzureDemoDatabasePrincipalSql.ps1',
@@ -562,7 +564,7 @@ if (-not $deployParameter.Success -or -not $rollbackParameter.Success) {
 
 Assert-SqlBootstrapEvidenceDelivery $lines
 
-$migrationStep = Get-YamlStepBlock $lines "lgrtm-efbundle-linux-x64' --connection"
+$migrationStep = Get-YamlStepBlock $lines 'Invoke-AzureDemoEfMigrationBundle\.ps1 -ImmutableArtifactRoot'
 $seedStep = Get-YamlStepBlock $lines 'Invoke-AzureDemoSeed\.ps1 -Environment AzureDemo'
 foreach ($step in @($migrationStep, $seedStep)) {
     if ($step -notmatch '^\s*- task: AzureCLI@2' -or
@@ -588,6 +590,65 @@ foreach ($step in @($migrationStep, $seedStep)) {
         $step.IndexOf('[IO.File]::WriteAllText($federatedTokenFile, $env:idToken', [StringComparison]::Ordinal)) {
         throw 'The task-local federated-token file must be permission-restricted before the assertion is written.'
     }
+}
+
+foreach ($fragment in @(
+        "-ImmutableArtifactRoot '`$(Pipeline.Workspace)/azure-demo-immutable'",
+        "-DeploymentManifestPath '`$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json'",
+        "-ExpectedSourceCommit '`$(Build.SourceVersion)'")) {
+    if (-not $migrationStep.Contains($fragment)) {
+        throw "Protected migration task does not use the immutable native-execution contract: $fragment"
+    }
+}
+if ($migrationStep -match '(?m)^\s*continueOnError:\s*true\s*$' -or
+    $migrationStep -match '(?m)^\s*condition:\s*(?:always|succeededOrFailed)\(\)\s*$') {
+    throw 'Migration failure must prevent seed and application deployment.'
+}
+$bundleInvocationIndex = $migrationStep.IndexOf('Invoke-AzureDemoEfMigrationBundle.ps1', [StringComparison]::Ordinal)
+foreach ($prerequisite in @(
+        'Assert-AzureDemoMigrationIdentity.ps1',
+        '$env:LGR_AZURE_DEMO_SQL_CONNECTION_STRING =',
+        'Assert-AzureDemoMigrationTarget.ps1')) {
+    $prerequisiteIndex = $migrationStep.IndexOf($prerequisite, [StringComparison]::Ordinal)
+    if ($prerequisiteIndex -lt 0 -or $prerequisiteIndex -ge $bundleInvocationIndex) {
+        throw "Protected migration invocation does not follow required guard: $prerequisite"
+    }
+}
+$migrationCleanupIndex = $migrationStep.IndexOf('finally {', [StringComparison]::Ordinal)
+if ($bundleInvocationIndex -lt 0 -or $migrationCleanupIndex -le $bundleInvocationIndex -or
+    -not $migrationStep.Contains('Remove-Item -LiteralPath $federatedTokenFile -Force')) {
+    throw 'Protected migration execution must retain finally-based credential and token-file cleanup.'
+}
+$migrationTaskIndex = $text.IndexOf('displayName: Execute reviewed EF bundle with dedicated migration workload identity', [StringComparison]::Ordinal)
+$seedTaskIndex = $text.IndexOf('displayName: Reconcile approved synthetic seed with dedicated migration workload identity', [StringComparison]::Ordinal)
+$apiDeploymentIndex = $text.IndexOf('displayName: Deploy API ZIP to staging only', [StringComparison]::Ordinal)
+if ($migrationTaskIndex -lt 0 -or $seedTaskIndex -le $migrationTaskIndex -or $apiDeploymentIndex -le $seedTaskIndex) {
+    throw 'Migration, seed and application deployment order must fail closed.'
+}
+foreach ($fragment in @(
+        '$startInfo.UseShellExecute = $false',
+        '$startInfo.ArgumentList.Add($argument)',
+        '$process.WaitForExit()',
+        '$process.ExitCode',
+        "@('u+x', '--', `$bundlePath)",
+        'Assert-AzureDemoDeploymentArtifact',
+        'Resolve-AzureDemoArtifactPath')) {
+    if (-not $efBundleInvokerScript.Contains($fragment)) {
+        throw "The EF bundle native invoker is missing its fail-closed contract: $fragment"
+    }
+}
+if ($efBundleInvokerScript -match '(?i)xdg-open|Invoke-Item|Start-Process|UseShellExecute\s*=\s*\$true') {
+    throw 'The EF bundle native invoker must not use shell or file-association execution.'
+}
+if ([regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoEfMigrationBundleExecution\.ps1\s*$').Count -ne 1) {
+    throw 'The real Linux EF bundle execution regression must run exactly once in validation.'
+}
+$validateStage = $text.Substring(
+    $text.IndexOf('- stage: Validate', [StringComparison]::Ordinal),
+    $text.IndexOf('- stage: Package', [StringComparison]::Ordinal) - $text.IndexOf('- stage: Validate', [StringComparison]::Ordinal))
+if (-not $validateStage.Contains('pool: { vmImage: ubuntu-latest }') -or
+    -not $validateStage.Contains('Test-AzureDemoEfMigrationBundleExecution.ps1')) {
+    throw 'The native EF bundle execution regression must run in the unprotected Ubuntu validation stage.'
 }
 
 foreach ($fragment in @(

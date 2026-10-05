@@ -129,6 +129,8 @@ stages:
       displayName: Fail-closed Azure demo migration target guard tests
     - pwsh: ./scripts/build/Test-AzureDemoMigrationIdentity.ps1
       displayName: Valid and invalid migration workload-identity guard tests
+    - pwsh: ./scripts/build/Test-AzureDemoEfMigrationBundleExecution.ps1
+      displayName: Real Linux EF migration bundle execution regression
     - pwsh: ./scripts/build/Test-AzureDemoSqlBootstrapEvidence.ps1
       displayName: Valid and invalid independent SQL bootstrap evidence tests
     - pwsh: ./scripts/build/Test-AzureDemoDatabasePrincipalSql.ps1
@@ -423,8 +425,7 @@ stages:
                   $env:AZURE_FEDERATED_TOKEN_FILE = $federatedTokenFile
                   $env:LGR_AZURE_DEMO_SQL_CONNECTION_STRING = 'Server=tcp:$(AZDEMO_SQL_SERVER_FQDN),1433;Database=$(AZDEMO_SQL_DATABASE_NAME);Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Workload Identity;User Id=$(AZDEMO_MIGRATION_PRINCIPAL_CLIENT_ID)'
                   ./scripts/database/Assert-AzureDemoMigrationTarget.ps1
-                  & '$(Pipeline.Workspace)/azure-demo-immutable/migration/lgrtm-efbundle-linux-x64' --connection $env:LGR_AZURE_DEMO_SQL_CONNECTION_STRING
-                  if ($LASTEXITCODE) { throw 'Reviewed EF bundle failed.' }
+                  ./scripts/database/Invoke-AzureDemoEfMigrationBundle.ps1 -ImmutableArtifactRoot '$(Pipeline.Workspace)/azure-demo-immutable' -DeploymentManifestPath '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -ExpectedSourceCommit '$(Build.SourceVersion)'
                 }
                 finally {
                   Remove-Variable sqlAccessToken -ErrorAction SilentlyContinue
