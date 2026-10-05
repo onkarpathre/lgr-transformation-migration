@@ -2521,3 +2521,94 @@ READY_FOR_TEST
 The PowerShell 7 HTTP redirect repair recorded above is the latest bounded implementation change and is ready for independent Linux/PowerShell 7 testing. The broader smoke-evidence continuation still governs the overall worktree: its validated local implementation is complete, but the protected evidence ingestion route, operational producer identities and real SMK-19 previous-release source require the named architecture/governance decision before the pipeline can consume protected smoke evidence.
 
 NEEDS_ARCHITECTURE_DECISION
+
+## HTTP smoke error-object normalization repair
+
+### Baseline, scope and traceability
+
+This bounded Developer repair started from branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `253d20d5a99b3e6b231f43f5a8864ee3bca25ce6`. The index and worktree were clean before editing. Nothing was staged, committed, pushed, reset or stashed. The change is confined to the HTTP helper, its real loopback regression and this supporting documentation; CSP, hostname resolution, Bicep, evidence acceptance, authentication, release gates and deployment controls are unchanged.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+This regression-only repair is separable from Q-01 and Q-08: it does not choose a stack, change an environment, ingest protected evidence or alter a release decision. Existing connected-CI and human gates remain in force.
+
+### Confirmed cause and correction
+
+The helper captured `Invoke-WebRequest` errors twice: `-ErrorVariable requestErrors` received the engine's error-variable object and `catch` received the terminating record. Redirect-limit responses are non-terminating `ErrorRecord` objects and therefore passed. A terminating request failure uses a different shape: the error-variable collection contains `System.Management.Automation.CmdletInvocationException`, with an embedded `ErrorRecord`, while `catch` receives `System.Management.Automation.ErrorRecord`. The previous `Where-Object` unconditionally read `FullyQualifiedErrorId` from every error-variable item, so the abrupt-close transport fixture reached that property access with the exception object and failed under strict mode. There was no stream merge; the success pipeline, error variable and catch path were separate. A nested collection was not the normal origin, but is now covered as an unexpected object and fails closed.
+
+The helper now normalizes success output and both error origins before deciding the result. `ErrorRecord`, `Exception`, null and unexpected objects have explicit classifications. An exception's embedded `ErrorRecord` is inspected only after type verification; `FullyQualifiedErrorId`, `Exception`, `Response`, `StatusCode`, `Headers`, `Content` and `RawContentLength` are accessed only after compatible type/property checks. Unknown, null, nested or malformed shapes cannot become success and are retained as bounded type-only diagnostics.
+
+`MaximumRedirection 0` and `SkipHttpErrorCheck` remain unchanged. A redirect-limit result is accepted only when every captured error resolves to the exact `MaximumRedirectExceeded,Microsoft.PowerShell.Commands.InvokeWebRequestCommand` identity and the corresponding captured response is a valid 3xx response. `Test-AzureDemoHttpsRedirectResponse` still permits only 301, 302, 307 or 308 and still requires HTTPS, the exact host, default port, exact path, and no userinfo, query or fragment. No certificate bypass was added. An ordinary HTTP 500 response remains `TransportSucceeded = true`; a failure exception carrying status 500 remains `TransportSucceeded = false` with status 500 retained.
+
+The regression now prints only collection/result/error/exception type names, capture origins, bounded status and category. It exercises real redirect, 200/500, cross-host and abrupt-close fixtures, plus focused runtime coverage for the terminating error-variable object shape, ErrorRecord, raw Exception, null, unexpected object, nested collection, malformed status, exception-carried 500 and wrong redirect identity. Readiness files are removed after each fixture. A forced post-readiness failure proves child termination and readiness-file cleanup; the suite also verifies removal of its temporary directory.
+
+### Verification status
+
+| Check | Result |
+|---|---|
+| PowerShell parsing | PASS, exit `0`: both changed PowerShell files parse under strict Windows PowerShell syntax. This is supplemental evidence only. |
+| Focused runtime normalization | PASS, exit `0`, Windows PowerShell `5.1.26100.9444`: error-variable outer type `System.Collections.ArrayList`, item type `System.Management.Automation.CmdletInvocationException`, catch type `System.Management.Automation.ErrorRecord`; unknown and nested shapes failed closed; exception-carried 500 retained status without transport success; wrong redirect identity was rejected. This is supplemental evidence only. |
+| Smoke target resolution | PASS, exit `0`: generated-host, exact-identity, staging/production, unsafe URI, catalogue order and 12 invalid cases. |
+| Smoke evidence contract | PASS, exit `0`: valid fixtures and all fail-closed provenance/substitution cases. |
+| Pipeline structural contract | PASS, exit `0`: seven ordered stages. |
+| Source/security boundary | PASS, exit `0`: 194 source/configuration files. |
+| Linux PowerShell 7.6.6 complete HTTP suite | **LINUX_VERIFICATION_PENDING**. The authorized host has Windows PowerShell 5.1 only; `pwsh` and Docker are absent, WSL reports not installed, and the sandbox cannot reach NuGet to install a workspace-local runtime. No Linux fixture result is claimed. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, Entra, deployment, migration, seed, swap, endpoint smoke or release action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "BLOCKED_IMPLEMENTATION"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_253d20d5a99b3e6b231f43f5a8864ee3bca25ce6"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "scripts/smoke/AzureDemoSmokeUtilities.ps1"
+    - "scripts/build/Test-AzureDemoSmokeHttp.ps1"
+    - "scripts/smoke/README.md"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Type-only runtime reproduction confirms the terminating ErrorVariable/catch object split."
+    - "Locally available smoke-target, evidence, pipeline and source-boundary regressions pass."
+  decisions:
+    - "Normalize each stream origin explicitly and fail closed on null, unknown, nested or malformed objects."
+    - "Accept redirect-limit responses only with the exact expected error identity and a corresponding valid response."
+    - "Retain bounded type-only diagnostics and the existing public result contract."
+  assumptions: []
+  risks:
+    - "The complete changed HTTP regression has not yet executed on Linux PowerShell 7.6.6."
+  defects:
+    - "REPAIRED LOCALLY: terminating ErrorVariable exceptions were treated as ErrorRecords and caused strict-mode property access failure."
+  blockers:
+    - "No authorized Linux/PowerShell 7 runtime is available in the current environment."
+  approvals: []
+  requested_action: "Run the entire scripts/build/Test-AzureDemoSmokeHttp.ps1 suite on the existing ubuntu-latest PowerShell 7.6.6 validation agent and retain its type-only fixture diagnostics before changing the hand-off state."
+```
+
+LINUX_VERIFICATION_PENDING

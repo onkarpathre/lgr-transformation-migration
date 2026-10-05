@@ -53,10 +53,12 @@ function Assert-AzureDemoSmokeUriTarget {
 
 function Get-AzureDemoSmokeExceptionCategory {
     [CmdletBinding()]
-    param([Parameter(Mandatory)] [System.Management.Automation.ErrorRecord] $ErrorRecord)
+    param([AllowNull()] [object] $Exception)
 
-    $exception = $ErrorRecord.Exception
-    $current = $exception
+    if ($null -eq $Exception) { return 'request-failure' }
+    if ($Exception -isnot [Exception]) { return 'unexpected-error-object' }
+
+    $current = $Exception
     while ($null -ne $current) {
         $currentType = $current.GetType().FullName
         if ($currentType -match 'Timeout|TaskCanceled') { return 'timeout' }
@@ -73,7 +75,7 @@ function Get-AzureDemoSmokeExceptionCategory {
         $current = $current.InnerException
     }
 
-    $exceptionType = $exception.GetType().FullName
+    $exceptionType = $Exception.GetType().FullName
     if ($exceptionType -match 'HttpRequestException|WebException') { return 'transport' }
     return 'request-failure'
 }
@@ -86,11 +88,73 @@ function Get-AzureDemoSmokeSafeTypeName {
     return $InputObject.GetType().FullName
 }
 
+function Get-AzureDemoSmokeErrorObjectClassification {
+    [CmdletBinding()]
+    param(
+        [AllowNull()] [object] $InputObject,
+        [Parameter(Mandatory)] [ValidateSet('error-variable', 'catch')] [string] $Origin
+    )
+
+    if ($null -eq $InputObject) {
+        return [pscustomobject][ordered]@{
+            Origin = $Origin
+            Kind = 'null'
+            TypeName = 'none'
+            ErrorRecord = $null
+            Exception = $null
+            FullyQualifiedErrorId = $null
+        }
+    }
+
+    if ($InputObject -is [System.Management.Automation.ErrorRecord]) {
+        $errorRecord = [System.Management.Automation.ErrorRecord] $InputObject
+        $exception = if ($errorRecord.Exception -is [Exception]) { $errorRecord.Exception } else { $null }
+        return [pscustomobject][ordered]@{
+            Origin = $Origin
+            Kind = 'error-record'
+            TypeName = Get-AzureDemoSmokeSafeTypeName -InputObject $InputObject
+            ErrorRecord = $errorRecord
+            Exception = $exception
+            FullyQualifiedErrorId = $errorRecord.FullyQualifiedErrorId
+        }
+    }
+
+    if ($InputObject -is [Exception]) {
+        $exception = [Exception] $InputObject
+        $errorRecordProperty = $exception.PSObject.Properties['ErrorRecord']
+        $embeddedErrorRecord = if ($null -ne $errorRecordProperty -and
+            $errorRecordProperty.Value -is [System.Management.Automation.ErrorRecord]) {
+            [System.Management.Automation.ErrorRecord] $errorRecordProperty.Value
+        }
+        else {
+            $null
+        }
+
+        return [pscustomobject][ordered]@{
+            Origin = $Origin
+            Kind = 'exception'
+            TypeName = Get-AzureDemoSmokeSafeTypeName -InputObject $InputObject
+            ErrorRecord = $embeddedErrorRecord
+            Exception = $exception
+            FullyQualifiedErrorId = if ($null -eq $embeddedErrorRecord) { $null } else { $embeddedErrorRecord.FullyQualifiedErrorId }
+        }
+    }
+
+    return [pscustomobject][ordered]@{
+        Origin = $Origin
+        Kind = 'unexpected'
+        TypeName = Get-AzureDemoSmokeSafeTypeName -InputObject $InputObject
+        ErrorRecord = $null
+        Exception = $null
+        FullyQualifiedErrorId = $null
+    }
+}
+
 function Get-AzureDemoSmokeExceptionResponse {
     [CmdletBinding()]
-    param([Parameter(Mandatory)] [System.Management.Automation.ErrorRecord] $ErrorRecord)
+    param([Parameter(Mandatory)] [Exception] $Exception)
 
-    $current = $ErrorRecord.Exception
+    $current = $Exception
     while ($null -ne $current) {
         $responseProperty = $current.PSObject.Properties['Response']
         if ($null -ne $responseProperty -and $null -ne $responseProperty.Value) {
@@ -103,6 +167,48 @@ function Get-AzureDemoSmokeExceptionResponse {
     return $null
 }
 
+function Get-AzureDemoSmokeHttpResponseInfo {
+    [CmdletBinding()]
+    param([AllowNull()] [object] $Response)
+
+    $invalid = [pscustomobject][ordered]@{
+        HasHttpShape = $false
+        HasBasicWebResponseShape = $false
+        StatusCode = $null
+        Headers = $null
+        Content = ''
+        RawContentLength = 0L
+    }
+    if ($null -eq $Response) { return $invalid }
+
+    $statusProperty = $Response.PSObject.Properties['StatusCode']
+    $headersProperty = $Response.PSObject.Properties['Headers']
+    if ($null -eq $statusProperty -or $null -eq $statusProperty.Value -or
+        $null -eq $headersProperty -or $null -eq $headersProperty.Value) {
+        return $invalid
+    }
+
+    try { $statusCode = [int] $statusProperty.Value } catch { return $invalid }
+    if ($statusCode -lt 100 -or $statusCode -gt 599) { return $invalid }
+
+    $contentProperty = $Response.PSObject.Properties['Content']
+    $rawContentLengthProperty = $Response.PSObject.Properties['RawContentLength']
+    $hasBasicWebResponseShape = $null -ne $contentProperty -and $null -ne $rawContentLengthProperty
+    $rawContentLength = 0L
+    if ($hasBasicWebResponseShape) {
+        try { $rawContentLength = [long] $rawContentLengthProperty.Value } catch { $hasBasicWebResponseShape = $false }
+    }
+
+    return [pscustomobject][ordered]@{
+        HasHttpShape = $true
+        HasBasicWebResponseShape = $hasBasicWebResponseShape
+        StatusCode = $statusCode
+        Headers = $headersProperty.Value
+        Content = if ($null -eq $contentProperty) { '' } else { [string] $contentProperty.Value }
+        RawContentLength = $rawContentLength
+    }
+}
+
 function Get-AzureDemoSmokeHeaderValue {
     [CmdletBinding()]
     param(
@@ -110,12 +216,191 @@ function Get-AzureDemoSmokeHeaderValue {
         [Parameter(Mandatory)] [string] $Name
     )
 
-    if ($null -eq $Response -or $null -eq $Response.Headers) { return $null }
-    if ($Response.Headers -is [Collections.IDictionary]) { return [string] $Response.Headers[$Name] }
+    if ($null -eq $Response) { return $null }
+    $headersProperty = $Response.PSObject.Properties['Headers']
+    if ($null -eq $headersProperty -or $null -eq $headersProperty.Value) { return $null }
+    $headers = $headersProperty.Value
+    if ($headers -is [Collections.IDictionary]) { return [string] $headers[$Name] }
 
-    $property = $Response.Headers.PSObject.Properties[$Name]
+    $property = $headers.PSObject.Properties[$Name]
     if ($null -ne $property) { return [string] $property.Value }
     return $null
+}
+
+function Resolve-AzureDemoSmokeHttpResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $CheckId,
+        [Parameter(Mandatory)] [uri] $Uri,
+        [AllowNull()] [object] $PipelineOutput,
+        [AllowNull()] [object] $CapturedErrors,
+        [AllowNull()] [object] $TerminatingError
+    )
+
+    $pipelineItems = [Collections.Generic.List[object]]::new()
+    if ($null -ne $PipelineOutput) {
+        if ($PipelineOutput -is [Collections.IList]) {
+            foreach ($item in $PipelineOutput) { $pipelineItems.Add($item) }
+        }
+        else {
+            $pipelineItems.Add($PipelineOutput)
+        }
+    }
+
+    $errorClassifications = [Collections.Generic.List[object]]::new()
+    if ($null -ne $CapturedErrors) {
+        if ($CapturedErrors -is [Collections.IList]) {
+            foreach ($capturedError in $CapturedErrors) {
+                $errorClassifications.Add((Get-AzureDemoSmokeErrorObjectClassification -InputObject $capturedError -Origin 'error-variable'))
+            }
+        }
+        else {
+            $errorClassifications.Add((Get-AzureDemoSmokeErrorObjectClassification -InputObject $CapturedErrors -Origin 'error-variable'))
+        }
+    }
+    if ($null -ne $TerminatingError) {
+        $errorClassifications.Add((Get-AzureDemoSmokeErrorObjectClassification -InputObject $TerminatingError -Origin 'catch'))
+    }
+
+    $response = if ($pipelineItems.Count -eq 1) { $pipelineItems[0] } else { $null }
+    $responseInfo = Get-AzureDemoSmokeHttpResponseInfo -Response $response
+    $hasUnexpectedErrorObject = @($errorClassifications | Where-Object { $_.Kind -eq 'unexpected' }).Count -gt 0
+    $hasNullErrorObject = @($errorClassifications | Where-Object { $_.Kind -eq 'null' }).Count -gt 0
+    $expectedRedirectErrorId = 'MaximumRedirectExceeded,Microsoft.PowerShell.Commands.InvokeWebRequestCommand'
+    $hasOnlyExpectedRedirectErrors = $errorClassifications.Count -gt 0
+    foreach ($classification in $errorClassifications) {
+        if ($null -eq $classification.ErrorRecord -or
+            $classification.FullyQualifiedErrorId -cne $expectedRedirectErrorId) {
+            $hasOnlyExpectedRedirectErrors = $false
+            break
+        }
+    }
+
+    $requestFailure = if ($null -ne $TerminatingError) {
+        Get-AzureDemoSmokeErrorObjectClassification -InputObject $TerminatingError -Origin 'catch'
+    }
+    elseif ($errorClassifications.Count -gt 0) {
+        $errorClassifications[$errorClassifications.Count - 1]
+    }
+    else {
+        $null
+    }
+    $requestException = if ($null -eq $requestFailure -or $requestFailure.Exception -isnot [Exception]) {
+        $null
+    }
+    else {
+        [Exception] $requestFailure.Exception
+    }
+    $errorObjectTypes = if ($errorClassifications.Count -eq 0) {
+        'none'
+    }
+    else {
+        (($errorClassifications | ForEach-Object { '{0}:{1}:{2}' -f $_.Origin, $_.Kind, $_.TypeName }) -join ';')
+    }
+    $resultType = if ($pipelineItems.Count -eq 1) {
+        Get-AzureDemoSmokeSafeTypeName -InputObject $pipelineItems[0]
+    }
+    elseif ($pipelineItems.Count -gt 1) {
+        "multiple-output:$($pipelineItems.Count)"
+    }
+    else {
+        'none'
+    }
+
+    if ($responseInfo.HasBasicWebResponseShape -and
+        ($errorClassifications.Count -eq 0 -or
+            ($hasOnlyExpectedRedirectErrors -and $responseInfo.StatusCode -ge 300 -and $responseInfo.StatusCode -lt 400))) {
+        return [pscustomobject]@{
+            TransportSucceeded = $true
+            StatusCode = $responseInfo.StatusCode
+            Headers = $responseInfo.Headers
+            Content = $responseInfo.Content
+            RawContentLength = $responseInfo.RawContentLength
+            Diagnostic = [pscustomobject][ordered]@{
+                checkId = $CheckId
+                scheme = $Uri.Scheme
+                hostname = $Uri.DnsSafeHost
+                path = $Uri.AbsolutePath
+                httpStatus = $responseInfo.StatusCode
+                runtimeVersion = $PSVersionTable.PSVersion.ToString()
+                resultType = $resultType
+                errorVariableType = Get-AzureDemoSmokeSafeTypeName -InputObject $CapturedErrors
+                errorObjects = $errorObjectTypes
+                exceptionType = if ($null -eq $requestException) { 'none' } else { Get-AzureDemoSmokeSafeTypeName -InputObject $requestException }
+                exceptionCategory = if ($hasOnlyExpectedRedirectErrors) { 'redirect-response' } else { 'none' }
+            }
+        }
+    }
+
+    $exceptionResponse = if ($null -eq $requestException) { $null } else { Get-AzureDemoSmokeExceptionResponse -Exception $requestException }
+    $exceptionResponseInfo = Get-AzureDemoSmokeHttpResponseInfo -Response $exceptionResponse
+    if ($pipelineItems.Count -eq 0 -and $hasOnlyExpectedRedirectErrors -and
+        $exceptionResponseInfo.HasHttpShape -and
+        $exceptionResponseInfo.StatusCode -ge 300 -and $exceptionResponseInfo.StatusCode -lt 400) {
+        $redirectHeaders = [ordered]@{}
+        $redirectHeaders.Location = Get-AzureDemoSmokeHeaderValue -Response $exceptionResponse -Name 'Location'
+        return [pscustomobject]@{
+            TransportSucceeded = $true
+            StatusCode = $exceptionResponseInfo.StatusCode
+            Headers = $redirectHeaders
+            Content = ''
+            RawContentLength = 0L
+            Diagnostic = [pscustomobject][ordered]@{
+                checkId = $CheckId
+                scheme = $Uri.Scheme
+                hostname = $Uri.DnsSafeHost
+                path = $Uri.AbsolutePath
+                httpStatus = $exceptionResponseInfo.StatusCode
+                runtimeVersion = $PSVersionTable.PSVersion.ToString()
+                resultType = Get-AzureDemoSmokeSafeTypeName -InputObject $exceptionResponse
+                errorVariableType = Get-AzureDemoSmokeSafeTypeName -InputObject $CapturedErrors
+                errorObjects = $errorObjectTypes
+                exceptionType = Get-AzureDemoSmokeSafeTypeName -InputObject $requestException
+                exceptionCategory = 'redirect-response'
+            }
+        }
+    }
+
+    $failureStatusCode = if ($exceptionResponseInfo.HasHttpShape) { $exceptionResponseInfo.StatusCode } else { $null }
+    $failureCategory = if ($hasUnexpectedErrorObject) {
+        'unexpected-error-object'
+    }
+    elseif ($hasNullErrorObject) {
+        'null-error-object'
+    }
+    elseif ($pipelineItems.Count -gt 0) {
+        if ($errorClassifications.Count -gt 0) { 'request-failure' } else { 'unexpected-output' }
+    }
+    elseif ($null -ne $requestException) {
+        Get-AzureDemoSmokeExceptionCategory -Exception $requestException
+    }
+    elseif ($errorClassifications.Count -gt 0) {
+        'request-failure'
+    }
+    else {
+        'missing-result'
+    }
+
+    return [pscustomobject]@{
+        TransportSucceeded = $false
+        StatusCode = $failureStatusCode
+        Headers = @{}
+        Content = ''
+        RawContentLength = 0L
+        Diagnostic = [pscustomobject][ordered]@{
+            checkId = $CheckId
+            scheme = $Uri.Scheme
+            hostname = $Uri.DnsSafeHost
+            path = $Uri.AbsolutePath
+            httpStatus = $failureStatusCode
+            runtimeVersion = $PSVersionTable.PSVersion.ToString()
+            resultType = if ($null -ne $exceptionResponse) { Get-AzureDemoSmokeSafeTypeName -InputObject $exceptionResponse } else { $resultType }
+            errorVariableType = Get-AzureDemoSmokeSafeTypeName -InputObject $CapturedErrors
+            errorObjects = $errorObjectTypes
+            exceptionType = if ($null -eq $requestException) { 'none' } else { Get-AzureDemoSmokeSafeTypeName -InputObject $requestException }
+            exceptionCategory = $failureCategory
+        }
+    }
 }
 
 function Invoke-AzureDemoSmokeHttpRequest {
@@ -140,141 +425,8 @@ function Invoke-AzureDemoSmokeHttpRequest {
         $terminatingError = $_
     }
 
-    $response = if ($pipelineOutput.Count -eq 1) { $pipelineOutput[0] } else { $null }
-    $responseHasHttpShape = $null -ne $response -and
-        $null -ne $response.PSObject.Properties['StatusCode'] -and
-        $null -ne $response.PSObject.Properties['Headers']
-    $responseStatusCode = if ($responseHasHttpShape) { [int] $response.StatusCode } else { $null }
-    $errorRecords = @($requestErrors)
-    $redirectLimitErrors = @($errorRecords | Where-Object { $_.FullyQualifiedErrorId -like 'MaximumRedirectExceeded*' })
-    $hasOnlyExpectedRedirectError = $errorRecords.Count -gt 0 -and
-        $redirectLimitErrors.Count -eq $errorRecords.Count -and
-        $responseStatusCode -ge 300 -and $responseStatusCode -lt 400
-    $requestError = if ($null -ne $terminatingError) {
-        $terminatingError
-    }
-    elseif ($errorRecords.Count -gt 0) {
-        $errorRecords[-1]
-    }
-    else {
-        $null
-    }
-
-    if ($responseHasHttpShape -and ($errorRecords.Count -eq 0 -or $hasOnlyExpectedRedirectError)) {
-        $statusCode = $responseStatusCode
-        return [pscustomobject]@{
-            TransportSucceeded = $true
-            StatusCode = $statusCode
-            Headers = $response.Headers
-            Content = [string] $response.Content
-            RawContentLength = [long] $response.RawContentLength
-            Diagnostic = [pscustomobject][ordered]@{
-                checkId = $CheckId
-                scheme = $Uri.Scheme
-                hostname = $Uri.DnsSafeHost
-                path = $Uri.AbsolutePath
-                httpStatus = $statusCode
-                runtimeVersion = $PSVersionTable.PSVersion.ToString()
-                resultType = Get-AzureDemoSmokeSafeTypeName -InputObject $response
-                exceptionType = if ($null -eq $requestError) { 'none' } else { Get-AzureDemoSmokeSafeTypeName -InputObject $requestError.Exception }
-                exceptionCategory = if ($hasOnlyExpectedRedirectError) { 'redirect-response' } else { 'none' }
-            }
-        }
-    }
-
-    if ($pipelineOutput.Count -gt 0) {
-        return [pscustomobject]@{
-            TransportSucceeded = $false
-            StatusCode = $null
-            Headers = @{}
-            Content = ''
-            RawContentLength = 0L
-            Diagnostic = [pscustomobject][ordered]@{
-                checkId = $CheckId
-                scheme = $Uri.Scheme
-                hostname = $Uri.DnsSafeHost
-                path = $Uri.AbsolutePath
-                httpStatus = $null
-                runtimeVersion = $PSVersionTable.PSVersion.ToString()
-                resultType = if ($pipelineOutput.Count -eq 1) { Get-AzureDemoSmokeSafeTypeName -InputObject $pipelineOutput[0] } else { "multiple-output:$($pipelineOutput.Count)" }
-                exceptionType = if ($null -eq $requestError) { 'none' } else { Get-AzureDemoSmokeSafeTypeName -InputObject $requestError.Exception }
-                exceptionCategory = 'unexpected-output'
-            }
-        }
-    }
-
-    if ($null -ne $requestError) {
-        $exceptionResponse = Get-AzureDemoSmokeExceptionResponse -ErrorRecord $requestError
-        $statusCode = $null
-        $statusProperty = if ($null -eq $exceptionResponse) { $null } else { $exceptionResponse.PSObject.Properties['StatusCode'] }
-        if ($null -ne $statusProperty -and $null -ne $statusProperty.Value) {
-            $statusCode = [int] $statusProperty.Value
-        }
-
-        # PowerShell 7 versions may surface MaximumRedirection 0 as an exception
-        # while retaining the original 3xx response. Preserve that response as
-        # an HTTP result; a catch without a response remains a transport failure.
-        if ($null -ne $statusCode -and $statusCode -in 301, 302, 303, 307, 308) {
-            $redirectHeaders = [ordered]@{}
-            $redirectHeaders.Location = Get-AzureDemoSmokeHeaderValue -Response $exceptionResponse -Name 'Location'
-            return [pscustomobject]@{
-                TransportSucceeded = $true
-                StatusCode = $statusCode
-                Headers = $redirectHeaders
-                Content = ''
-                RawContentLength = 0L
-                Diagnostic = [pscustomobject][ordered]@{
-                    checkId = $CheckId
-                    scheme = $Uri.Scheme
-                    hostname = $Uri.DnsSafeHost
-                    path = $Uri.AbsolutePath
-                    httpStatus = $statusCode
-                    runtimeVersion = $PSVersionTable.PSVersion.ToString()
-                    resultType = Get-AzureDemoSmokeSafeTypeName -InputObject $exceptionResponse
-                    exceptionType = Get-AzureDemoSmokeSafeTypeName -InputObject $requestError.Exception
-                    exceptionCategory = 'redirect-response'
-                }
-            }
-        }
-
-        return [pscustomobject]@{
-            TransportSucceeded = $false
-            StatusCode = $statusCode
-            Headers = @{}
-            Content = ''
-            RawContentLength = 0L
-            Diagnostic = [pscustomobject][ordered]@{
-                checkId = $CheckId
-                scheme = $Uri.Scheme
-                hostname = $Uri.DnsSafeHost
-                path = $Uri.AbsolutePath
-                httpStatus = $statusCode
-                runtimeVersion = $PSVersionTable.PSVersion.ToString()
-                resultType = 'none'
-                exceptionType = Get-AzureDemoSmokeSafeTypeName -InputObject $requestError.Exception
-                exceptionCategory = Get-AzureDemoSmokeExceptionCategory -ErrorRecord $requestError
-            }
-        }
-    }
-
-    return [pscustomobject]@{
-        TransportSucceeded = $false
-        StatusCode = $null
-        Headers = @{}
-        Content = ''
-        RawContentLength = 0L
-        Diagnostic = [pscustomobject][ordered]@{
-            checkId = $CheckId
-            scheme = $Uri.Scheme
-            hostname = $Uri.DnsSafeHost
-            path = $Uri.AbsolutePath
-            httpStatus = $null
-            runtimeVersion = $PSVersionTable.PSVersion.ToString()
-            resultType = 'none'
-            exceptionType = 'none'
-            exceptionCategory = 'missing-result'
-        }
-    }
+    return Resolve-AzureDemoSmokeHttpResult -CheckId $CheckId -Uri $Uri `
+        -PipelineOutput $pipelineOutput -CapturedErrors $requestErrors -TerminatingError $terminatingError
 }
 
 function Test-AzureDemoHttpsRedirectResponse {
