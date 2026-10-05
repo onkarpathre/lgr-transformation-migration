@@ -101,6 +101,10 @@ $requiredFragments = @(
     'ManualValidation@0',
     'az deployment group what-if',
     'Invoke-AzureDemoSmokeTests.ps1',
+    'Resolve-AzureDemoSmokeTargets.ps1',
+    'Test-AzureDemoSmokeTargetResolution.ps1',
+    'Test-AzureDemoSmokeHttp.ps1',
+    'Test-AzureDemoSmokeEvidence.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
     'Assert-AzureDemoMigrationIdentity.ps1',
@@ -360,10 +364,10 @@ function Assert-SqlBootstrapEvidenceDelivery([string[]] $PipelineLines) {
     $jobBlocks = @(Get-YamlJobBlocks $PipelineLines)
     $consumerJobs = @($jobBlocks | Where-Object {
             $_.Text.Contains('sql-bootstrap.json') -or
-            $_.Text.Contains('$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)')
+            $_.Text.Contains('$(AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY)')
         })
     $consumerNames = @($consumerJobs | ForEach-Object { $_.Name })
-    if (($consumerNames -join '|') -ne 'DatabaseAndSlots|Swap') {
+    if (($consumerNames -join '|') -ne 'DatabaseAndSlots') {
         throw "SQL bootstrap evidence consumers are invalid: $($consumerNames -join ', ')."
     }
 
@@ -383,7 +387,7 @@ function Assert-SqlBootstrapEvidenceDelivery([string[]] $PipelineLines) {
                 'if ($IsLinux)',
                 'chmod 600 -- $evidencePath',
                 "if (`$LASTEXITCODE) { throw 'Could not restrict SQL bootstrap evidence permissions.' }",
-                '##vso[task.setvariable variable=AZDEMO_SMOKE_PREREQUISITE_EVIDENCE]$evidenceDirectory')) {
+                '##vso[task.setvariable variable=AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY]$evidenceDirectory')) {
             if (-not $prepareStep.Contains($fragment)) {
                 throw "Evidence-consuming job $($job.Name) does not securely prepare job-local evidence: $fragment"
             }
@@ -398,10 +402,10 @@ function Assert-SqlBootstrapEvidenceDelivery([string[]] $PipelineLines) {
         }
 
         $downloadIndex = $job.Text.IndexOf('DownloadSecureFile@1', [StringComparison]::Ordinal)
-        $variableIndex = $job.Text.IndexOf('##vso[task.setvariable variable=AZDEMO_SMOKE_PREREQUISITE_EVIDENCE]', [StringComparison]::Ordinal)
+        $variableIndex = $job.Text.IndexOf('##vso[task.setvariable variable=AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY]', [StringComparison]::Ordinal)
         $cleanupIndex = $job.Text.IndexOf('Remove-Item -LiteralPath $evidenceDirectory -Recurse', [StringComparison]::Ordinal)
         $consumerIndexes = @(for ($index = 0; $index -lt $job.Lines.Count; $index++) {
-                if ($job.Lines[$index] -match 'Assert-AzureDemoSqlBootstrapEvidence\.ps1|Invoke-AzureDemoSmokeTests\.ps1') { $index }
+                if ($job.Lines[$index] -match 'Assert-AzureDemoSqlBootstrapEvidence\.ps1') { $index }
             })
         if ($consumerIndexes.Count -eq 0) {
             throw "Evidence-consuming job $($job.Name) has no protected-evidence consumer."
@@ -419,13 +423,13 @@ function Assert-SqlBootstrapEvidenceDelivery([string[]] $PipelineLines) {
     }
 
     $pipelineText = $PipelineLines -join "`n"
-    if ($pipelineText -match '(?im)^\s*- publish:\s*[^\r\n]*(?:sql-bootstrap|AZDEMO_SMOKE_PREREQUISITE_EVIDENCE|azdemo-sql-bootstrap-evidence|downloadSqlBootstrapEvidence|Agent\.TempDirectory)' -or
+    if ($pipelineText -match '(?im)^\s*- publish:\s*[^\r\n]*(?:sql-bootstrap|AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY|azdemo-sql-bootstrap-evidence|downloadSqlBootstrapEvidence|Agent\.TempDirectory)' -or
         $pipelineText -match '(?im)^\s+artifact:\s*[^\r\n]*sql-bootstrap' -or
-        $pipelineText -match '(?im)^\s*Copy-Item[^\r\n]*(?:sql-bootstrap|downloadSqlBootstrapEvidence|AZDEMO_SMOKE_PREREQUISITE_EVIDENCE|azdemo-sql-bootstrap-evidence)[^\r\n]*(?:Build\.SourcesDirectory|System\.DefaultWorkingDirectory|Build\.ArtifactStagingDirectory|Pipeline\.Workspace)' -or
-        $pipelineText -match '(?im)^\s*Copy-Item[^\r\n]*(?:Build\.SourcesDirectory|System\.DefaultWorkingDirectory|Build\.ArtifactStagingDirectory|Pipeline\.Workspace)[^\r\n]*(?:sql-bootstrap|downloadSqlBootstrapEvidence|AZDEMO_SMOKE_PREREQUISITE_EVIDENCE|azdemo-sql-bootstrap-evidence)') {
+        $pipelineText -match '(?im)^\s*Copy-Item[^\r\n]*(?:sql-bootstrap|downloadSqlBootstrapEvidence|AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY|azdemo-sql-bootstrap-evidence)[^\r\n]*(?:Build\.SourcesDirectory|System\.DefaultWorkingDirectory|Build\.ArtifactStagingDirectory|Pipeline\.Workspace)' -or
+        $pipelineText -match '(?im)^\s*Copy-Item[^\r\n]*(?:Build\.SourcesDirectory|System\.DefaultWorkingDirectory|Build\.ArtifactStagingDirectory|Pipeline\.Workspace)[^\r\n]*(?:sql-bootstrap|downloadSqlBootstrapEvidence|AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY|azdemo-sql-bootstrap-evidence)') {
         throw 'SQL bootstrap evidence must not be published or copied into a repository or artifact workspace.'
     }
-    if ($pipelineText -match '(?ms)^\s*-\s+name:\s+AZDEMO_SMOKE_PREREQUISITE_EVIDENCE\s*\r?\n\s+value:') {
+    if ($pipelineText -match '(?ms)^\s*-\s+name:\s+AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY\s*\r?\n\s+value:') {
         throw 'The SQL bootstrap evidence directory must be job-scoped and must not be stored as a pipeline variable.'
     }
     if ($pipelineText -match '(?im)^\s*(?:Write-Host|Write-Output|echo)\b[^\r\n]*(?:sql-bootstrap\.json|downloadSqlBootstrapEvidence\.secureFilePath)') {
@@ -823,8 +827,87 @@ if ([regex]::Matches($packageStage, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureD
 $swap = $text.Substring($text.IndexOf('- stage: SwapAndVerify', [StringComparison]::Ordinal),
     $text.IndexOf('- stage: Rollback', [StringComparison]::Ordinal) - $text.IndexOf('- stage: SwapAndVerify', [StringComparison]::Ordinal))
 $rollback = $text.Substring($text.IndexOf('- stage: Rollback', [StringComparison]::Ordinal))
-if ($swap.IndexOf('$(AZDEMO_API_APP_NAME)', [StringComparison]::Ordinal) -ge $swap.IndexOf('$(AZDEMO_WEB_APP_NAME)', [StringComparison]::Ordinal)) {
+$migrateAndDeploy = $text.Substring($text.IndexOf('- stage: MigrateAndDeploySlots', [StringComparison]::Ordinal),
+    $text.IndexOf('- stage: ReleaseApproval', [StringComparison]::Ordinal) - $text.IndexOf('- stage: MigrateAndDeploySlots', [StringComparison]::Ordinal))
+if ([regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeTargetResolution\.ps1\s*$').Count -ne 1 -or
+    [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeHttp\.ps1\s*$').Count -ne 1 -or
+    [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeEvidence\.ps1\s*$').Count -ne 1 -or
+    -not $text.Substring($text.IndexOf('- stage: Validate', [StringComparison]::Ordinal), $text.IndexOf('- stage: Package', [StringComparison]::Ordinal) - $text.IndexOf('- stage: Validate', [StringComparison]::Ordinal)).Contains('pool: { vmImage: ubuntu-latest }')) {
+    throw 'Smoke target, real PowerShell 7 HTTP and evidence-provenance regressions must each run once in Linux validation.'
+}
+if ([regex]::Matches($text, '(?m)^\s+value:\s+633398e2-6c00-4bb7-a576-2db0d210ee77\s*$').Count -ne 1 -or
+    -not $text.Contains('- name: AZDEMO_SUBSCRIPTION_ID')) {
+    throw 'The exact approved Azure demo subscription ID must be one read-only pipeline variable.'
+}
+if ([regex]::Matches($text, 'Resolve-AzureDemoSmokeTargets\.ps1').Count -ne 2) {
+    throw 'The target resolver must execute once for staging and once for production.'
+}
+foreach ($deploymentBlock in @($migrateAndDeploy, $swap)) {
+    foreach ($fragment in @(
+            'azureSubscription: sc-mtp-azure-demo-dev',
+            "@('account', 'show'",
+            "@('webapp', 'show'",
+            "@('webapp', 'deployment', 'slot', 'show'",
+            "'--subscription', '`$(AZDEMO_SUBSCRIPTION_ID)'",
+            "-ExpectedSubscriptionId '`$(AZDEMO_SUBSCRIPTION_ID)'",
+            "-ExpectedResourceGroupName '`$(AZDEMO_RESOURCE_GROUP_NAME)'",
+            "-ExpectedWebAppName '`$(AZDEMO_WEB_APP_NAME)'",
+            "-ExpectedApiAppName '`$(AZDEMO_API_APP_NAME)'",
+            '-ExpectedSlotName staging')) {
+        if (-not $deploymentBlock.Contains($fragment)) {
+            throw "A protected smoke job is missing exact Azure target resolution through the general deployment connection: $fragment"
+        }
+    }
+}
+foreach ($legacyHostConstruction in @(
+        'https://$(AZDEMO_WEB_APP_NAME)-staging.azurewebsites.net',
+        'https://$(AZDEMO_WEB_APP_NAME).azurewebsites.net')) {
+    if ($text.Contains($legacyHostConstruction)) {
+        throw "Pipeline still constructs a legacy smoke hostname: $legacyHostConstruction"
+    }
+}
+foreach ($fragment in @(
+        "-WebBaseUri 'https://`$(AZDEMO_WEB_STAGING_HOST)'",
+        "-VerifiedWebHost '`$(AZDEMO_WEB_STAGING_HOST)'",
+        "-VerifiedApiHost '`$(AZDEMO_API_STAGING_HOST)'",
+        '-TargetSlotName staging',
+        "-WebBaseUri 'https://`$(AZDEMO_WEB_PRODUCTION_HOST)'",
+        "-VerifiedWebHost '`$(AZDEMO_WEB_PRODUCTION_HOST)'",
+        "-VerifiedApiHost '`$(AZDEMO_API_PRODUCTION_HOST)'",
+        '-TargetSlotName production',
+        "-InfrastructureDeploymentId '`$(AZDEMO_INFRASTRUCTURE_DEPLOYMENT_ID)'",
+        "-PipelineDefinition '`$(Build.DefinitionName)'",
+        "-PipelineRunId '`$(Build.BuildId)'",
+        "condition: eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true')",
+        "condition: eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true')")) {
+    if (-not $text.Contains($fragment)) { throw "Smoke execution or safe failure-evidence publication is missing: $fragment" }
+}
+if ($text.Contains('AZDEMO_SMOKE_PREREQUISITE_EVIDENCE') -or $text.Contains("-PrerequisiteEvidenceDirectory") -or
+    $swap.Contains('sql-bootstrap.json') -or $swap.Contains('DownloadSecureFile@1')) {
+    throw 'SQL bootstrap input must remain separate from smoke evidence and must not be downloaded by the swap job.'
+}
+if ($text.Contains('-ProtectedEvidenceDirectory')) {
+    throw 'The pipeline must not claim a protected smoke-evidence delivery source until the proposed ingestion mechanism is approved and implemented.'
+}
+$stagingApiDeploymentIndex = $migrateAndDeploy.IndexOf('displayName: Deploy API ZIP to staging only', [StringComparison]::Ordinal)
+$stagingWebDeploymentIndex = $migrateAndDeploy.IndexOf('displayName: Deploy web ZIP to staging only', [StringComparison]::Ordinal)
+$stagingSmokeIndex = $migrateAndDeploy.IndexOf('Invoke-AzureDemoSmokeTests.ps1', [StringComparison]::Ordinal)
+if ($stagingApiDeploymentIndex -lt 0 -or $stagingWebDeploymentIndex -le $stagingApiDeploymentIndex -or $stagingSmokeIndex -le $stagingWebDeploymentIndex) {
+    throw 'Staging API/web deployment must finish before staging runtime smoke execution.'
+}
+if ($migrateAndDeploy.IndexOf('Invoke-AzureDemoSmokeTests.ps1', [StringComparison]::Ordinal) -gt $text.IndexOf('- stage: ReleaseApproval', [StringComparison]::Ordinal) -or
+    $migrateAndDeploy.IndexOf('Invoke-AzureDemoSmokeTests.ps1', [StringComparison]::Ordinal) -lt 0) {
+    throw 'Staging smoke must complete before release approval and any slot swap.'
+}
+$apiSwapCommand = "az webapp deployment slot swap --resource-group '`$(AZDEMO_RESOURCE_GROUP_NAME)' --name '`$(AZDEMO_API_APP_NAME)' --slot staging --target-slot production"
+$webSwapCommand = "az webapp deployment slot swap --resource-group '`$(AZDEMO_RESOURCE_GROUP_NAME)' --name '`$(AZDEMO_WEB_APP_NAME)' --slot staging --target-slot production"
+if ($swap.IndexOf($apiSwapCommand, [StringComparison]::Ordinal) -lt 0 -or
+    $swap.IndexOf($apiSwapCommand, [StringComparison]::Ordinal) -ge $swap.IndexOf($webSwapCommand, [StringComparison]::Ordinal)) {
     throw 'Approved swap order must be API before web.'
+}
+if ($swap.IndexOf('Resolve-AzureDemoSmokeTargets.ps1', [StringComparison]::Ordinal) -ge $swap.IndexOf($apiSwapCommand, [StringComparison]::Ordinal) -or
+    $swap.IndexOf($webSwapCommand, [StringComparison]::Ordinal) -ge $swap.IndexOf('Invoke-AzureDemoSmokeTests.ps1', [StringComparison]::Ordinal)) {
+    throw 'Production targets must resolve before swap and production smoke must run after swap.'
 }
 if ($rollback.IndexOf('$(AZDEMO_WEB_APP_NAME)', [StringComparison]::Ordinal) -ge $rollback.IndexOf('$(AZDEMO_API_APP_NAME)', [StringComparison]::Ordinal)) {
     throw 'Rollback target comparisons must list the web application before the API application.'

@@ -214,7 +214,7 @@ resource webConfiguration 'Microsoft.Web/sites/config@2023-12-01' = {
     appSettings: concat(commonWebSettings, [
       {
         name: 'API_ORIGIN'
-        value: 'https://${apiAppName}.azurewebsites.net'
+        value: 'https://${api.properties.defaultHostName}'
       }
       {
         name: 'OTEL_SERVICE_NAME'
@@ -234,21 +234,6 @@ resource webSlot 'Microsoft.Web/sites/slots@2023-12-01' = {
     publicNetworkAccess: 'Enabled'
     virtualNetworkSubnetId: integrationSubnetId
     vnetRouteAllEnabled: true
-    siteConfig: union(commonSiteConfig, {
-      linuxFxVersion: webLinuxFxVersion
-      appCommandLine: 'node server.js'
-      healthCheckPath: '/health'
-      appSettings: concat(commonWebSettings, [
-        {
-          name: 'API_ORIGIN'
-          value: 'https://${apiAppName}-${stagingSlotName}.azurewebsites.net'
-        }
-        {
-          name: 'OTEL_SERVICE_NAME'
-          value: 'lgrtm-web-staging-azdemo'
-        }
-      ])
-    })
   }
 }
 resource api 'Microsoft.Web/sites@2023-12-01' existing = {
@@ -265,11 +250,11 @@ resource apiConfiguration 'Microsoft.Web/sites/config@2023-12-01' = {
     appSettings: concat(apiCommon, [
       {
         name: 'AllowedHosts'
-        value: '${apiAppName}.azurewebsites.net'
+        value: api.properties.defaultHostName
       }
       {
         name: 'AllowedOrigins__0'
-        value: 'https://${webAppName}.azurewebsites.net'
+        value: 'https://${web.properties.defaultHostName}'
       }
       {
         name: 'AzureIdentity__ManagedIdentityClientId'
@@ -303,33 +288,56 @@ resource apiSlot 'Microsoft.Web/sites/slots@2023-12-01' = {
     publicNetworkAccess: 'Disabled'
     virtualNetworkSubnetId: integrationSubnetId
     vnetRouteAllEnabled: true
-    siteConfig: union(commonSiteConfig, {
-      linuxFxVersion: apiLinuxFxVersion
-      healthCheckPath: '/health/ready'
-      appSettings: concat(apiCommon, [
-        {
-          name: 'AllowedHosts'
-          value: '${apiAppName}-${stagingSlotName}.azurewebsites.net'
-        }
-        {
-          name: 'AllowedOrigins__0'
-          value: 'https://${webAppName}-${stagingSlotName}.azurewebsites.net'
-        }
-        {
-          name: 'AzureIdentity__ManagedIdentityClientId'
-          value: apiStagingIdentityClientId
-        }
-        {
-          name: 'ConnectionStrings__LgrDatabase'
-          value: '${sqlBase}${apiStagingIdentityClientId}'
-        }
-        {
-          name: 'OTEL_SERVICE_NAME'
-          value: 'lgrtm-api-staging-azdemo'
-        }
-      ])
-    })
   }
+}
+resource webSlotConfiguration 'Microsoft.Web/sites/slots/config@2023-12-01' = {
+  parent: webSlot
+  name: 'web'
+  properties: union(commonSiteConfig, {
+    linuxFxVersion: webLinuxFxVersion
+    appCommandLine: 'node server.js'
+    healthCheckPath: '/health'
+    appSettings: concat(commonWebSettings, [
+      {
+        name: 'API_ORIGIN'
+        value: 'https://${apiSlot.properties.defaultHostName}'
+      }
+      {
+        name: 'OTEL_SERVICE_NAME'
+        value: 'lgrtm-web-staging-azdemo'
+      }
+    ])
+  })
+}
+resource apiSlotConfiguration 'Microsoft.Web/sites/slots/config@2023-12-01' = {
+  parent: apiSlot
+  name: 'web'
+  properties: union(commonSiteConfig, {
+    linuxFxVersion: apiLinuxFxVersion
+    healthCheckPath: '/health/ready'
+    appSettings: concat(apiCommon, [
+      {
+        name: 'AllowedHosts'
+        value: apiSlot.properties.defaultHostName
+      }
+      {
+        name: 'AllowedOrigins__0'
+        value: 'https://${webSlot.properties.defaultHostName}'
+      }
+      {
+        name: 'AzureIdentity__ManagedIdentityClientId'
+        value: apiStagingIdentityClientId
+      }
+      {
+        name: 'ConnectionStrings__LgrDatabase'
+        value: '${sqlBase}${apiStagingIdentityClientId}'
+      }
+      {
+        name: 'OTEL_SERVICE_NAME'
+        value: 'lgrtm-api-staging-azdemo'
+      }
+    ])
+  })
 }
 resource webSlots 'Microsoft.Web/sites/config@2023-12-01' = {
   parent: web

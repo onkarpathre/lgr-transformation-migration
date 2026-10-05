@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
 import { ApiProvider } from "@/components/ApiContext";
@@ -9,7 +10,9 @@ export const metadata: Metadata = {
   description: "A governed transformation and migration planning platform for restricted management demonstrations."
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  await connection();
+
   return (
     <html lang="en">
       <body><EntraAuthProvider><EntraAuthGate><ApiProvider><AppShell>{children}</AppShell></ApiProvider></EntraAuthGate></EntraAuthProvider></body>

@@ -50,8 +50,138 @@ public sealed class AzureDemoDeploymentBoundaryTests
         var swapStage = pipeline[pipeline.IndexOf("- stage: SwapAndVerify", StringComparison.Ordinal)..pipeline.IndexOf("- stage: Rollback", StringComparison.Ordinal)];
         var rollbackStage = pipeline[pipeline.IndexOf("- stage: Rollback", StringComparison.Ordinal)..];
 
-        Assert.True(swapStage.IndexOf("$(AZDEMO_API_APP_NAME)", StringComparison.Ordinal) < swapStage.IndexOf("$(AZDEMO_WEB_APP_NAME)", StringComparison.Ordinal));
+        const string apiSwap = "az webapp deployment slot swap --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name '$(AZDEMO_API_APP_NAME)' --slot staging --target-slot production";
+        const string webSwap = "az webapp deployment slot swap --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name '$(AZDEMO_WEB_APP_NAME)' --slot staging --target-slot production";
+        Assert.True(swapStage.IndexOf(apiSwap, StringComparison.Ordinal) >= 0);
+        Assert.True(swapStage.IndexOf(apiSwap, StringComparison.Ordinal) < swapStage.IndexOf(webSwap, StringComparison.Ordinal));
         Assert.True(rollbackStage.IndexOf("--name $env:ROLLBACK_WEB_APP", StringComparison.Ordinal) < rollbackStage.IndexOf("--name $env:ROLLBACK_API_APP", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Pipeline_resolves_exact_Azure_reported_smoke_hosts_and_retains_failed_evidence()
+    {
+        var root = FindRepositoryRoot();
+        var pipeline = File.ReadAllText(Path.Combine(root, "azure-pipelines.yml"));
+
+        Assert.Equal(2, pipeline.Split("Resolve-AzureDemoSmokeTargets.ps1", StringSplitOptions.None).Length - 1);
+        Assert.Contains("value: 633398e2-6c00-4bb7-a576-2db0d210ee77", pipeline, StringComparison.Ordinal);
+        Assert.Contains("@('account', 'show'", pipeline, StringComparison.Ordinal);
+        Assert.Contains("@('webapp', 'show'", pipeline, StringComparison.Ordinal);
+        Assert.Contains("@('webapp', 'deployment', 'slot', 'show'", pipeline, StringComparison.Ordinal);
+        Assert.Contains("-WebBaseUri 'https://$(AZDEMO_WEB_STAGING_HOST)'", pipeline, StringComparison.Ordinal);
+        Assert.Contains("-TargetSlotName staging", pipeline, StringComparison.Ordinal);
+        Assert.Contains("-WebBaseUri 'https://$(AZDEMO_WEB_PRODUCTION_HOST)'", pipeline, StringComparison.Ordinal);
+        Assert.Contains("-TargetSlotName production", pipeline, StringComparison.Ordinal);
+        Assert.Contains("condition: eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true')", pipeline, StringComparison.Ordinal);
+        Assert.Contains("condition: eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true')", pipeline, StringComparison.Ordinal);
+        Assert.Contains("AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("AZDEMO_SMOKE_PREREQUISITE_EVIDENCE", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("-PrerequisiteEvidenceDirectory", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("-ProtectedEvidenceDirectory", pipeline, StringComparison.Ordinal);
+        Assert.Contains("-InfrastructureDeploymentId '$(AZDEMO_INFRASTRUCTURE_DEPLOYMENT_ID)'", pipeline, StringComparison.Ordinal);
+        Assert.Contains("-PipelineDefinition '$(Build.DefinitionName)' -PipelineRunId '$(Build.BuildId)'", pipeline, StringComparison.Ordinal);
+        var stagingStage = pipeline[pipeline.IndexOf("- stage: MigrateAndDeploySlots", StringComparison.Ordinal)..pipeline.IndexOf("- stage: ReleaseApproval", StringComparison.Ordinal)];
+        Assert.True(stagingStage.IndexOf("Deploy web ZIP to staging only", StringComparison.Ordinal) < stagingStage.IndexOf("Invoke-AzureDemoSmokeTests.ps1", StringComparison.Ordinal));
+        var swapStage = pipeline[pipeline.IndexOf("- stage: SwapAndVerify", StringComparison.Ordinal)..pipeline.IndexOf("- stage: Rollback", StringComparison.Ordinal)];
+        Assert.DoesNotContain("sql-bootstrap.json", swapStage, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadSecureFile@1", swapStage, StringComparison.Ordinal);
+        Assert.DoesNotContain("https://$(AZDEMO_WEB_APP_NAME)-staging.azurewebsites.net", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("https://$(AZDEMO_WEB_APP_NAME).azurewebsites.net", pipeline, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Bicep_maps_exact_generated_hosts_and_origins_without_slot_dependency_cycles()
+    {
+        var root = FindRepositoryRoot();
+        var appService = File.ReadAllText(Path.Combine(root, "infra", "bicep", "modules", "appservice.bicep"));
+
+        var productionWebConfigurationStart = appService.IndexOf("resource webConfiguration", StringComparison.Ordinal);
+        var stagingWebSlotStart = appService.IndexOf("resource webSlot", StringComparison.Ordinal);
+        var apiResourceStart = appService.IndexOf("resource api ", StringComparison.Ordinal);
+        var productionApiConfigurationStart = appService.IndexOf("resource apiConfiguration", StringComparison.Ordinal);
+        var stagingApiSlotStart = appService.IndexOf("resource apiSlot ", StringComparison.Ordinal);
+        var stagingWebConfigurationStart = appService.IndexOf("resource webSlotConfiguration", StringComparison.Ordinal);
+        var stagingApiConfigurationStart = appService.IndexOf("resource apiSlotConfiguration", StringComparison.Ordinal);
+        var webSlotSettingsStart = appService.IndexOf("resource webSlots", StringComparison.Ordinal);
+        var apiSlotSettingsStart = appService.IndexOf("resource apiSlots", StringComparison.Ordinal);
+        var productionWebConfiguration = appService[productionWebConfigurationStart..stagingWebSlotStart];
+        var stagingWebSlot = appService[stagingWebSlotStart..apiResourceStart];
+        var productionApiConfiguration = appService[productionApiConfigurationStart..stagingApiSlotStart];
+        var stagingApiSlot = appService[stagingApiSlotStart..stagingWebConfigurationStart];
+        var stagingWebConfiguration = appService[stagingWebConfigurationStart..stagingApiConfigurationStart];
+        var stagingApiConfiguration = appService[stagingApiConfigurationStart..webSlotSettingsStart];
+        var webSlotSettings = appService[webSlotSettingsStart..apiSlotSettingsStart];
+
+        const string productionApiOrigin = "value: 'https://${api.properties.defaultHostName}'";
+        const string stagingApiOrigin = "value: 'https://${apiSlot.properties.defaultHostName}'";
+        const string productionAllowedHost = "value: api.properties.defaultHostName";
+        const string stagingAllowedHost = "value: apiSlot.properties.defaultHostName";
+        const string productionAllowedOrigin = "value: 'https://${web.properties.defaultHostName}'";
+        const string stagingAllowedOrigin = "value: 'https://${webSlot.properties.defaultHostName}'";
+
+        Assert.Contains(productionApiOrigin, productionWebConfiguration, StringComparison.Ordinal);
+        Assert.DoesNotContain(stagingApiOrigin, productionWebConfiguration, StringComparison.Ordinal);
+        Assert.Contains(stagingApiOrigin, stagingWebConfiguration, StringComparison.Ordinal);
+        Assert.DoesNotContain(productionApiOrigin, stagingWebConfiguration, StringComparison.Ordinal);
+        Assert.Contains(productionAllowedHost, productionApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains(productionAllowedOrigin, productionApiConfiguration, StringComparison.Ordinal);
+        Assert.DoesNotContain(stagingAllowedHost, productionApiConfiguration, StringComparison.Ordinal);
+        Assert.DoesNotContain(stagingAllowedOrigin, productionApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains(stagingAllowedHost, stagingApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains(stagingAllowedOrigin, stagingApiConfiguration, StringComparison.Ordinal);
+        Assert.DoesNotContain(productionAllowedHost, stagingApiConfiguration, StringComparison.Ordinal);
+        Assert.DoesNotContain(productionAllowedOrigin, stagingApiConfiguration, StringComparison.Ordinal);
+
+        foreach (var exactMapping in new[]
+        {
+            productionApiOrigin,
+            stagingApiOrigin,
+            productionAllowedHost,
+            stagingAllowedHost,
+            productionAllowedOrigin,
+            stagingAllowedOrigin
+        })
+        {
+            Assert.Equal(1, appService.Split(exactMapping, StringSplitOptions.None).Length - 1);
+        }
+
+        Assert.DoesNotContain("appSettings:", stagingWebSlot, StringComparison.Ordinal);
+        Assert.DoesNotContain("apiSlot.properties", stagingWebSlot, StringComparison.Ordinal);
+        Assert.DoesNotContain("appSettings:", stagingApiSlot, StringComparison.Ordinal);
+        Assert.DoesNotContain("webSlot.properties", stagingApiSlot, StringComparison.Ordinal);
+        Assert.Contains("parent: webSlot", stagingWebConfiguration, StringComparison.Ordinal);
+        Assert.Contains("parent: apiSlot", stagingApiConfiguration, StringComparison.Ordinal);
+        Assert.Equal(4, appService.Split("appSettings:", StringSplitOptions.None).Length - 1);
+        foreach (var webConfiguration in new[] { productionWebConfiguration, stagingWebConfiguration })
+        {
+            Assert.Contains("appSettings: concat(commonWebSettings", webConfiguration, StringComparison.Ordinal);
+            Assert.Contains("name: 'API_ORIGIN'", webConfiguration, StringComparison.Ordinal);
+            Assert.Contains("name: 'OTEL_SERVICE_NAME'", webConfiguration, StringComparison.Ordinal);
+        }
+        foreach (var apiConfiguration in new[] { productionApiConfiguration, stagingApiConfiguration })
+        {
+            Assert.Contains("appSettings: concat(apiCommon", apiConfiguration, StringComparison.Ordinal);
+            foreach (var settingName in new[]
+            {
+                "AllowedHosts",
+                "AllowedOrigins__0",
+                "AzureIdentity__ManagedIdentityClientId",
+                "ConnectionStrings__LgrDatabase",
+                "OTEL_SERVICE_NAME"
+            })
+            {
+                Assert.Contains($"name: '{settingName}'", apiConfiguration, StringComparison.Ordinal);
+            }
+        }
+        Assert.Contains("'API_ORIGIN'", webSlotSettings, StringComparison.Ordinal);
+        Assert.Contains("'AllowedHosts'", appService[apiSlotSettingsStart..], StringComparison.Ordinal);
+        Assert.Contains("'AllowedOrigins__0'", appService[apiSlotSettingsStart..], StringComparison.Ordinal);
+        Assert.DoesNotContain("value: 'https://${apiAppName}.azurewebsites.net'", appService, StringComparison.Ordinal);
+        Assert.DoesNotContain("value: 'https://${apiAppName}-${stagingSlotName}.azurewebsites.net'", appService, StringComparison.Ordinal);
+        Assert.DoesNotContain("value: '${apiAppName}.azurewebsites.net'", appService, StringComparison.Ordinal);
+        Assert.DoesNotContain("value: '${apiAppName}-${stagingSlotName}.azurewebsites.net'", appService, StringComparison.Ordinal);
+        Assert.DoesNotContain("value: 'https://${webAppName}.azurewebsites.net'", appService, StringComparison.Ordinal);
+        Assert.DoesNotContain("value: 'https://${webAppName}-${stagingSlotName}.azurewebsites.net'", appService, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -138,7 +268,10 @@ public sealed class AzureDemoDeploymentBoundaryTests
             Path.Combine("scripts", "database", "Configure-AzureDemoDatabasePrincipals.sql"),
             Path.Combine("scripts", "database", "Assert-AzureDemoMigrationTarget.ps1"),
             Path.Combine("scripts", "data", "Invoke-AzureDemoSeed.ps1"),
-            Path.Combine("scripts", "smoke", "Invoke-AzureDemoSmokeTests.ps1")
+            Path.Combine("scripts", "smoke", "Invoke-AzureDemoSmokeTests.ps1"),
+            Path.Combine("scripts", "smoke", "AzureDemoSmokeEvidenceContract.ps1"),
+            Path.Combine("scripts", "smoke", "AzureDemoSmokeUtilities.ps1"),
+            Path.Combine("scripts", "smoke", "Resolve-AzureDemoSmokeTargets.ps1")
         };
         var deployment = string.Join('\n', deploymentPaths.Select(path => File.ReadAllText(Path.Combine(root, path))));
         var main = File.ReadAllText(Path.Combine(root, "infra", "bicep", "main.bicep"));

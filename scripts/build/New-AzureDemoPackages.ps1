@@ -94,6 +94,9 @@ try {
         if ($null -eq $root -or $root.StatusCode -ne 200) { throw 'Standalone web root did not start successfully.' }
         $deep = Invoke-WebRequest -Uri 'http://127.0.0.1:3127/inventory/servers' -UseBasicParsing -TimeoutSec 10
         if ($deep.StatusCode -ne 200) { throw 'Standalone deep route did not return 200.' }
+        $cspNonceTest = Join-Path $repo 'src/web/tests/production-csp-nonce.mjs'
+        & node $cspNonceTest 'http://127.0.0.1:3127'
+        if ($LASTEXITCODE) { throw 'Standalone production CSP nonce regression failed.' }
         $assetPath = [regex]::Match($root.Content, '/_next/static/[^"'']+\.(?:js|css)').Value
         if (-not $assetPath) { throw 'Standalone page did not reference a hashed static asset.' }
         $asset = Invoke-WebRequest -Uri "http://127.0.0.1:3127$assetPath" -UseBasicParsing -TimeoutSec 10

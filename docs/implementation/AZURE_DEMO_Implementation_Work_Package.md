@@ -1721,6 +1721,259 @@ handoff:
 
 READY_FOR_TEST
 
+## Smoke evidence workflow reconciliation and fail-closed contract
+
+### Baseline, role and authority
+
+This Developer continuation began from branch `fix/mtp-azure-demo-reconciliation`, exact HEAD `e20410c008d1ebc67f6148cab4760fc9037cbb6c`, an empty staged index and the ten requested hostname/HTTP repair paths already present in the worktree. Those ten paths were preserved and extended; none was discarded, reset, staged or recreated from baseline. No additional pre-existing or unexpected worktree path was found.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14", "F-15"]
+  non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-04", "NF-05", "NF-06", "NF-07", "NF-10", "NF-11", "NF-12", "NF-13"]
+  risks: ["R-02", "R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-08"]
+  approvals: []
+```
+
+The approved architecture authorises staging-first implementation and evidence enforcement, but does not identify a protected same-run ingestion mechanism for interactive browser, specialist, fault-injection, alert and rehearsal results. This implementation therefore strengthens local validation and ordering without inventing a Secure File, artifact resource, pipeline ID, service connection, previous release, approval or external store. The exact proposed amendment is `docs/implementation/AZURE_DEMO_Smoke_Evidence_Coverage.md`; it is explicitly unapproved.
+
+### Confirmed dependency and delivery defect
+
+The pipeline used the job-local SQL bootstrap directory as `AZDEMO_SMOKE_PREREQUISITE_EVIDENCE`. That directory contained only `sql-bootstrap.json`, while the runner required 17 distinct `SMK-xx.json` records. The SQL file's reusable grant-provenance contract cannot prove a release-specific smoke assertion. The `Swap` job downloaded the SQL Secure File only because smoke was pointed at the wrong directory; it had no migration/SQL-bootstrap consumer.
+
+The correct non-circular order is staging deployment, staging runtime execution, immutable failed/success evidence publication, independent Tester/Quality review of actual results, full human release gate, swap, then post-swap verification. A post-swap result cannot authorise the swap that created it. SMK-19 is a separate protected rehearsal input to the release gate and must refer to the real previously deployed release, not the current build.
+
+### Implemented work
+
+- Renamed the database-only job variable to `AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY`; only `DatabaseAndSlots` downloads and validates `sql-bootstrap.json`. `Swap` no longer downloads it, and no smoke invocation receives it.
+- Captured the exact infrastructure deployment ID and bound smoke output to the Azure DevOps definition/run. The runner also validates the deployment manifest schema and exact source commit before execution.
+- Added `AzureDemoSmokeEvidenceContract.ps1`. A protected record must contain all acceptance-derived assertions for its check, exact commit/manifest/deployment/run/target/slot/host provenance, the required execution perspective and identity kind, UTC interval/correlation, and hash-verified sanitized attachments. A bare PASS, fixture evidence or substituted origin fails.
+- Preserved exactly 17 protected/hybrid checks. SMK-04 requires an outside-private-network perspective; SMK-05 requires the Sweden managed pool/private identities; SMK-06 requires an assigned-user browser; SMK-13 requires separated runtime/migration identities.
+- SMK-19 additionally requires a distinct previous source commit, previous deployment-manifest file/hash, protected deployment reference and rehearsal approval reference. Current-release substitution is rejected. No previous release was guessed.
+- Added local evidence-contract tests for valid records and missing, malformed, wrong-commit, wrong-artifact, substituted-target, wrong-run/origin, fixture, missing-assertion, attachment-hash and current-as-previous failures. The regression uses temporary synthetic fixtures only and never publishes them as release evidence.
+- Extended safe read-only runner automation: SMK-02 checks health/home/deep responses; SMK-03 checks hash-like asset, MIME and immutable public caching; SMK-10 checks origin/method/header denials plus same-origin route reachability; SMK-11 checks exact web and private-API headers; SMK-20 checks the exact patched lock plus source/manifest prohibited paths.
+- Retained all 22 result records and summary publication after an attempted failed run. Until the protected ingestion decision is approved, the YAML intentionally supplies no `-ProtectedEvidenceDirectory`, so missing protected evidence blocks the release gate.
+- Added the exact 22-row coverage/ownership/input/reviewer/staging-production matrix and the minimal unapproved work-package/ADR decision.
+
+### SMK-19 finding
+
+The repository and local Git refs do not prove what release is deployed in the production slots. `release/azure-demo-v1`, the current artifact, current smoke results and current deployment manifest are not rollback-target evidence. Platform/Operations must provide the prior protected deployment record, its source commit, immutable deployment-manifest file/hash, compatibility decision and rehearsal change/approval reference. No swap or rehearsal was performed and the requirement was not waived.
+
+### Exact changed files
+
+The original ten-file repair set remains:
+
+- `azure-pipelines.yml`
+- `docs/implementation/AZURE_DEMO_Implementation_Work_Package.md`
+- `scripts/build/Test-AzurePipelineStructure.ps1`
+- `scripts/build/Test-AzureDemoSmokeHttp.ps1`
+- `scripts/build/Test-AzureDemoSmokeTargetResolution.ps1`
+- `scripts/smoke/AzureDemoSmokeUtilities.ps1`
+- `scripts/smoke/Invoke-AzureDemoSmokeTests.ps1`
+- `scripts/smoke/README.md`
+- `scripts/smoke/Resolve-AzureDemoSmokeTargets.ps1`
+- `tests/api.unit/AzureDemoDeploymentBoundaryTests.cs`
+
+This continuation adds exactly three new paths:
+
+- `docs/implementation/AZURE_DEMO_Smoke_Evidence_Coverage.md`
+- `scripts/build/Test-AzureDemoSmokeEvidence.ps1`
+- `scripts/smoke/AzureDemoSmokeEvidenceContract.ps1`
+
+### Local verification
+
+| Check | Result |
+|---|---|
+| Baseline/index | PASS: branch and HEAD matched the request; staged index remained empty. |
+| PowerShell parsing | PASS: five evidence/runner/target/pipeline PowerShell files parsed with zero errors under Windows PowerShell 5.1. This is not PowerShell 7/Linux runtime evidence. |
+| Evidence contract | PASS: valid protected-runtime and previous-release fixtures; missing, malformed, wrong commit/artifact, substituted target, wrong origin, fixture, assertion, attachment and current-release substitution rejected. |
+| Exact smoke targets | PASS: four generated App Service host shapes and 12 invalid resolver/URI/slot/substitution cases. |
+| Pipeline structure | PASS: seven ordered stages, database-only SQL input, deployment-before-staging-tests, tests-before-review/gate, gate-before-swap, API-first swap, post-swap verification and failed-evidence publication. |
+| Focused deployment boundary | PASS: 12/12. |
+| Full .NET unit suite | PASS: 208/208. |
+| Full .NET integration suite | PASS: 145/145. |
+| Source/security boundary | PASS across 193 source/configuration files. |
+| Rollback safeguards | PASS: one valid and 12 fail-closed cases. This is structural guard evidence, not SMK-19 rehearsal evidence. |
+| Formatting/diff | PASS: focused `dotnet format --verify-no-changes` and `git diff --check`; only Git line-ending notices were emitted. |
+| Linux HTTP regression | UNAVAILABLE locally and not passed: `pwsh` is absent. `Test-AzureDemoSmokeHttp.ps1` and the new evidence test are each wired once into `ubuntu-latest` validation. |
+| Protected/live tests | NOT RUN: no Azure, Azure DevOps, SQL, Entra, endpoints, deployment, migration, seed, fault, test alert, staging, swap or rehearsal action occurred. No smoke PASS or approval was created. |
+
+NuGet vulnerability metadata was unavailable during `dotnet test` and emitted `NU1900`; no restore or dependency change occurred.
+
+### Remaining decision and operator inputs
+
+TDA, Test Services, Information Security, Azure DevOps/repository ownership and Azure Platform/Operations must approve a concrete protected same-run evidence ingestion route, producer identities/permissions, artifact/check name and retention, browser submission method, independent review ordering, post-swap read-only subset and SMK-19 previous-release source. The operator must then supply the actual infrastructure deployment ID, Azure DevOps run, exact resolved targets, assigned-user/role context, authorised invalid-token fixtures, approved fault/alert/rehearsal changes and the real previous deployment record/manifest as applicable. Missing values remain blocking.
+
+The separately reported web staging degraded health was neither diagnosed nor changed by this repair. Hostname resolution and evidence validation do not establish application health.
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "architect"
+  state: "NEEDS_ARCHITECTURE_DECISION"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_e20410c008d1ebc67f6148cab4760fc9037cbb6c"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-04", "NF-05", "NF-06", "NF-07", "NF-10", "NF-11", "NF-12", "NF-13"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-08"]
+  artefacts:
+    - "docs/implementation/AZURE_DEMO_Smoke_Evidence_Coverage.md"
+    - "scripts/smoke/AzureDemoSmokeEvidenceContract.ps1"
+    - "scripts/build/Test-AzureDemoSmokeEvidence.ps1"
+    - "scripts/smoke/Invoke-AzureDemoSmokeTests.ps1"
+    - "azure-pipelines.yml"
+  evidence:
+    - "Local evidence, target, pipeline, source, rollback, boundary, unit and integration regressions passed."
+    - "PowerShell 7/Linux HTTP and every protected live assertion remain explicitly unexecuted."
+  decisions:
+    - "SQL bootstrap input is separate from smoke evidence and is consumed only before migration."
+    - "Missing protected evidence remains a release-blocking failure; no delivery source is inferred."
+    - "Post-swap evidence cannot authorise the same swap."
+    - "SMK-19 requires the real distinct previous deployment and manifest."
+  assumptions: []
+  risks:
+    - "No approved protected evidence ingestion mechanism exists."
+    - "The staging application independently reports degraded health."
+  defects:
+    - "REPAIRED LOCALLY: SQL bootstrap input was incorrectly presented as the smoke prerequisite directory."
+    - "REPAIRED LOCALLY: smoke evidence validation accepted an under-specified PASS-only contract."
+  blockers:
+    - "Architecture/governance decision for protected same-run evidence ingestion and reviewer ordering."
+    - "Actual live evidence for all mandatory checks and the real SMK-19 previous release."
+  approvals: []
+  requested_action: "Architect/TDA and named control owners must decide the minimal evidence-ingestion amendment; after approval, Developer may wire only that mechanism and Tester must execute/review the protected suite before any release gate or swap."
+```
+
+NEEDS_ARCHITECTURE_DECISION
+
+## Azure demo smoke target resolution and safe diagnostics repair
+
+### Baseline, authority and traceability
+
+The Developer repair started from the exact requested baseline: branch `fix/mtp-azure-demo-reconciliation`, commit `e20410c008d1ebc67f6148cab4760fc9037cbb6c`, clean worktree and empty staged index. It remains within approved work item `AZURE-DEMO-001` and the deployment architecture's staging-first, exact-resource, commit/artifact-bound smoke contract. The work is separable from Q-08 service acceptance and does not change application capability, migrations, schema, seed, startup, network rules, identities, service connections, deployment defaults or approval policy. No Azure, Azure DevOps, SQL or deployed endpoint was accessed.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-06", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+### Confirmed defects and prerequisite-evidence findings
+
+The staging and production callers constructed legacy hostnames from application names. The real staging `defaultHostName` includes an Azure-generated uniqueness token and regional stamp, so the caller and the runner's two-entry legacy hostname allowlist rejected the exact deployed slot. The generic request catch then reduced every request failure to the path `/`, concealing check ID, destination host, status and failure category.
+
+Both protected deployment jobs populate `AZDEMO_SMOKE_PREREQUISITE_EVIDENCE` with a job-local directory containing only `sql-bootstrap.json`. No pipeline step, artifact download or Secure File supplies any `SMK-xx.json`. Under the current invocation, the runner requires protected evidence for `SMK-01`, `SMK-04`, `SMK-05`, `SMK-06`, `SMK-07`, `SMK-08`, `SMK-09`, `SMK-12`, `SMK-13`, `SMK-14`, `SMK-15`, `SMK-16`, `SMK-17`, `SMK-18`, `SMK-19`, `SMK-21` and `SMK-22`. SQL bootstrap evidence is not any of those contracts: it has a different filename, schema, provenance purpose and validation rule. No file was copied, renamed, fabricated or treated as PASS. The protected staging run must therefore remain red until an independently approved commit/artifact-bound producer and delivery route exists.
+
+Repository inspection found no rollback smoke caller. The rollback stage validates the requested release/target and swaps web then API back, but it has neither a previous-release deployment manifest nor previous-release `SMK-xx.json` evidence with which to bind a truthful post-rollback smoke record. Reusing the current build manifest would violate commit/artifact binding. This repair does not fabricate that missing release-evidence contract and does not add an unbound rollback smoke claim.
+
+### Bounded implementation
+
+`Resolve-AzureDemoSmokeTargets.ps1` receives captured Azure CLI account/site/slot responses and their exit codes. It rejects nonzero commands, empty or malformed/non-object JSON, the wrong subscription or tenant, the wrong resource group/app/slot/type/ID, malformed host-only values, and hostnames that do not belong to the exact resolved app/slot shape. It supports both legacy App Service default names and Azure-generated uniqueness-token/regional-stamp names without hardcoding the observed suffix. The two deployment jobs query the production site and `staging` slot for both web and API with explicit `--subscription`, using only the existing general deployment service connection `sc-mtp-azure-demo-dev`. Production targets resolve before the API-first/web-second swap. Staging smoke remains before ReleaseApproval, so any staging smoke failure blocks swap.
+
+The smoke runner binds the URI to the resolver's exact verified host and to the fixed approved subscription, resource group, web/API names and production/staging identity. It rejects HTTP for the HTTPS base URI, userinfo, query strings, fragments, unexpected ports, cross-slot hosts and arbitrary `azurewebsites.net` names. Every derived request is checked against the exact host before dispatch.
+
+`SMK-01` still sends HTTP and calls PowerShell 7 `Invoke-WebRequest` with `MaximumRedirection 0` and `SkipHttpErrorCheck`. Normal 3xx returns and the PowerShell variant that exposes a retained 3xx response through an exception are normalized. Only 301, 302, 307 or 308 to HTTPS on the same exact host, default port and path passes; transport failure, 200, 500, cross-host redirect, userinfo, query and fragment do not. Hybrid `SMK-01`, `SMK-08` and `SMK-12` now require their protected evidence as well as the automated check.
+
+Request evidence contains only check ID, scheme, hostname, path, available HTTP status and a bounded exception category. It excludes request headers, tokens, cookies, query strings, response bodies and unrestricted exception messages. The runner completes all 22 catalogue entries in fixed order, writes each record and `smoke-summary.json`, then fails with check IDs only. Attempt-marker conditions publish staging or production evidence after a failed attempted run. The original SQL evidence remains job-local and is still removed by the existing `always()` cleanup.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| PowerShell parsing | PASS: all six changed/new PowerShell scripts parsed with zero errors under Windows PowerShell 5.1. Parsing is not PowerShell 7 runtime evidence. |
+| Exact smoke target regression | PASS, exit `0`: Azure-generated production/staging hosts for web/API, including the reported web staging host shape; exact staging/production separation; approved catalogue order; and 12 wrong-subscription/group/app/slot, malformed, substituted, scheme, userinfo, port and arbitrary-host cases. |
+| Pipeline structural regression | PASS, exit `0`: seven ordered stages; exact-subscription Azure CLI lookup through `sc-mtp-azure-demo-dev`; resolver-before-swap; staging-smoke-before-approval; API-first/web-second swap; resolved staging/production hosts; attempted-failure evidence publication; existing SQL evidence cleanup and rollback controls. |
+| Rollback safeguards | PASS, exit `0`: one valid and 12 fail-closed rollback target cases. This validates the existing guard, not a post-rollback smoke run. |
+| Focused deployment boundary | PASS as part of rebuilt full suite; resolver/caller/evidence-publication assertions increased the class to 12 tests. |
+| Full API unit suite | PASS after rebuild, exit `0`: 208/208. Build emitted `NU1900` because connected NuGet vulnerability metadata was unavailable. |
+| Application artifact | PASS, exit `0`: hash, root-layout and prohibited-file checks. |
+| Immutable seed/deployment artifact | PASS, exit `0`: package publication, complete hash manifest, protected execution, reset, idempotency and fail-closed path/content checks against the unchanged 1,803-file local fixture. No artifact was regenerated. |
+| Package/hash generation regression | PASS, exit `0`: repository boundary, ZIP, exact-file manifest, SHA-256 and deterministic-generation checks for the unchanged 1,803-file local fixture. |
+| Source/security boundary | PASS, exit `0`: 191 source/configuration files. |
+| Focused formatting | PASS, exit `0`: `dotnet format ... --verify-no-changes --no-restore --include tests/api.unit/AzureDemoDeploymentBoundaryTests.cs`; workspace-load warnings only. PowerShell parsing and the pipeline trailing-whitespace structural gate also passed; PSScriptAnalyzer is not installed locally. |
+| Diff hygiene | PASS: `git diff --check`; line-ending conversion warnings only. |
+| Real PowerShell 7 HTTP fixtures | UNAVAILABLE locally and not claimed: only Windows PowerShell 5.1 is installed; `pwsh` and Docker are absent and WSL is not installed. `Test-AzureDemoSmokeHttp.ps1` is wired once into the `ubuntu-latest` validation job and must pass its 301/302/307/308, 200/500, cross-host, abrupt-close and redaction fixtures. |
+| Protected runtime | NOT RUN: no Azure/Azure DevOps/SQL access; no deployment, migration, seed, live smoke, swap or rollback. `sql-bootstrap.json` was not accessed or regenerated. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_e20410c008d1ebc67f6148cab4760fc9037cbb6c"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-06", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/smoke/AzureDemoSmokeUtilities.ps1"
+    - "scripts/smoke/Resolve-AzureDemoSmokeTargets.ps1"
+    - "scripts/smoke/Invoke-AzureDemoSmokeTests.ps1"
+    - "scripts/smoke/README.md"
+    - "scripts/build/Test-AzureDemoSmokeTargetResolution.ps1"
+    - "scripts/build/Test-AzureDemoSmokeHttp.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "tests/api.unit/AzureDemoDeploymentBoundaryTests.cs"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "All locally available exact-target, pipeline, rollback, deployment-boundary, unit, artifact, source, formatting and diff checks passed."
+    - "PowerShell 7 fixture execution and connected protected runtime checks remain outstanding and are not claimed."
+  decisions:
+    - "Resolve App Service defaultHostName from exact Azure resource identities; never construct or wildcard-allow smoke hosts."
+    - "Retain all 22 sanitized records before failing a smoke run."
+    - "Fail closed on missing SMK evidence and preserve commit/artifact binding rather than reuse SQL bootstrap or current-release evidence."
+  assumptions: []
+  risks:
+    - "The protected pipeline cannot pass until an approved producer/delivery contract supplies all 17 currently required SMK-xx.json files."
+    - "No truthful post-rollback smoke binding exists until the prior release manifest and its prerequisite evidence are delivered to the rollback job."
+  defects:
+    - "REPAIRED LOCALLY: constructed legacy smoke hostnames, legacy-only allowlists, unsafe generic request diagnostics, incomplete hybrid-evidence enforcement and success-only smoke evidence publication."
+  blockers:
+    - "Real PowerShell 7 HTTP fixture validation has not run in this Windows-only environment."
+    - "Protected SMK prerequisite evidence delivery is absent."
+    - "Rollback post-swap smoke artifact/evidence binding is absent."
+  approvals: []
+  requested_action: "Independent Tester must run Linux validation, review the missing SMK/rollback evidence contracts, and only then execute the protected exact-resource staging smoke flow under the existing human-controlled gates."
+```
+
+READY_FOR_TEST
+
 ## EF migration bundle DbContext creation repair
 
 ### Baseline, scope and traceability
@@ -1915,3 +2168,246 @@ handoff:
 ```
 
 READY_FOR_TEST
+
+## Production CSP nonce and API_ORIGIN configuration repairs
+
+### Baseline, scope and traceability
+
+This Developer continuation started from branch `fix/mtp-azure-demo-reconciliation`, exact HEAD `e20410c008d1ebc67f6148cab4760fc9037cbb6c`, an empty staged index and exactly 16 pre-existing changed paths: the preserved 13-path smoke repair plus the three-path production CSP nonce repair (`scripts/build/New-AzureDemoPackages.ps1`, `src/web/app/layout.tsx` and `src/web/tests/production-csp-nonce.mjs`). No existing path was reset, stashed, discarded, staged, committed or pushed. This continuation changes only the App Service module, the existing deployment-boundary test file and this implementation record. It does not alter the CSP implementation, authentication, identity, networking, SQL, seed, migration, protected smoke evidence, release gates or approvals.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+The exact-package decisions already recorded at the start of this work package close Q-01 only for this controlled implementation and local/isolated test scope. Q-08, protected evidence ingestion, real SMK-19 previous-release evidence, connected CI and every human release/deployment decision remain unchanged and blocking where previously stated.
+
+### Confirmed API_ORIGIN defect and bounded implementation
+
+The production web setting constructed `https://${apiAppName}.azurewebsites.net`, and the staging web slot constructed `https://${apiAppName}-${stagingSlotName}.azurewebsites.net`. These values do not represent Azure-generated `defaultHostName` values containing uniqueness and regional components.
+
+Production `API_ORIGIN` now uses `https://${api.properties.defaultHostName}` from the exact existing production API resource. Staging `API_ORIGIN` now uses `https://${apiSlot.properties.defaultHostName}` from the exact API staging-slot resource. Both retain the `https://` scheme, and `API_ORIGIN` remains in the web application's `slotConfigNames.appSettingNames` list so production and staging values remain deployment-slot settings through swap.
+
+The staging property reference creates an implicit `apiSlot` dependency for `webSlot`. The resulting relevant order is: resolve the existing plan/web/API resources; deploy/update `apiSlot`; then deploy/update `webSlot` with the resolved API-slot hostname. Production `webConfiguration` reads the existing `api` resource property and does not require API-slot creation. `apiSlot` has no symbolic reference back to `webSlot`—its current web-origin value remains name-constructed—so the repair introduces no circular dependency. Textual declaration order is not deployment order in Bicep.
+
+Repository inspection found four adjacent legacy constructions in the same module: production/staging API `AllowedHosts` from `apiAppName`, and production/staging API `AllowedOrigins__0` from `webAppName`. They are not `API_ORIGIN`, and their runtime impact was not supplied or approved for this bounded repair. They are reported for separate assessment and remain unchanged; no observed generated hostname is hard-coded.
+
+The focused regression isolates the production web configuration, staging web-slot resource and web slot-setting resource. It proves the two exact resource-property mappings occur once each in the correct scope, rejects cross-mapping, verifies `API_ORIGIN` slot stickiness and rejects both old constructed `API_ORIGIN` expressions.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Exact baseline and inventory | PASS before editing: expected branch and HEAD; exactly 16 changed paths (8 modified, 8 untracked); empty staged index. |
+| Focused API_ORIGIN regression | PASS, exit `0`: 1/1 mapping, scope, stickiness and legacy-rejection test. Build emitted only `NU1900` because connected NuGet vulnerability metadata is unavailable. |
+| Deployment-boundary regression | PASS, exit `0`: 13/13. |
+| Full API unit suite | PASS, exit `0`: 209/209 after rebuilding the deployment-boundary assembly. |
+| Pipeline structural regression | PASS, exit `0`: seven ordered stages retained. |
+| App Service subnet regression | PASS, exit `0`: four site/slot integrations and the existing-subnet contract retained; accepted/rejected inventory and compiled shapes passed. |
+| Smoke target resolution | PASS, exit `0`: generated-host/exact-identity/staging-production cases and 12 invalid cases passed. |
+| Smoke evidence contract | PASS, exit `0`: valid protected-runtime/previous-release fixtures and all fail-closed substitutions passed. This is local synthetic contract evidence, not protected SMK evidence. |
+| Source/security boundary | PASS, exit `0`: 194 source/configuration files. |
+| Focused formatting | Initial `dotnet format --verify-no-changes` exited `1` on the new test's range-expression wrapping. After correcting that formatting, the exact rerun passed with exit `0`; workspace-load warnings only. |
+| Diff hygiene | PASS, exit `0`: `git diff --check`; Git emitted only existing LF/CRLF conversion notices. |
+| Bicep CLI/version | UNAVAILABLE, exit `1`: `az bicep version` could not run because `az` is not installed or on `PATH`. |
+| Bicep compilation | UNAVAILABLE, exit `1`: `az bicep build --file infra/bicep/main.bicep --outfile .codex-temp/api-origin-main.json` could not run for the same missing-tool reason. No compiled-template pass is claimed. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, endpoint, deployment, migration, seed, smoke, swap, rollback or approval action occurred. |
+
+Connected CI must run the pinned Bicep compile/parameter regressions and the preserved PowerShell 7/Linux production-CSP and smoke suites. Under the existing human-controlled flow, protected what-if must show only the intended web/site-slot application-setting dependency/update, staging must verify its resolved `API_ORIGIN` equals `https://` plus the exact API-slot `defaultHostName`, production must verify the corresponding production API hostname, and protected staging smoke must pass before any release decision or swap. The existing protected smoke-evidence delivery and SMK-19 blockers remain in force.
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_e20410c008d1ebc67f6148cab4760fc9037cbb6c"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "infra/bicep/modules/appservice.bicep"
+    - "tests/api.unit/AzureDemoDeploymentBoundaryTests.cs"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "All locally available API_ORIGIN, boundary, pipeline, subnet, smoke-target, smoke-evidence and source/security regressions passed."
+    - "Bicep compilation and every connected/protected verification remain explicitly unavailable or unexecuted."
+  decisions:
+    - "Bind web API_ORIGIN values to the exact API site/slot defaultHostName resource properties."
+    - "Retain API_ORIGIN as a deployment-slot setting."
+    - "Report adjacent legacy hostname construction without broadening this repair."
+  assumptions: []
+  risks:
+    - "Pinned Bicep compilation and connected staging/production setting verification remain mandatory."
+    - "The existing smoke-evidence ingestion and real previous-release blockers remain unresolved."
+  defects:
+    - "REPAIRED LOCALLY: web API_ORIGIN settings constructed legacy App Service hostnames instead of using Azure-reported defaultHostName properties."
+  blockers:
+    - "Local Bicep CLI is unavailable."
+    - "Protected smoke-evidence delivery and real SMK-19 previous-release evidence remain absent."
+  approvals: []
+  requested_action: "Independent Tester must compile the Bicep with the pinned connected-CI toolchain, inspect the dependency graph/template, and verify both exact resolved API_ORIGIN values in staging/production before the existing protected smoke and release gates can proceed."
+```
+
+READY_FOR_TEST
+
+## Generated-hostname allowlist assessment and repair
+
+### Baseline, scope and traceability
+
+This bounded Developer continuation started from the requested branch `fix/mtp-azure-demo-reconciliation` and exact HEAD `e20410c008d1ebc67f6148cab4760fc9037cbb6c`. Before editing, the worktree contained exactly 17 changed paths (9 modified and 8 untracked), including the smoke-evidence, production CSP nonce and `API_ORIGIN` repairs. Every pre-existing path was inventoried and preserved. Nothing was reset, stashed, discarded, staged, committed or pushed.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+Q-01 remains closed only for the controlled package scope already recorded in this document. This repair does not change an approval, release state, identity design, network boundary, smoke-evidence requirement or protected action. Q-08 and all existing connected-CI, staging, protected smoke, SMK-19 and human release blockers remain explicit.
+
+### Runtime trace and findings
+
+`AllowedHosts` is consumed by ASP.NET Core host filtering from the root configuration key. It compares the HTTP `Host` value before the endpoint executes and returns HTTP 400 for an unlisted host. The AzureDemo forwarded-header policy processes only `X-Forwarded-For` and `X-Forwarded-Proto`, with a forward limit of two; it does not process `X-Forwarded-Host`. The API proxy also removes caller-supplied `Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host` and `X-Forwarded-Proto`. Consequently, `X-Forwarded-Host` cannot replace `Request.Host` or bypass the exact host allowlist.
+
+`AllowedOrigins` is read eagerly by `Program.cs` and supplied to the named `Web` CORS policy through `WithOrigins`. For an allowed browser origin the middleware returns `Access-Control-Allow-Origin`; for an unrelated origin it withholds that header, so the browser denies cross-origin response access. CORS does not ordinarily reject or authorise a server-to-server request, and a response without an `Origin` request header is not subject to browser CORS enforcement.
+
+The normal request route remains:
+
+1. The browser calls the web application's same-origin `/api/...` route.
+2. The Next.js route validates the method, path and body size, removes prohibited forwarding/identity headers and forwards only the narrow approved header set.
+3. Server-side `fetch` targets `API_ORIGIN` plus `/api/...`; the target URL supplies the API `Host`. The browser does not make this API hop, and the proxy does not forward an `Origin` header, so CORS does not govern it.
+4. The API host filter validates the exact API hostname before CORS, authentication and authorisation continue. Authentication, project-derived authorisation and all existing API controls remain unchanged.
+
+The four reported legacy values were confirmed configuration defects. Name construction from `apiAppName`, `webAppName` and `stagingSlotName` is not guaranteed to equal Azure's authoritative generated `defaultHostName`. A mismatch in `AllowedHosts` rejects the normal Next.js-to-API request with HTTP 400. A mismatch in `AllowedOrigins__0` does not break that server-side proxy route, but it makes the exact browser CORS allowlist wrong for any permitted direct cross-origin browser request from the deployed web host.
+
+The already repaired `API_ORIGIN` settings were functionally correct and were left unchanged: production is `https://${api.properties.defaultHostName}`, staging is `https://${apiSlot.properties.defaultHostName}`, and `API_ORIGIN` remains slot-sticky. The CORS policy, allowed methods/headers, authentication, authorisation, forwarded-header selection/limit, local development configuration and API slot-stickiness list were also left unchanged. No wildcard, hard-coded generated hostname or weaker check was introduced.
+
+### Exact mapping, dependency order and ownership
+
+The resulting exact mappings are:
+
+| Environment | Web `API_ORIGIN` | API `AllowedHosts` | API `AllowedOrigins__0` |
+|---|---|---|---|
+| Production | `https://${api.properties.defaultHostName}` | `api.properties.defaultHostName` | `https://${web.properties.defaultHostName}` |
+| Staging | `https://${apiSlot.properties.defaultHostName}` | `apiSlot.properties.defaultHostName` | `https://${webSlot.properties.defaultHostName}` |
+
+Production web and API configurations reference only the two existing production site resources. For staging, `webSlot` and `apiSlot` are created independently and contain no symbolic reference to each other. `webSlotConfiguration` depends on its `webSlot` parent and reads `apiSlot.properties.defaultHostName`; `apiSlotConfiguration` depends on its `apiSlot` parent and reads `webSlot.properties.defaultHostName`. Neither configuration references the other configuration, so there is no self-reference or circular dependency. Connected Bicep compilation remains required to independently inspect the emitted `dependsOn` graph.
+
+There are exactly four app-settings writers: production web `webConfiguration`, production API `apiConfiguration`, staging web `webSlotConfiguration`, and staging API `apiSlotConfiguration`. Each owns its complete environment-specific app-settings payload. The slot resources no longer embed a second app-settings payload. The two common arrays and every environment-specific setting name are retained; the only hostname-value changes are the four confirmed allowlist repairs plus the pre-existing two `API_ORIGIN` repairs. The setting-name inventory is unchanged apart from the two new child configuration resources themselves being named `web`. `API_ORIGIN`, `AllowedHosts` and `AllowedOrigins__0` remain in their existing `slotConfigNames` lists.
+
+### Changed files for this continuation
+
+- `infra/bicep/modules/appservice.bicep`: maps all six host/origin values to authoritative resource properties and separates both staging app-settings payloads into single child-configuration writers.
+- `tests/api.unit/AzureDemoDeploymentBoundaryTests.cs`: verifies exact production/staging mappings, rejects all six legacy constructions, proves configuration ownership/stickiness and statically excludes direct cross-slot creation dependencies.
+- `tests/api.integration/GeneratedHostnameSecurityTests.cs`: exercises real ASP.NET Core host filtering and CORS behavior for generated production/staging hostnames, unrelated hosts/origins and forwarded-host bypass attempts.
+- `docs/implementation/AZURE_DEMO_Implementation_Work_Package.md`: records this bounded assessment, implementation and evidence without changing approvals.
+
+The final worktree therefore contains the original 17 changed paths plus the new integration-test path, for 18 changed paths in total.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Baseline and preservation | PASS before editing: exact requested branch/HEAD; 17 changed paths (9 modified, 8 untracked); every path retained; no Git mutation beyond working-file edits. |
+| Release build | PASS, exit `0`: `dotnet build LgrTransformationMigration.sln --configuration Release --no-restore`; 0 errors and four `NU1900` warnings because connected NuGet advisory metadata is unavailable. |
+| Generated-host runtime regression | PASS, exit `0`: 3/3. Both exact environment hosts returned 200, the other environment's host returned 400, both exact origins received their own CORS allow header, unrelated origins received none, and `X-Forwarded-Host` could not bypass an unrelated `Host`. |
+| Focused Bicep mapping/ownership regression | PASS, exit `0`: 1/1 after the final mapping and complete-setting assertions. |
+| Full API unit suite | PASS, exit `0`: 209/209. |
+| Full API integration suite | PASS, exit `0`: 148/148. |
+| App Service subnet regression | PASS, exit `0`: one exact inventory and two compiled fixture shapes accepted; 24 invalid inventory and 8 invalid compiled-shape cases rejected; exactly four site/slot integration assignments retained. This fixture test is not compilation of the changed template. |
+| Pipeline structure | PASS, exit `0`: seven ordered stages retained. |
+| Smoke target resolution | PASS, exit `0`: generated-host, exact-identity, staging/production and 12 invalid resolver cases passed. |
+| Smoke evidence contract | PASS, exit `0`: valid local synthetic fixtures and all fail-closed substitutions passed. This does not supply protected or previous-release evidence. |
+| Source/security boundary | PASS, exit `0`: 194 source/configuration files. |
+| Focused formatting | PASS, exit `0`: `dotnet format ... --verify-no-changes` for both changed C# tests; workspace-load warnings only. |
+| Initial test-authoring feedback | The first integration invocation exited `1` because the new file omitted `System.Net`; the next exited `1` because a late test configuration source could not affect eagerly constructed CORS options. Both test-only defects were corrected, and the exact final 3/3 run passed. The first subnet reruns also exited `1` while the configuration split temporarily duplicated, then removed the wrong, subnet assignments; the final exact regression passed after restoring the original four owners. |
+| Production CSP nonce regression | UNAVAILABLE and not passed locally: `node src/web/tests/production-csp-nonce.mjs` exited `1` at its required-base-URL usage guard because no deployed endpoint is available or permitted. No CSP source was changed by this continuation. |
+| Frontend Vitest/build | UNAVAILABLE and not passed: `src/web/node_modules/.bin/vitest.cmd` and `next.cmd` are absent; no dependency install or connected registry access was attempted. |
+| Bicep CLI and compilation | UNAVAILABLE and not passed: neither `bicep` nor `az` is installed or on `PATH`. The current Bicep was not compiled, and static/source assertions are not represented as compilation evidence. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, Entra, endpoint, deployment, migration, seed, smoke, swap, rollback or approval action occurred. |
+
+Connected CI must compile and lint the changed Bicep with the pinned toolchain, compile both parameter files, and inspect the emitted dependencies to confirm both slots precede both slot configurations with no configuration-to-configuration cycle. It must run the preserved complete application, frontend, PowerShell 7/Linux, dependency/vulnerability and source checks. Protected what-if must show only the intended configuration updates and no competing app-settings writer. Staging must verify the exact reported web/API slot `defaultHostName` values against `API_ORIGIN`, `AllowedHosts` and `AllowedOrigins__0`, then exercise web-to-API readiness and the host/CORS negative cases. Production mappings require the corresponding protected verification before any release decision. The existing protected smoke-evidence ingestion and real SMK-19 previous-release blockers remain unresolved and unchanged.
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_e20410c008d1ebc67f6148cab4760fc9037cbb6c"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "infra/bicep/modules/appservice.bicep"
+    - "tests/api.unit/AzureDemoDeploymentBoundaryTests.cs"
+    - "tests/api.integration/GeneratedHostnameSecurityTests.cs"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Locally available build, runtime host/CORS, mapping/ownership, full unit/integration, subnet, pipeline, smoke-contract, source-boundary and formatting checks pass."
+    - "Bicep compilation, frontend execution and all connected/protected checks remain explicitly unavailable or unexecuted."
+  decisions:
+    - "Use each Azure site/slot defaultHostName as the single authority for API host, web origin and server-side API origin mappings."
+    - "Create both staging slots before writing either complete slot configuration so cross-slot hostname reads cannot create a slot creation cycle."
+    - "Retain exact allowlists, deployment-slot settings and all existing authentication, authorisation, CORS and forwarded-header controls."
+  assumptions: []
+  risks:
+    - "Pinned Bicep compilation and emitted dependency inspection remain mandatory in connected CI."
+    - "Protected staging/production configuration and request-flow verification remains mandatory."
+    - "Existing protected smoke-evidence and SMK-19 blockers remain unresolved."
+  defects:
+    - "REPAIRED LOCALLY: production/staging API host allowlists constructed legacy names instead of using each API resource's defaultHostName."
+    - "REPAIRED LOCALLY: production/staging API CORS allowlists constructed legacy names instead of using each web resource's defaultHostName."
+  blockers:
+    - "Bicep/Azure CLI and frontend dependencies are unavailable locally."
+    - "Protected smoke-evidence delivery and real SMK-19 previous-release evidence remain absent."
+  approvals: []
+  requested_action: "Independent Tester must run connected Bicep/frontend regressions, inspect compiled dependencies and verify exact staging host/origin behavior before the unchanged protected smoke and release gates proceed."
+```
+
+READY_FOR_TEST
+
+## Current worktree terminal state
+
+The later smoke-evidence continuation in this document supersedes older per-repair terminal labels for the present uncommitted worktree. Its validated local implementation is complete, but the protected evidence ingestion route, operational producer identities and real SMK-19 previous-release source require the named architecture/governance decision before the pipeline can consume protected smoke evidence.
+
+NEEDS_ARCHITECTURE_DECISION

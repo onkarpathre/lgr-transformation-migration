@@ -43,6 +43,9 @@ variables:
   value: skip
 - name: AZDEMO_RESOURCE_GROUP_NAME
   value: Onkar.Pathre
+- name: AZDEMO_SUBSCRIPTION_ID
+  value: 633398e2-6c00-4bb7-a576-2db0d210ee77
+  readonly: true
 - name: AZDEMO_WEB_APP_NAME
   value: app-mtp-web-dev-uks-001
 - name: AZDEMO_API_APP_NAME
@@ -117,6 +120,12 @@ stages:
       displayName: Enforce approved frontend remediation versions
     - pwsh: ./scripts/build/Test-AzureDemoSourceBoundaries.ps1
       displayName: Secret, LocalTest, header and prohibited-capability boundaries
+    - pwsh: ./scripts/build/Test-AzureDemoSmokeTargetResolution.ps1
+      displayName: Azure demo smoke exact-target regression
+    - pwsh: ./scripts/build/Test-AzureDemoSmokeHttp.ps1
+      displayName: PowerShell 7 local HTTP smoke redirect and redaction regression
+    - pwsh: ./scripts/build/Test-AzureDemoSmokeEvidence.ps1
+      displayName: Smoke evidence provenance and substitution regression
     - pwsh: ./scripts/build/Test-AzureAppServiceNativeRuntimes.ps1
       displayName: Azure App Service native-runtime regression
     - pwsh: ./scripts/build/Test-AzureDemoAppServiceSubnet.ps1
@@ -355,7 +364,7 @@ stages:
                 chmod 600 -- $evidencePath
                 if ($LASTEXITCODE) { throw 'Could not restrict SQL bootstrap evidence permissions.' }
               }
-              Write-Host "##vso[task.setvariable variable=AZDEMO_SMOKE_PREREQUISITE_EVIDENCE]$evidenceDirectory"
+              Write-Host "##vso[task.setvariable variable=AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY]$evidenceDirectory"
             displayName: Prepare job-local SQL bootstrap evidence
           - task: AzureCLI@2
             displayName: Deploy approved resource-group Bicep with workload identity
@@ -368,6 +377,8 @@ stages:
                 $deploymentName = "mtp-azure-demo-$(Build.BuildId)"
                 az deployment group create --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name $deploymentName --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --only-show-errors
                 if ($LASTEXITCODE) { throw 'Bicep deployment failed.' }
+                $deploymentId = "/subscriptions/$(AZDEMO_SUBSCRIPTION_ID)/resourceGroups/$(AZDEMO_RESOURCE_GROUP_NAME)/providers/Microsoft.Resources/deployments/$deploymentName"
+                Write-Host "##vso[task.setvariable variable=AZDEMO_INFRASTRUCTURE_DEPLOYMENT_ID]$deploymentId"
                 $outputs = az deployment group show --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name $deploymentName --query properties.outputs -o json | ConvertFrom-Json
                 if ($outputs.webAppName.value -ne '$(AZDEMO_WEB_APP_NAME)' -or $outputs.apiAppName.value -ne '$(AZDEMO_API_APP_NAME)' -or $outputs.sqlServerName.value -ne '$(AZDEMO_SQL_SERVER_NAME)' -or $outputs.sqlDatabaseName.value -ne '$(AZDEMO_SQL_DATABASE_NAME)') { throw 'Bicep outputs did not match the exact approved MTP resource targets.' }
                 Write-Host "##vso[task.setvariable variable=webAppName]$($outputs.webAppName.value)"
@@ -391,7 +402,7 @@ stages:
               AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID: $(AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID)
               AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
               AZDEMO_ALERT_EMAIL: $(AZDEMO_ALERT_EMAIL)
-          - pwsh: ./scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1 -EvidencePath '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)/sql-bootstrap.json' -ExpectedReleaseCommit '$(Build.SourceVersion)' -RepositoryRoot '$(Build.SourcesDirectory)' -GrantsScriptPath 'scripts/database/Configure-AzureDemoDatabasePrincipals.sql' -ExpectedExecutorPrincipalObjectId '$(AZDEMO_SQL_ADMIN_OBJECT_ID)' -MaximumEvidenceAgeDays 90
+          - pwsh: ./scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1 -EvidencePath '$(AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY)/sql-bootstrap.json' -ExpectedReleaseCommit '$(Build.SourceVersion)' -RepositoryRoot '$(Build.SourcesDirectory)' -GrantsScriptPath 'scripts/database/Configure-AzureDemoDatabasePrincipals.sql' -ExpectedExecutorPrincipalObjectId '$(AZDEMO_SQL_ADMIN_OBJECT_ID)' -MaximumEvidenceAgeDays 90
             displayName: Require durable independently produced SQL Entra bootstrap evidence
           - task: AzureCLI@2
             displayName: Record pre-migration PITR and schema checkpoint
@@ -492,10 +503,32 @@ stages:
           - task: AzureWebApp@1
             displayName: Deploy web ZIP to staging only
             inputs: { azureSubscription: sc-mtp-azure-demo-dev, appType: webAppLinux, appName: $(AZDEMO_WEB_APP_NAME), resourceGroupName: $(AZDEMO_RESOURCE_GROUP_NAME), deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/web.zip', deploymentMethod: zipDeploy }
-          - pwsh: ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/smoke-evidence' -PrerequisiteEvidenceDirectory '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)' -WebBaseUri 'https://$(AZDEMO_WEB_APP_NAME)-staging.azurewebsites.net' -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -Execute
+          - task: AzureCLI@2
+            displayName: Resolve and validate exact staging smoke targets
+            inputs:
+              azureSubscription: sc-mtp-azure-demo-dev
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                function Invoke-AzJson([string[]] $Arguments) {
+                  $rows = @(& az @Arguments 2>&1)
+                  return [pscustomobject]@{ Json = [string]::Join([Environment]::NewLine, [string[]] $rows); ExitCode = $LASTEXITCODE }
+                }
+                $account = Invoke-AzJson @('account', 'show', '--query', '{id:id,tenantId:tenantId}', '--output', 'json', '--only-show-errors')
+                $webProduction = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $webSlot = Invoke-AzJson @('webapp', 'deployment', 'slot', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $apiProduction = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $apiSlot = Invoke-AzJson @('webapp', 'deployment', 'slot', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $targets = ./scripts/smoke/Resolve-AzureDemoSmokeTargets.ps1 -ExpectedSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -ExpectedTenantId '$(AZDEMO_ENTRA_TENANT_ID)' -ExpectedResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -ExpectedWebAppName '$(AZDEMO_WEB_APP_NAME)' -ExpectedApiAppName '$(AZDEMO_API_APP_NAME)' -ExpectedSlotName staging -AccountJson $account.Json -AccountCommandExitCode $account.ExitCode -WebProductionJson $webProduction.Json -WebProductionCommandExitCode $webProduction.ExitCode -WebSlotJson $webSlot.Json -WebSlotCommandExitCode $webSlot.ExitCode -ApiProductionJson $apiProduction.Json -ApiProductionCommandExitCode $apiProduction.ExitCode -ApiSlotJson $apiSlot.Json -ApiSlotCommandExitCode $apiSlot.ExitCode
+                Write-Host "##vso[task.setvariable variable=AZDEMO_WEB_STAGING_HOST]$($targets.WebStagingHost)"
+                Write-Host "##vso[task.setvariable variable=AZDEMO_API_STAGING_HOST]$($targets.ApiStagingHost)"
+          - pwsh: |
+              Write-Host '##vso[task.setvariable variable=AZDEMO_STAGING_SMOKE_ATTEMPTED]true'
+              ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/smoke-evidence' -WebBaseUri 'https://$(AZDEMO_WEB_STAGING_HOST)' -VerifiedWebHost '$(AZDEMO_WEB_STAGING_HOST)' -VerifiedApiHost '$(AZDEMO_API_STAGING_HOST)' -TargetSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -TargetResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -TargetWebAppName '$(AZDEMO_WEB_APP_NAME)' -TargetApiAppName '$(AZDEMO_API_APP_NAME)' -TargetSlotName staging -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -InfrastructureDeploymentId '$(AZDEMO_INFRASTRUCTURE_DEPLOYMENT_ID)' -PipelineDefinition '$(Build.DefinitionName)' -PipelineRunId '$(Build.BuildId)' -Execute
             displayName: Run staging smoke checks
           - publish: $(Pipeline.Workspace)/smoke-evidence
             artifact: staging-smoke-evidence
+            condition: eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true')
           - pwsh: |
               $evidenceDirectory = Join-Path '$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'
               if (Test-Path -LiteralPath $evidenceDirectory -PathType Container) {
@@ -518,7 +551,7 @@ stages:
       timeoutInMinutes: 1440
       inputs:
         notifyUsers: $(AZDEMO_RELEASE_APPROVERS)
-        instructions: 'Verify exact-commit Tester PASS, Quality recommendation, Product scope confirmation, Information Security evidence, Platform/Operations approval, DBA migration evidence and rollback target. Reject on any missing evidence.'
+        instructions: 'Review the actual staging runtime results and failed-check evidence first. Then verify exact-commit/artifact/target-bound Tester PASS, Quality recommendation, Product scope confirmation, Information Security evidence, Platform/Operations approval, DBA migration evidence, and SMK-19 evidence for the real previously deployed release manifest. Reject missing, failed, substituted, fixture, current-as-previous, or future post-swap evidence; post-swap results cannot authorize this swap.'
         onTimeout: reject
 
 - stage: SwapAndVerify
@@ -537,40 +570,43 @@ stages:
           - checkout: self
           - download: current
             artifact: azure-demo-immutable
-          - task: DownloadSecureFile@1
-            name: downloadSqlBootstrapEvidence
-            displayName: Download protected SQL bootstrap evidence
-            inputs:
-              secureFile: sql-bootstrap.json
-          - pwsh: |
-              $evidenceDirectory = Join-Path '$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'
-              New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
-              $evidencePath = Join-Path $evidenceDirectory 'sql-bootstrap.json'
-              Copy-Item -LiteralPath '$(downloadSqlBootstrapEvidence.secureFilePath)' -Destination $evidencePath -Force
-              if ($IsLinux) {
-                chmod 600 -- $evidencePath
-                if ($LASTEXITCODE) { throw 'Could not restrict SQL bootstrap evidence permissions.' }
-              }
-              Write-Host "##vso[task.setvariable variable=AZDEMO_SMOKE_PREREQUISITE_EVIDENCE]$evidenceDirectory"
-            displayName: Prepare job-local SQL bootstrap evidence
           - task: AzureCLI@2
+            displayName: Resolve and validate exact production smoke targets
+            inputs:
+              azureSubscription: sc-mtp-azure-demo-dev
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                function Invoke-AzJson([string[]] $Arguments) {
+                  $rows = @(& az @Arguments 2>&1)
+                  return [pscustomobject]@{ Json = [string]::Join([Environment]::NewLine, [string[]] $rows); ExitCode = $LASTEXITCODE }
+                }
+                $account = Invoke-AzJson @('account', 'show', '--query', '{id:id,tenantId:tenantId}', '--output', 'json', '--only-show-errors')
+                $webProduction = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $webSlot = Invoke-AzJson @('webapp', 'deployment', 'slot', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $apiProduction = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $apiSlot = Invoke-AzJson @('webapp', 'deployment', 'slot', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $targets = ./scripts/smoke/Resolve-AzureDemoSmokeTargets.ps1 -ExpectedSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -ExpectedTenantId '$(AZDEMO_ENTRA_TENANT_ID)' -ExpectedResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -ExpectedWebAppName '$(AZDEMO_WEB_APP_NAME)' -ExpectedApiAppName '$(AZDEMO_API_APP_NAME)' -ExpectedSlotName staging -AccountJson $account.Json -AccountCommandExitCode $account.ExitCode -WebProductionJson $webProduction.Json -WebProductionCommandExitCode $webProduction.ExitCode -WebSlotJson $webSlot.Json -WebSlotCommandExitCode $webSlot.ExitCode -ApiProductionJson $apiProduction.Json -ApiProductionCommandExitCode $apiProduction.ExitCode -ApiSlotJson $apiSlot.Json -ApiSlotCommandExitCode $apiSlot.ExitCode
+                Write-Host "##vso[task.setvariable variable=AZDEMO_WEB_PRODUCTION_HOST]$($targets.WebProductionHost)"
+                Write-Host "##vso[task.setvariable variable=AZDEMO_API_PRODUCTION_HOST]$($targets.ApiProductionHost)"
+          - task: AzureCLI@2
+            displayName: Swap API then web after successful staging smoke and target resolution
             inputs:
               azureSubscription: sc-mtp-azure-demo-dev
               scriptType: pscore
               scriptLocation: inlineScript
               inlineScript: |
                 az webapp deployment slot swap --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name '$(AZDEMO_API_APP_NAME)' --slot staging --target-slot production
+                if ($LASTEXITCODE) { throw 'Restricted demo API slot swap failed.' }
                 az webapp deployment slot swap --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name '$(AZDEMO_WEB_APP_NAME)' --slot staging --target-slot production
-          - pwsh: ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/post-swap-smoke-evidence' -PrerequisiteEvidenceDirectory '$(AZDEMO_SMOKE_PREREQUISITE_EVIDENCE)' -WebBaseUri 'https://$(AZDEMO_WEB_APP_NAME).azurewebsites.net' -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -Execute
+                if ($LASTEXITCODE) { throw 'Restricted demo web slot swap failed.' }
+          - pwsh: |
+              Write-Host '##vso[task.setvariable variable=AZDEMO_PRODUCTION_SMOKE_ATTEMPTED]true'
+              ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/post-swap-smoke-evidence' -WebBaseUri 'https://$(AZDEMO_WEB_PRODUCTION_HOST)' -VerifiedWebHost '$(AZDEMO_WEB_PRODUCTION_HOST)' -VerifiedApiHost '$(AZDEMO_API_PRODUCTION_HOST)' -TargetSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -TargetResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -TargetWebAppName '$(AZDEMO_WEB_APP_NAME)' -TargetApiAppName '$(AZDEMO_API_APP_NAME)' -TargetSlotName production -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -InfrastructureDeploymentId '/subscriptions/$(AZDEMO_SUBSCRIPTION_ID)/resourceGroups/$(AZDEMO_RESOURCE_GROUP_NAME)/providers/Microsoft.Resources/deployments/mtp-azure-demo-$(Build.BuildId)' -PipelineDefinition '$(Build.DefinitionName)' -PipelineRunId '$(Build.BuildId)' -Execute
+            displayName: Run production smoke checks after swap
           - publish: $(Pipeline.Workspace)/post-swap-smoke-evidence
             artifact: post-swap-smoke-evidence
-          - pwsh: |
-              $evidenceDirectory = Join-Path '$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'
-              if (Test-Path -LiteralPath $evidenceDirectory -PathType Container) {
-                Remove-Item -LiteralPath $evidenceDirectory -Recurse -Force -ErrorAction SilentlyContinue
-              }
-            displayName: Remove job-local SQL bootstrap evidence
-            condition: always()
+            condition: eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true')
 
 - stage: Rollback
   displayName: Human-authorised application slot swap-back
