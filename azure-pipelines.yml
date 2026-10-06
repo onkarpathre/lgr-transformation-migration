@@ -132,18 +132,10 @@ stages:
       displayName: Smoke evidence provenance and substitution regression
     - pwsh: ./scripts/build/Test-AzureDemoAppliedApiHostConfiguration.ps1
       displayName: Applied API host-identity and slot-stickiness regression
-    - pwsh: ./scripts/build/Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1 -ExpectedSourceCommit '$(Build.SourceVersion)'
-      displayName: Clean web staging deployment process-boundary, target and CLI regression
-    - pwsh: ./scripts/build/Test-AzureDemoDeployedContentVerification.ps1
-      displayName: Exact deployed ZIP content and stale-file regression
-    - pwsh: ./scripts/build/Test-AzureDemoLinuxWebDeploymentTimestamp.ps1
-      displayName: Linux rsync equal-timestamp deployment correction regression
     - pwsh: ./scripts/build/Test-AzureAppServiceNativeRuntimes.ps1
       displayName: Azure App Service native-runtime regression
     - pwsh: ./scripts/build/Test-AzureDemoAppServiceSubnet.ps1
       displayName: Azure App Service existing integration-subnet regression
-    - pwsh: ./scripts/build/Test-AzurePipelineStructure.ps1
-      displayName: Azure Pipelines structural contract
     - pwsh: ./scripts/build/Test-AzureDemoPrivateDnsReconciliation.ps1
       displayName: Azure private DNS reconciliation regression
     - pwsh: ./scripts/build/Test-AzureDemoMonitoringAlerts.ps1
@@ -247,8 +239,8 @@ stages:
         ./scripts/build/New-AzureDemoDeploymentArtifactManifest.ps1 -ArtifactRoot $packageDirectory -SourceCommit '$(Build.SourceVersion)'
         ./scripts/build/Assert-AzureDemoDeploymentArtifact.ps1 -ArtifactRoot $packageDirectory -ManifestPath (Join-Path $packageDirectory 'deployment-artifact-manifest.json') -ExpectedSourceCommit '$(Build.SourceVersion)'
       displayName: Assemble and validate exact-commit deployment artifact manifest
-    - pwsh: ./scripts/build/Test-AzureDemoPackageGeneration.ps1 -PackageDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ExpectedSourceCommit '$(Build.SourceVersion)'
-      displayName: Regress package path boundary, hashes and deterministic ZIP evidence
+    - pwsh: ./scripts/build/Invoke-AzureDemoWebDeploymentRegressionChain.ps1 -PackageDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ExpectedSourceCommit '$(Build.SourceVersion)'
+      displayName: Collect Linux web deployment and package regression chain
     - pwsh: ./scripts/build/Test-AzureDemoImmutableSeedArtifact.ps1 -PackageDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ExpectedSourceCommit '$(Build.SourceVersion)'
       displayName: Regress immutable seed packaging and fail-closed execution contract
     - pwsh: ./scripts/build/Assert-AzureDemoDeploymentArtifact.ps1 -ArtifactRoot '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ManifestPath '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/deployment-artifact-manifest.json' -ExpectedSourceCommit '$(Build.SourceVersion)'

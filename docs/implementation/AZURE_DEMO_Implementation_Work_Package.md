@@ -1721,6 +1721,99 @@ handoff:
 
 READY_FOR_TEST
 
+## Linux executable discovery and collected web-deployment regression repair
+
+### Baseline, scope and traceability
+
+This bounded Developer repair started from branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `50b823aad66cfa14126ba2a035cde6666b028682`. The index and worktree were clean before editing. It repairs only Linux `rsync` executable discovery and the validation-only orchestration of the existing web deployment regression chain. It does not change application behaviour, package timestamp production, deployment commands, Azure resources, protected gates or production state. Nothing was committed, pushed, deployed, migrated, seeded or swapped.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+The repair is separable from the open production decisions because it changes only synthetic regressions and unprotected Ubuntu validation. The existing PowerShell/package architecture, production deployment gating and human approvals remain unchanged.
+
+### Confirmed cause and repair
+
+`Get-Command rsync -CommandType Application` returned both `/usr/bin/rsync` and `/bin/rsync`. The expression `& $rsync.Source ...` then used PowerShell member enumeration on the `ApplicationInfo[]`; invocation converted the resulting path array to the single command name `/usr/bin/rsync /bin/rsync`.
+
+The regression now captures all application matches, selects `$commands[0]` as one `System.Management.Automation.ApplicationInfo`, validates its string `Path` as a non-empty leaf, and passes that single path separately from `$rsyncArguments`. The native exit code is captured immediately after each probe or real `rsync` invocation. Synthetic Linux executables prove one match, two distinct matches in PATH order, duplicate PATH entries, no match, and an executable path plus arguments containing spaces. Duplicate entries are accepted; first-match PATH precedence is authoritative.
+
+A scoped audit found no equivalent discovery-to-path-array conversion for `pwsh`, `chmod`, `node` or `az` in the related deployment and regression scripts. Those sites use a literal command name or the single current-process path, so they were not changed.
+
+### Collected validation chain and local evidence
+
+`Invoke-AzureDemoWebDeploymentRegressionChain.ps1` runs the Linux timestamp, clean deployment, generated-caller boundary, deployed-content, package-generation and pipeline-structure regressions in isolated child processes. It captures each child exit immediately, reports every result, and exits `1` after collection if any child failed. The unprotected `ubuntu-latest` Package stage invokes this chain once after exact-commit package assembly and before publication; it has no `continueOnError`, and protected deployment conditions remain unchanged.
+
+| Check | Result |
+|---|---|
+| Host/runtime | Windows `10.0.26200`; Windows PowerShell `5.1.26100.9444`; Node and .NET available. `pwsh`, Docker, Podman and `rsync` unavailable; WSL is not installed and `wsl --status` exits `50`. |
+| PowerShell parsing | PASS under Windows PowerShell 5.1 for the changed scripts. Parsing is not Linux runtime evidence. |
+| Clean deployment regression | PASS, exit `0`; timestamp/hash negative identities, four invalid targets and native exit `17` remain rejected. |
+| Generated-caller/process boundary | PASS, exit `0`; assertion/native/missing/cleanup cases exit `1`, actual regression exits `0`, and the outer caller reports `LASTEXITCODE: 0`. |
+| Deployed-content regression | PASS, exit `0`; equal-size/equal-time stale content, missing chunk, changed BUILD_ID, unknown platform file and packaged Oryx metadata remain negative assertions. |
+| Package-generation regression | PASS, exit `0`, against a synthetic current-commit six-file package; odd second `12:34:57.987Z` rounds to ZIP time `12:34:56`, hashes and deterministic regeneration pass, and the pre-existing ignored package output is restored by matching manifest hash. |
+| Pipeline structural regression | PASS, exit `0`; seven stages, one unprotected Ubuntu chain, ordered child coverage, immediate exit capture, aggregate failure and absence of `continueOnError` are pinned. |
+| Collected-chain outer status on this host | EXPECTED FAIL, outer exit `1`: Linux timestamp exits `1` because the host is Windows and the pre-existing ignored package is from older commit `0989a99d871c7158eed4994c9e6ff1f7a994ab0f`; all four intervening portable checks and the later structural check still execute and report. |
+| Real Linux PowerShell 7 and real `rsync` | `LINUX_VERIFICATION_PENDING`; no Linux pass is claimed. The chain is wired to the unprotected `ubuntu-latest` package-validation job using freshly generated exact-commit artifacts. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, Entra, deployment, migration, seed, smoke, swap, release or approval action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_50b823aad66cfa14126ba2a035cde6666b028682"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "scripts/build/Test-AzureDemoLinuxWebDeploymentTimestamp.ps1"
+    - "scripts/build/Invoke-AzureDemoWebDeploymentRegressionChain.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "azure-pipelines.yml"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Portable deployment regressions, current-commit synthetic package regression, parsing and pipeline structure pass locally."
+    - "The aggregate runner reports later results after failures and preserves a nonzero outer exit."
+  decisions:
+    - "Select exactly the first ApplicationInfo in PATH precedence order before reading Path."
+    - "Invoke executable path and arguments separately and capture every native child exit immediately."
+    - "Collect all six related regressions in one unprotected Ubuntu task before returning final failure."
+  assumptions: []
+  risks:
+    - "Real Linux PowerShell 7 and rsync execution remains mandatory before independent acceptance."
+  defects:
+    - "REPAIRED LOCALLY: member enumeration converted two rsync paths into one invalid command name."
+  blockers: []
+  approvals: []
+  requested_action: "Independent Tester must run the collected chain on the exact worktree in ubuntu-latest with real PowerShell 7, real rsync and freshly generated exact-commit packages."
+```
+
+READY_FOR_TEST
+
 ## Azure demo staging clean-deployment and exact-content reconciliation
 
 ### Baseline, authority and traceability
@@ -3445,5 +3538,11 @@ handoff:
   approvals: []
   requested_action: "Independent Tester must run the full clean-deployment, generated-caller, package/content and real Linux PowerShell 7/rsync timestamp regressions against this exact worktree before quality review."
 ```
+
+READY_FOR_TEST
+
+## Current worktree terminal state - Linux executable discovery
+
+The latest bounded continuation is **Linux executable discovery and collected web-deployment regression repair** above, based on exact HEAD `50b823aad66cfa14126ba2a035cde6666b028682`. Its portable Windows PowerShell 5.1 regressions, synthetic current-commit package regression, failure-collection outer-status check, parsing and pipeline structural check pass as recorded. Real Linux PowerShell 7 with real `rsync` remains explicitly pending on the single unprotected `ubuntu-latest` collected task; no Linux pass is claimed locally. This hand-off supersedes older terminal markers in this cumulative document without changing any protected deployment, Azure, migration, seed, swap, release or human-approval gate.
 
 READY_FOR_TEST

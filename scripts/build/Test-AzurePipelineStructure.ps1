@@ -21,6 +21,7 @@ $cleanWebDeploymentScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\d
 $slotContentVerificationScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\Invoke-AzureDemoSlotContentVerification.ps1') -Raw
 $stagingDeploymentUtilitiesScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\AzureDemoStagingDeployment.ps1') -Raw
 $applicationPackageScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-AzureDemoPackages.ps1') -Raw
+$webDeploymentRegressionChainScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Invoke-AzureDemoWebDeploymentRegressionChain.ps1') -Raw
 $appServiceBicep = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\appservice.bicep') -Raw
 $approvedMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev-v2'
 $retiredMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev'
@@ -113,9 +114,7 @@ $requiredFragments = @(
     'Test-AzureDemoSmokeOrchestration.ps1',
     'Test-AzureDemoSmokeEvidence.ps1',
     'Test-AzureDemoAppliedApiHostConfiguration.ps1',
-    'Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1',
-    'Test-AzureDemoDeployedContentVerification.ps1',
-    'Test-AzureDemoLinuxWebDeploymentTimestamp.ps1',
+    'Invoke-AzureDemoWebDeploymentRegressionChain.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
     'Assert-AzureDemoMigrationIdentity.ps1',
@@ -150,7 +149,7 @@ $requiredFragments = @(
     'Assert-AzureDemoAppliedApiHostConfiguration.ps1',
     'Test-AzureDemoImmutableSeedArtifact.ps1',
     "Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'",
-    "Test-AzureDemoPackageGeneration.ps1 -PackageDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'",
+    "Invoke-AzureDemoWebDeploymentRegressionChain.ps1 -PackageDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ExpectedSourceCommit '`$(Build.SourceVersion)'",
     'publish: $(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages',
     'az webapp deployment slot swap'
 )
@@ -160,17 +159,49 @@ foreach ($fragment in $requiredFragments) {
 
 $validateStage = $text.Substring($text.IndexOf('- stage: Validate', [StringComparison]::Ordinal),
     $text.IndexOf('- stage: Package', [StringComparison]::Ordinal) - $text.IndexOf('- stage: Validate', [StringComparison]::Ordinal))
-$cleanDeploymentProcessTask = "./scripts/build/Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1 -ExpectedSourceCommit '`$(Build.SourceVersion)'"
-if ([regex]::Matches($text, [regex]::Escape($cleanDeploymentProcessTask)).Count -ne 1 -or
-    -not $validateStage.Contains($cleanDeploymentProcessTask) -or
-    $text.Contains('- pwsh: ./scripts/build/Test-AzureDemoCleanWebDeployment.ps1')) {
-    throw 'The clean deployment regression must run once through its isolated generated-caller process boundary in Linux validation.'
+$packageStageForWebRegression = $text.Substring($text.IndexOf('- stage: Package', [StringComparison]::Ordinal),
+    $text.IndexOf('- stage: PreDeploymentGate', [StringComparison]::Ordinal) - $text.IndexOf('- stage: Package', [StringComparison]::Ordinal))
+$webDeploymentRegressionTask = "./scripts/build/Invoke-AzureDemoWebDeploymentRegressionChain.ps1 -PackageDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ExpectedSourceCommit '`$(Build.SourceVersion)'"
+if ([regex]::Matches($text, [regex]::Escape($webDeploymentRegressionTask)).Count -ne 1 -or
+    -not $packageStageForWebRegression.Contains($webDeploymentRegressionTask) -or
+    -not $packageStageForWebRegression.Contains('pool: { vmImage: ubuntu-latest }') -or
+    $text.Contains('continueOnError:')) {
+    throw 'The web deployment regression chain must run exactly once on unprotected Ubuntu CI without continueOnError.'
 }
-$linuxTimestampRegressionTask = './scripts/build/Test-AzureDemoLinuxWebDeploymentTimestamp.ps1'
-if ([regex]::Matches($text, [regex]::Escape($linuxTimestampRegressionTask)).Count -ne 1 -or
-    -not $validateStage.Contains($linuxTimestampRegressionTask) -or
-    -not $validateStage.Contains('pool: { vmImage: ubuntu-latest }')) {
-    throw 'The equal-timestamp deployment correction regression must run exactly once on Linux validation.'
+foreach ($standaloneRegression in @(
+        'Test-AzureDemoLinuxWebDeploymentTimestamp.ps1',
+        'Test-AzureDemoCleanWebDeployment.ps1',
+        'Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1',
+        'Test-AzureDemoDeployedContentVerification.ps1',
+        'Test-AzureDemoPackageGeneration.ps1',
+        'Test-AzurePipelineStructure.ps1')) {
+    if ($text -match ('(?m)^\s*- pwsh: .*' + [regex]::Escape($standaloneRegression))) {
+        throw "The pipeline must execute $standaloneRegression only through the collecting web deployment regression chain."
+    }
+}
+$previousRegressionIndex = -1
+foreach ($collectedRegression in @(
+        'Test-AzureDemoLinuxWebDeploymentTimestamp.ps1',
+        'Test-AzureDemoCleanWebDeployment.ps1',
+        'Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1',
+        'Test-AzureDemoDeployedContentVerification.ps1',
+        'Test-AzureDemoPackageGeneration.ps1',
+        'Test-AzurePipelineStructure.ps1')) {
+    $regressionIndex = $webDeploymentRegressionChainScript.IndexOf($collectedRegression, [StringComparison]::Ordinal)
+    if ($regressionIndex -le $previousRegressionIndex) {
+        throw "The collecting web deployment regression chain is missing or misorders $collectedRegression."
+    }
+    $previousRegressionIndex = $regressionIndex
+}
+foreach ($collectorControl in @(
+        '& $powerShellPath @nativeArguments 1> $stdoutPath 2> $stderrPath',
+        '$exitCode = $LASTEXITCODE',
+        '$failures = @($results | Where-Object { $_.ExitCode -ne 0 })',
+        'failed after all checks completed',
+        'exit 1')) {
+    if (-not $webDeploymentRegressionChainScript.Contains($collectorControl)) {
+        throw "The web deployment regression chain is missing failure-collection control: $collectorControl"
+    }
 }
 
 $unsupportedFileTimeSetting = 'SCM_ZIPDEPLOY_DONOT_PRESERVE_FILETIME'

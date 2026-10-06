@@ -10,8 +10,6 @@ if (-not [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.Int
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     throw 'The web deployment timestamp regression requires PowerShell 7 or later.'
 }
-$rsync = Get-Command rsync -CommandType Application -ErrorAction SilentlyContinue
-if ($null -eq $rsync) { throw 'The web deployment timestamp regression requires Linux rsync.' }
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
 . (Join-Path $repo 'scripts\build\AzureDemoPackageUtilities.ps1')
@@ -21,6 +19,106 @@ $legacyTimestamp = [DateTimeOffset] '1980-01-01T00:00:00+00:00'
 $correctedTimestamp = [DateTimeOffset] '2026-10-06T12:34:56+00:00'
 $expectedBuildId = 'SyIeOuurTS_H-Clua5oW0'
 $staleBuildId = 'Xwvb4L_dSTn4jJilCsPfY'
+
+function Resolve-RequiredApplicationPath([string] $Name) {
+    try {
+        $commands = @(
+            Get-Command -Name $Name -CommandType Application -ErrorAction Stop
+        )
+    }
+    catch [Management.Automation.CommandNotFoundException] {
+        throw "Required $Name executable was not found."
+    }
+    if ($commands.Count -eq 0) {
+        throw "Required $Name executable was not found."
+    }
+
+    [Management.Automation.ApplicationInfo] $command = $commands[0]
+    $applicationPath = [string] $command.Path
+    if ([string]::IsNullOrWhiteSpace($applicationPath) -or
+        -not (Test-Path -LiteralPath $applicationPath -PathType Leaf)) {
+        throw "Resolved $Name executable path is invalid."
+    }
+    return $applicationPath
+}
+
+function New-TestApplication([string] $Directory, [string] $Name) {
+    New-Item -ItemType Directory -Path $Directory -Force | Out-Null
+    $path = Join-Path $Directory $Name
+    [IO.File]::WriteAllText($path, @'
+#!/bin/sh
+printf '%s|%s|%s\n' "$#" "$1" "$2"
+exit 0
+'@, [Text.UTF8Encoding]::new($false))
+    $mode = [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute -bor `
+        [IO.UnixFileMode]::GroupRead -bor [IO.UnixFileMode]::GroupExecute -bor `
+        [IO.UnixFileMode]::OtherRead -bor [IO.UnixFileMode]::OtherExecute
+    [IO.File]::SetUnixFileMode($path, $mode)
+    return $path
+}
+
+function Test-ApplicationResolution([string] $Root) {
+    $originalPath = $env:PATH
+    try {
+        $singleName = "azdemo-single-$([Guid]::NewGuid().ToString('N'))"
+        $singleDirectory = Join-Path $Root 'single'
+        $singleExecutable = New-TestApplication -Directory $singleDirectory -Name $singleName
+        $env:PATH = $singleDirectory
+        $resolvedSingle = Resolve-RequiredApplicationPath -Name $singleName
+        if ($resolvedSingle -cne $singleExecutable) {
+            throw 'Single executable discovery did not return the only PATH match.'
+        }
+
+        $multipleName = "azdemo-multiple-$([Guid]::NewGuid().ToString('N'))"
+        $firstDirectory = Join-Path $Root 'multiple-first'
+        $secondDirectory = Join-Path $Root 'multiple-second'
+        $firstExecutable = New-TestApplication -Directory $firstDirectory -Name $multipleName
+        New-TestApplication -Directory $secondDirectory -Name $multipleName | Out-Null
+        $env:PATH = $firstDirectory + [IO.Path]::PathSeparator + $secondDirectory
+        $multipleCommands = @(Get-Command -Name $multipleName -CommandType Application -ErrorAction Stop)
+        if ($multipleCommands.Count -ne 2) {
+            throw "Two-match executable fixture resolved $($multipleCommands.Count) applications instead of 2."
+        }
+        $resolvedMultiple = Resolve-RequiredApplicationPath -Name $multipleName
+        if ($resolvedMultiple -cne $firstExecutable) {
+            throw 'Multiple executable discovery did not preserve PATH precedence.'
+        }
+
+        $env:PATH = $firstDirectory + [IO.Path]::PathSeparator + $firstDirectory
+        $resolvedDuplicate = Resolve-RequiredApplicationPath -Name $multipleName
+        if ($resolvedDuplicate -cne $firstExecutable) {
+            throw 'Duplicate PATH entries changed deterministic executable selection.'
+        }
+
+        $missingName = "azdemo-missing-$([Guid]::NewGuid().ToString('N'))"
+        $missingDirectory = Join-Path $Root 'missing'
+        New-Item -ItemType Directory -Path $missingDirectory -Force | Out-Null
+        $env:PATH = $missingDirectory
+        $missingFailure = $null
+        try { Resolve-RequiredApplicationPath -Name $missingName | Out-Null }
+        catch { $missingFailure = $_ }
+        if ($null -eq $missingFailure -or
+            $missingFailure.Exception.Message -cne "Required $missingName executable was not found.") {
+            throw 'Missing executable discovery did not fail with the required deterministic error.'
+        }
+
+        $spacedName = "azdemo-spaced-$([Guid]::NewGuid().ToString('N'))"
+        $spacedDirectory = Join-Path $Root 'path containing spaces'
+        $spacedExecutable = New-TestApplication -Directory $spacedDirectory -Name $spacedName
+        $env:PATH = $spacedDirectory
+        $resolvedSpaced = Resolve-RequiredApplicationPath -Name $spacedName
+        $probeArguments = @('first argument', 'second argument')
+        $probeRows = @(& $resolvedSpaced @probeArguments)
+        $probeExitCode = $LASTEXITCODE
+        if ($probeExitCode -ne 0 -or $resolvedSpaced -cne $spacedExecutable -or
+            $probeRows.Count -ne 1 -or [string] $probeRows[0] -cne '2|first argument|second argument') {
+            throw 'Executable discovery or invocation split a path or argument containing spaces.'
+        }
+    }
+    finally {
+        $env:PATH = $originalPath
+    }
+}
 
 function New-TextFile([string] $Root, [string] $RelativePath, [string] $Content) {
     $path = Join-Path $Root $RelativePath
@@ -67,13 +165,15 @@ function Expand-TestZip([string] $ZipPath, [string] $Destination) {
     [IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $Destination)
 }
 
-function Invoke-TestRsync([string] $Source, [string] $Destination) {
+function Invoke-TestRsync([string] $RsyncPath, [string] $Source, [string] $Destination) {
     $stderrPath = Join-Path $temporaryDirectory ("rsync-$([Guid]::NewGuid().ToString('N')).stderr")
     try {
         $sourceArgument = $Source.TrimEnd([char[]] @('/', '\')) + [IO.Path]::DirectorySeparatorChar
         $destinationArgument = $Destination.TrimEnd([char[]] @('/', '\')) + [IO.Path]::DirectorySeparatorChar
-        $rows = @(& $rsync.Source '-a' '--delete' '--itemize-changes' '--out-format=%i|%n' '--' `
-                $sourceArgument $destinationArgument 2> $stderrPath)
+        $rsyncArguments = @(
+            '-a', '--delete', '--itemize-changes', '--out-format=%i|%n', '--',
+            $sourceArgument, $destinationArgument)
+        $rows = @(& $RsyncPath @rsyncArguments 2> $stderrPath)
         $exitCode = $LASTEXITCODE
         if ($exitCode -ne 0) {
             $stderrLength = if (Test-Path -LiteralPath $stderrPath) { (Get-Item -LiteralPath $stderrPath).Length } else { 0 }
@@ -86,6 +186,9 @@ function Invoke-TestRsync([string] $Source, [string] $Destination) {
 
 New-Item -ItemType Directory -Path $temporaryDirectory -Force | Out-Null
 try {
+    Test-ApplicationResolution -Root (Join-Path $temporaryDirectory 'application-resolution')
+    $rsyncPath = Resolve-RequiredApplicationPath -Name 'rsync'
+
     if ($expectedBuildId.Length -ne $staleBuildId.Length) {
         throw 'Observed BUILD_ID fixtures must have identical lengths.'
     }
@@ -111,7 +214,7 @@ try {
     New-AzureDemoDeterministicZip -SourceDirectory $expectedRoot -DestinationPath $legacyZip
     $legacyExtract = Join-Path $temporaryDirectory 'legacy-extract'
     Expand-TestZip -ZipPath $legacyZip -Destination $legacyExtract
-    $legacyRsync = @(Invoke-TestRsync -Source $legacyExtract -Destination $deployedRoot)
+    $legacyRsync = @(Invoke-TestRsync -RsyncPath $rsyncPath -Source $legacyExtract -Destination $deployedRoot)
     $legacyTransferredFiles = @($legacyRsync | Where-Object { $_ -cmatch '^>f' })
     $afterLegacy = @(Get-ChangedFiles -ExpectedRoot $expectedRoot -ActualRoot $deployedRoot)
     if ($legacyTransferredFiles.Count -ne 0 -or $afterLegacy.Count -ne 66 -or
@@ -132,7 +235,7 @@ try {
         throw 'Corrected ZIP extraction did not retain the deployment-specific timestamp on Linux.'
     }
 
-    $correctedRsync = @(Invoke-TestRsync -Source $correctedExtract -Destination $deployedRoot)
+    $correctedRsync = @(Invoke-TestRsync -RsyncPath $rsyncPath -Source $correctedExtract -Destination $deployedRoot)
     $transferredFiles = @($correctedRsync | Where-Object { $_ -cmatch '^>f' })
     $afterCorrection = @(Get-ChangedFiles -ExpectedRoot $expectedRoot -ActualRoot $deployedRoot)
     if ($afterCorrection.Count -ne 0 -or $transferredFiles.Count -ne 67 -or
