@@ -4,7 +4,7 @@ param(
     [int] $FixturePort,
     [ValidateSet('success', 'client-error', 'server-error', 'transport', 'assertion')] [string] $FixtureScenario = 'success',
     [string] $ReadyFile,
-    [int] $RequestCount = 15
+    [int] $RequestCount = 16
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,7 +45,7 @@ if ($InternalFixture) {
                     $headers.Location = 'https://app-mtp-web-dev-uks-001-staging.azurewebsites.net' + $path
                 }
                 elseif ($path -eq '/') {
-                    $body = '<html><script src="/_next/static/chunks/app-12345678.js"></script></html>'
+                    $body = '<html><h1>Sign in required</h1><p>Restricted synthetic non-production management demo</p><script src="/_next/static/chunks/app-12345678.js"></script></html>'
                     $headers['Content-Type'] = 'text/html; charset=utf-8'
                     $headers['Strict-Transport-Security'] = 'max-age=31536000'
                     $headers['Content-Security-Policy'] = "default-src 'self'; frame-ancestors 'none'"
@@ -53,6 +53,16 @@ if ($InternalFixture) {
                     $headers['Referrer-Policy'] = 'no-referrer'
                     if ($FixtureScenario -ne 'assertion') { $headers['Permissions-Policy'] = 'camera=()' }
                     $headers['X-Frame-Options'] = 'DENY'
+                }
+                elseif ($path -eq '/inventory/servers') {
+                    $body = '<html><h1>Sign in required</h1><p>Restricted synthetic non-production management demo</p></html>'
+                    $headers['Content-Type'] = 'text/html; charset=utf-8'
+                }
+                elseif ($path -eq '/__azure_demo_route_that_must_not_exist__') {
+                    $status = 404
+                    $reason = 'Not Found'
+                    $body = '<html><h1>Sign in required</h1><p>Restricted synthetic non-production management demo</p></html>'
+                    $headers['Content-Type'] = 'text/html; charset=utf-8'
                 }
                 elseif ($path -like '/_next/static/*') {
                     $body = 'asset'
@@ -122,7 +132,7 @@ function Invoke-OrchestrationScenario([string] $Scenario, [bool] $RejectedEviden
 
     $port = Get-FreeLoopbackPort
     $readyFile = Join-Path $scenarioRoot 'fixture.ready'
-    $arguments = @('-NoLogo', '-NoProfile', '-File', $PSCommandPath, '-InternalFixture', '-FixturePort', [string] $port, '-FixtureScenario', $Scenario, '-ReadyFile', $readyFile, '-RequestCount', '15')
+    $arguments = @('-NoLogo', '-NoProfile', '-File', $PSCommandPath, '-InternalFixture', '-FixturePort', [string] $port, '-FixtureScenario', $Scenario, '-ReadyFile', $readyFile, '-RequestCount', '16')
     $fixtureProcess = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $arguments -PassThru
     try {
         $deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
@@ -216,14 +226,15 @@ function Invoke-OrchestrationScenario([string] $Scenario, [bool] $RejectedEviden
 
 try {
     $success = Invoke-OrchestrationScenario -Scenario 'success' -RejectedEvidence $false
-    $successfulAutomatedChecks = @('SMK-02', 'SMK-03', 'SMK-10', 'SMK-11')
-    if ($isPowerShell7) { $successfulAutomatedChecks += 'SMK-20' }
+    $successfulAutomatedChecks = @('SMK-03', 'SMK-10', 'SMK-11')
+    if ($isPowerShell7) { $successfulAutomatedChecks += @('SMK-02', 'SMK-20') }
     foreach ($id in $successfulAutomatedChecks) {
         $successfulResult = Get-Result $success.Results $id
         Assert-True ($successfulResult.status -ceq 'PASS') "$id did not pass the successful local orchestration fixture: $($successfulResult | ConvertTo-Json -Depth 7 -Compress)"
     }
     if (-not $isPowerShell7) {
         Assert-True ((Get-Result $success.Results 'SMK-20').failureCategories -ccontains 'harness-exception') 'Supplemental Windows execution did not retain SMK-20 as a PowerShell 7 runtime requirement.'
+        Assert-True ((Get-Result $success.Results 'SMK-02').failureCategories -ccontains 'transport-failure') 'Supplemental Windows execution did not retain its known inability to normalize the required HTTP 404 route check.'
     }
     $redirect = Get-Result $success.Results 'SMK-01'
     Assert-True ($redirect.status -ceq 'FAIL') 'SMK-01 passed without mandatory lower-TLS evidence.'

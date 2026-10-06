@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Azure.Core;
 using Azure.Identity;
 using Microsoft.Data.SqlClient;
@@ -44,6 +45,13 @@ public sealed class ManagedIdentityAccessTokenProvider : IAzureAccessTokenProvid
 
 public static class AzureDemoStartupGuard
 {
+    private const string ApprovedSubscriptionId = "633398e2-6c00-4bb7-a576-2db0d210ee77";
+    private const string ApprovedResourceGroupName = "Onkar.Pathre";
+    private const string ApprovedApiAppName = "app-mtp-api-dev-uks-001";
+    private const string ApprovedWebAppName = "app-mtp-web-dev-uks-001";
+    private const string ProductionSlot = "production";
+    private const string StagingSlot = "staging";
+
     public static void Validate(WebApplicationBuilder builder)
     {
         if (!builder.Environment.IsEnvironment("AzureDemo"))
@@ -97,35 +105,52 @@ public static class AzureDemoStartupGuard
         RequireEqual(configuration["DiscoveryImport:ContainerName"], "discovery-imports",
             "DiscoveryImport:ContainerName must be discovery-imports in AzureDemo.");
 
+        var slotName = configuration["AzureDemoHostIdentity:SlotName"];
+        if (slotName is not (ProductionSlot or StagingSlot))
+        {
+            throw new InvalidOperationException(
+                "AzureDemoHostIdentity:SlotName must identify the exact production site or staging slot.");
+        }
+
+        var approvedApiHost = RequireTrustedDefaultHostName(
+            configuration,
+            "Api",
+            ApprovedApiAppName,
+            slotName);
+        var approvedWebHost = RequireTrustedDefaultHostName(
+            configuration,
+            "Web",
+            ApprovedWebAppName,
+            slotName);
+
         var allowedHosts = configuration["AllowedHosts"];
-        var approvedApiHosts = new[]
+        if (!string.Equals(allowedHosts, approvedApiHost, StringComparison.Ordinal))
         {
-            "app-mtp-api-dev-uks-001.azurewebsites.net",
-            "app-mtp-api-dev-uks-001-staging.azurewebsites.net"
-        };
-        if (!approvedApiHosts.Contains(allowedHosts, StringComparer.Ordinal))
-        {
-            throw new InvalidOperationException("AllowedHosts must contain only the approved API hosts in AzureDemo.");
+            throw new InvalidOperationException(
+                "AllowedHosts must contain only the exact trusted API default hostname for this AzureDemo slot.");
         }
 
         var origins = configuration.GetSection("AllowedOrigins").Get<string[]>() ?? [];
-        var approvedWebOrigins = new[]
+        if (origins.Length != 1)
         {
-            "https://app-mtp-web-dev-uks-001.azurewebsites.net",
-            "https://app-mtp-web-dev-uks-001-staging.azurewebsites.net"
-        };
-        if (origins.Length != 1 || !approvedWebOrigins.Contains(origins[0], StringComparer.Ordinal))
-        {
-            throw new InvalidOperationException("AllowedOrigins must contain the exact approved HTTPS MTP web origin in AzureDemo.");
+            throw new InvalidOperationException(
+                "AllowedOrigins must contain one exact trusted HTTPS web origin for this AzureDemo slot.");
         }
-        if (origins.Any(origin =>
-                !Uri.TryCreate(origin, UriKind.Absolute, out var uri)
-                || uri.Scheme != Uri.UriSchemeHttps
-                || uri.AbsolutePath != "/"
-                || !string.IsNullOrEmpty(uri.Query)
-                || !string.IsNullOrEmpty(uri.Fragment)))
+
+        var origin = origins[0];
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri)
+            || originUri.Scheme != Uri.UriSchemeHttps
+            || !string.IsNullOrEmpty(originUri.UserInfo)
+            || !originUri.IsDefaultPort
+            || originUri.Port != 443
+            || originUri.AbsolutePath != "/"
+            || !string.IsNullOrEmpty(originUri.Query)
+            || !string.IsNullOrEmpty(originUri.Fragment)
+            || !string.Equals(originUri.Host, approvedWebHost, StringComparison.Ordinal)
+            || !string.Equals(origin, $"https://{approvedWebHost}", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("AllowedOrigins must contain exact HTTPS web origins in AzureDemo.");
+            throw new InvalidOperationException(
+                "AllowedOrigins must contain the exact trusted HTTPS web origin without a port, path, userinfo, query or fragment in AzureDemo.");
         }
 
         var connectionString = configuration.GetConnectionString("LgrDatabase");
@@ -176,6 +201,63 @@ public static class AzureDemoStartupGuard
         {
             throw new InvalidOperationException($"{name} must be a non-empty GUID in AzureDemo.");
         }
+    }
+
+    private static string RequireTrustedDefaultHostName(
+        IConfiguration configuration,
+        string workloadName,
+        string approvedAppName,
+        string slotName)
+    {
+        var resourceId = configuration[$"AzureDemoHostIdentity:{workloadName}ResourceId"];
+        var slotSuffix = slotName == ProductionSlot ? string.Empty : $"/slots/{StagingSlot}";
+        var expectedResourceId =
+            $"/subscriptions/{ApprovedSubscriptionId}/resourceGroups/{ApprovedResourceGroupName}" +
+            $"/providers/Microsoft.Web/sites/{approvedAppName}{slotSuffix}";
+        if (!string.Equals(resourceId, expectedResourceId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"AzureDemoHostIdentity:{workloadName}ResourceId must identify the exact approved {workloadName} resource and slot.");
+        }
+
+        var hostName = configuration[$"AzureDemoHostIdentity:{workloadName}DefaultHostName"];
+        if (!IsApprovedAzureDefaultHostName(hostName, approvedAppName, slotName))
+        {
+            throw new InvalidOperationException(
+                $"AzureDemoHostIdentity:{workloadName}DefaultHostName must be the approved Azure default hostname for the exact {workloadName} resource and slot.");
+        }
+
+        return hostName!;
+    }
+
+    private static bool IsApprovedAzureDefaultHostName(
+        string? hostName,
+        string approvedAppName,
+        string slotName)
+    {
+        if (string.IsNullOrWhiteSpace(hostName)
+            || hostName.Length > 253
+            || !string.Equals(hostName, hostName.ToLowerInvariant(), StringComparison.Ordinal)
+            || hostName.IndexOfAny([':', '/', '@', '?', '#', '\\']) >= 0
+            || !Regex.IsMatch(hostName, "^[a-z0-9.-]+$", RegexOptions.CultureInvariant))
+        {
+            return false;
+        }
+
+        var prefix = slotName == ProductionSlot
+            ? approvedAppName
+            : $"{approvedAppName}-{StagingSlot}";
+        if (string.Equals(hostName, $"{prefix}.azurewebsites.net", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // This mirrors the deployment smoke resolver's generated-host grammar.
+        // The hostname is trusted only alongside the independently validated exact
+        // Bicep resource ID and production/staging slot identity above.
+        var generatedPattern =
+            $"^{Regex.Escape(prefix)}-[a-z0-9]{{8,64}}\\.[a-z0-9](?:[a-z0-9-]{{0,61}}[a-z0-9])?-\\d{{2}}\\.azurewebsites\\.net$";
+        return Regex.IsMatch(hostName, generatedPattern, RegexOptions.CultureInvariant);
     }
 
     private static void RequireAbsoluteHttps(

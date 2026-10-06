@@ -21,9 +21,9 @@ function isExecutableInlineScript(attributes) {
   ].includes(type);
 }
 
-async function inspectDocument(path) {
+async function inspectDocument(path, expectedStatus = 200) {
   const response = await fetch(new URL(path, baseUrl), { redirect: "manual" });
-  assert.equal(response.status, 200, `${path} returned ${response.status}, expected 200.`);
+  assert.equal(response.status, expectedStatus, `${path} returned ${response.status}, expected ${expectedStatus}.`);
 
   const csp = response.headers.get("content-security-policy");
   assert(csp, `${path} did not return Content-Security-Policy.`);
@@ -57,9 +57,10 @@ try {
   const secondHome = await inspectDocument("/");
   assert.notEqual(firstHome.nonce, secondHome.nonce, "Separate document requests reused the same CSP nonce.");
   const deepRoute = await inspectDocument("/inventory/servers");
+  const notFoundRoute = await inspectDocument("/__azure_demo_route_that_must_not_exist__", 404);
 
   console.log(
-    `Production CSP nonce regression passed: / (${firstHome.executableInlineScriptCount}, ${secondHome.executableInlineScriptCount} inline scripts) and /inventory/servers (${deepRoute.executableInlineScriptCount} inline scripts); request nonces differ.`
+    `Production CSP nonce regression passed: / (${firstHome.executableInlineScriptCount}, ${secondHome.executableInlineScriptCount} inline scripts), /inventory/servers (${deepRoute.executableInlineScriptCount} inline scripts), and 404 (${notFoundRoute.executableInlineScriptCount} inline scripts); request nonces differ.`
   );
 } catch (error) {
   console.error(error instanceof Error ? error.stack : error);

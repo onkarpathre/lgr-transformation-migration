@@ -130,6 +130,12 @@ stages:
       displayName: PowerShell 7 complete smoke orchestration regression
     - pwsh: ./scripts/build/Test-AzureDemoSmokeEvidence.ps1
       displayName: Smoke evidence provenance and substitution regression
+    - pwsh: ./scripts/build/Test-AzureDemoAppliedApiHostConfiguration.ps1
+      displayName: Applied API host-identity and slot-stickiness regression
+    - pwsh: ./scripts/build/Test-AzureDemoCleanWebDeployment.ps1
+      displayName: Clean web staging deployment target and CLI regression
+    - pwsh: ./scripts/build/Test-AzureDemoDeployedContentVerification.ps1
+      displayName: Exact deployed ZIP content and stale-file regression
     - pwsh: ./scripts/build/Test-AzureAppServiceNativeRuntimes.ps1
       displayName: Azure App Service native-runtime regression
     - pwsh: ./scripts/build/Test-AzureDemoAppServiceSubnet.ps1
@@ -361,6 +367,12 @@ stages:
             fetchTags: false
           - download: current
             artifact: azure-demo-immutable
+          - pwsh: |
+              . ./scripts/deployment/AzureDemoStagingDeployment.ps1
+              ./scripts/build/Assert-AzureDemoDeploymentArtifact.ps1 -ArtifactRoot '$(Pipeline.Workspace)/azure-demo-immutable' -ManifestPath '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -ExpectedSourceCommit '$(Build.SourceVersion)'
+              Assert-AzureDemoApplicationArtifact -ArtifactRoot '$(Pipeline.Workspace)/azure-demo-immutable' -Workload Api -ExpectedSourceCommit '$(Build.SourceVersion)' | Out-Null
+              Assert-AzureDemoApplicationArtifact -ArtifactRoot '$(Pipeline.Workspace)/azure-demo-immutable' -Workload Web -ExpectedSourceCommit '$(Build.SourceVersion)' | Out-Null
+            displayName: Revalidate this run's exact immutable deployment ZIPs
           - task: DownloadSecureFile@1
             name: downloadSqlBootstrapEvidence
             displayName: Download protected SQL bootstrap evidence
@@ -413,6 +425,20 @@ stages:
               AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID: $(AZDEMO_DEPLOYMENT_PRINCIPAL_OBJECT_ID)
               AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
               AZDEMO_ALERT_EMAIL: $(AZDEMO_ALERT_EMAIL)
+          - task: AzureCLI@2
+            displayName: Verify applied API staging host identity before API start
+            inputs:
+              azureSubscription: sc-mtp-azure-demo-dev
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                . ./scripts/deployment/AzureDemoStagingDeployment.ps1
+                $account = Invoke-AzureDemoAzCommand -Operation 'Applied configuration account lookup' -Arguments @('account', 'show', '--query', '{id:id}', '--output', 'json', '--only-show-errors')
+                $webSlot = Invoke-AzureDemoAzCommand -Operation 'Applied configuration web-slot lookup' -Arguments @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $apiSlot = Invoke-AzureDemoAzCommand -Operation 'Applied configuration API-slot lookup' -Arguments @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $settingsQuery = "[?name=='AllowedHosts' || name=='AllowedOrigins__0' || starts_with(name, 'AzureDemoHostIdentity__') || name=='SCM_DO_BUILD_DURING_DEPLOYMENT'].{name:name,value:value,slotSetting:slotSetting}"
+                $apiSettings = Invoke-AzureDemoAzCommand -Operation 'Applied configuration API app-settings lookup' -Arguments @('webapp', 'config', 'appsettings', 'list', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--slot', 'staging', '--query', $settingsQuery, '--output', 'json', '--only-show-errors')
+                ./scripts/deployment/Assert-AzureDemoAppliedApiHostConfiguration.ps1 -AccountJson $account.Stdout -AccountCommandExitCode $account.ExitCode -WebSlotJson $webSlot.Stdout -WebSlotCommandExitCode $webSlot.ExitCode -ApiSlotJson $apiSlot.Stdout -ApiSlotCommandExitCode $apiSlot.ExitCode -ApiSlotSettingsJson $apiSettings.Stdout -ApiSlotSettingsCommandExitCode $apiSettings.ExitCode
           - pwsh: ./scripts/database/Assert-AzureDemoSqlBootstrapEvidence.ps1 -EvidencePath '$(AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY)/sql-bootstrap.json' -ExpectedReleaseCommit '$(Build.SourceVersion)' -RepositoryRoot '$(Build.SourcesDirectory)' -GrantsScriptPath 'scripts/database/Configure-AzureDemoDatabasePrincipals.sql' -ExpectedExecutorPrincipalObjectId '$(AZDEMO_SQL_ADMIN_OBJECT_ID)' -MaximumEvidenceAgeDays 90
             displayName: Require durable independently produced SQL Entra bootstrap evidence
           - task: AzureCLI@2
@@ -511,9 +537,30 @@ stages:
           - task: AzureWebApp@1
             displayName: Deploy API ZIP to staging only
             inputs: { azureSubscription: sc-mtp-azure-demo-dev, appType: webAppLinux, appName: $(AZDEMO_API_APP_NAME), resourceGroupName: $(AZDEMO_RESOURCE_GROUP_NAME), deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/api.zip', deploymentMethod: zipDeploy }
-          - task: AzureWebApp@1
+          - task: AzureCLI@2
             displayName: Deploy web ZIP to staging only
-            inputs: { azureSubscription: sc-mtp-azure-demo-dev, appType: webAppLinux, appName: $(AZDEMO_WEB_APP_NAME), resourceGroupName: $(AZDEMO_RESOURCE_GROUP_NAME), deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/web.zip', deploymentMethod: zipDeploy }
+            inputs:
+              azureSubscription: sc-mtp-azure-demo-dev
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $evidenceDirectory = '$(Pipeline.Workspace)/staging-deployment-evidence'
+                New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+                Write-Host '##vso[task.setvariable variable=AZDEMO_STAGING_DEPLOYMENT_ATTEMPTED]true'
+                $common = @{
+                  SubscriptionId = '$(AZDEMO_SUBSCRIPTION_ID)'
+                  ResourceGroupName = '$(AZDEMO_RESOURCE_GROUP_NAME)'
+                  SlotName = 'staging'
+                  ArtifactRoot = '$(Pipeline.Workspace)/azure-demo-immutable'
+                  DeploymentManifestPath = '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json'
+                  ExpectedSourceCommit = '$(Build.SourceVersion)'
+                }
+                ./scripts/deployment/Invoke-AzureDemoCleanWebSlotDeployment.ps1 @common -AppName '$(AZDEMO_WEB_APP_NAME)' -EvidencePath (Join-Path $evidenceDirectory 'web-clean-deployment.json')
+                ./scripts/deployment/Invoke-AzureDemoSlotContentVerification.ps1 @common -Workload Web -AppName '$(AZDEMO_WEB_APP_NAME)' -EvidencePath (Join-Path $evidenceDirectory 'web-content-verification.json')
+                ./scripts/deployment/Invoke-AzureDemoSlotContentVerification.ps1 @common -Workload Api -AppName '$(AZDEMO_API_APP_NAME)' -EvidencePath (Join-Path $evidenceDirectory 'api-content-verification.json')
+          - publish: $(Pipeline.Workspace)/staging-deployment-evidence
+            artifact: staging-deployment-evidence
+            condition: and(always(), eq(variables['AZDEMO_STAGING_DEPLOYMENT_ATTEMPTED'], 'true'))
           - task: AzureCLI@2
             displayName: Resolve and validate exact staging smoke targets
             inputs:

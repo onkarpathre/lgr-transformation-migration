@@ -257,6 +257,26 @@ resource apiConfiguration 'Microsoft.Web/sites/config@2023-12-01' = {
         value: 'https://${web.properties.defaultHostName}'
       }
       {
+        name: 'AzureDemoHostIdentity__SlotName'
+        value: 'production'
+      }
+      {
+        name: 'AzureDemoHostIdentity__ApiResourceId'
+        value: api.id
+      }
+      {
+        name: 'AzureDemoHostIdentity__ApiDefaultHostName'
+        value: api.properties.defaultHostName
+      }
+      {
+        name: 'AzureDemoHostIdentity__WebResourceId'
+        value: web.id
+      }
+      {
+        name: 'AzureDemoHostIdentity__WebDefaultHostName'
+        value: web.properties.defaultHostName
+      }
+      {
         name: 'AzureIdentity__ManagedIdentityClientId'
         value: apiMainIdentityClientId
       }
@@ -325,6 +345,26 @@ resource apiSlotConfiguration 'Microsoft.Web/sites/slots/config@2023-12-01' = {
         value: 'https://${webSlot.properties.defaultHostName}'
       }
       {
+        name: 'AzureDemoHostIdentity__SlotName'
+        value: 'staging'
+      }
+      {
+        name: 'AzureDemoHostIdentity__ApiResourceId'
+        value: apiSlot.id
+      }
+      {
+        name: 'AzureDemoHostIdentity__ApiDefaultHostName'
+        value: apiSlot.properties.defaultHostName
+      }
+      {
+        name: 'AzureDemoHostIdentity__WebResourceId'
+        value: webSlot.id
+      }
+      {
+        name: 'AzureDemoHostIdentity__WebDefaultHostName'
+        value: webSlot.properties.defaultHostName
+      }
+      {
         name: 'AzureIdentity__ManagedIdentityClientId'
         value: apiStagingIdentityClientId
       }
@@ -357,6 +397,11 @@ resource apiSlots 'Microsoft.Web/sites/config@2023-12-01' = {
     appSettingNames: [
       'AllowedHosts'
       'AllowedOrigins__0'
+      'AzureDemoHostIdentity__SlotName'
+      'AzureDemoHostIdentity__ApiResourceId'
+      'AzureDemoHostIdentity__ApiDefaultHostName'
+      'AzureDemoHostIdentity__WebResourceId'
+      'AzureDemoHostIdentity__WebDefaultHostName'
       'AzureIdentity__ManagedIdentityClientId'
       'ConnectionStrings__LgrDatabase'
       'OTEL_SERVICE_NAME'

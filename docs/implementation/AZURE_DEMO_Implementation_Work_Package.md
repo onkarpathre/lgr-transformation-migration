@@ -1721,6 +1721,125 @@ handoff:
 
 READY_FOR_TEST
 
+## Azure demo staging clean-deployment and exact-content reconciliation
+
+### Baseline, authority and traceability
+
+This bounded Developer repair started from branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `1b29e4e0fcce4a2f110c065d47ad9c1516944676`. The staged index was empty. Six unstaged API hostname-validation repair files were present before this continuation and were inventoried and preserved: `infra/bicep/modules/appservice.bicep`, `src/api/Infrastructure/AzureDemoInfrastructure.cs`, `src/api/appsettings.AzureDemo.json`, `tests/api.integration/GeneratedHostnameSecurityTests.cs`, `tests/api.unit/AzureDemoConfigurationTests.cs` and `tests/api.unit/AzureDemoDeploymentBoundaryTests.cs`. Nothing was reset, stashed, staged, committed or pushed.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-01", "C-11"]
+  functional_requirements: ["F-01", "F-02", "F-13", "F-14", "F-15"]
+  non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-07", "NF-10", "NF-12", "NF-13"]
+  risks: ["R-02", "R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-13", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-02", "Q-08"]
+  approvals: []
+```
+
+The existing exact-package decisions authorise controlled implementation and local/isolated testing only. Azure Platform/Operations remains `PENDING_PRE_DEPLOYMENT`; this repair performed no Azure, Azure DevOps, SQL, Entra, deployment, migration, seed, swap or release action and supplies no human approval.
+
+### Confirmed evidence and bounded hypothesis
+
+The supplied staging evidence confirms that deployment run `20261006.4`, deployment ID `659f6671-0f06-4db8-9c8d-0f4c1d140541`, uploaded web ZIP SHA-256 `8979a864e0b09117c8fa782a02137464e4ac606c6162ba11d4ffc2dbdc4be5ee`, and build ID `3TSclGUd2A6MVo_PfhgU0` do not match the deployed build/homepage. The deployed homepage names a square-bracket chunk absent from the staging slot. The supplied Kudu trace also confirms the optimizer/manifest rsync path and partial transfer pattern. Timestamp/size collision remains a supported explanation, not a proven root cause, because the exact rsync comparison flags were not captured.
+
+Repository inspection confirms that the deployment job downloads only `artifact: azure-demo-immutable` from `current`, then has access to the root deployment manifest and application manifest. It also confirms that an incremental `az deployment group create` already precedes API deployment; the earlier what-if is not the apply. The repair revalidates the downloaded root manifest, exact source commit, application manifest and both ZIP hashes before any deployment. It does not hard-code or mutate the supplied ZIP and does not randomise deterministic archive timestamps.
+
+The web application has no runtime file-write or application-owned persistent-data path under the deployment directory. Durable application data remains in Azure SQL and approved Blob storage. `.next`, `server.js`, static assets and dependency payloads are deployment artefacts; platform dependency compression is non-durable. Clean deployment is therefore bounded to the exact web staging slot. No SSH deletion or broad filesystem removal was added.
+
+### Implemented deployment and verification contract
+
+- The web slot deploy now runs through `sc-mtp-azure-demo-dev` on the existing private-capable deployment job and invokes `az webapp deploy` with the exact subscription, resource group, web app, explicit `staging` slot, selected immutable `web.zip`, `--type zip`, `--clean true`, `--async false`, `--restart true`, `--track-status true` and a bounded timeout. A CLI version/capability preflight rejects an incompatible installation.
+- The target guard rejects production and every unexpected subscription, resource group, app, slot, resource ID, resource type or generated hostname. Remote build and Oryx remain disabled.
+- Native process exit is captured immediately after `az`; non-zero exit fails the task and is retained in deployment evidence. CLI acceptance or task launch cannot satisfy the gate.
+- Authenticated verification obtains a task-local Microsoft Entra token through the service connection and downloads a read-only ZIP snapshot from the exact slot SCM `/api/zip/site/wwwroot/` endpoint. It enables no publishing credentials, does not log the token and removes the token variable and temporary snapshot in `finally`.
+- Every non-dependency application path, length and SHA-256 is compared with the selected immutable ZIP. Missing, changed and unexpected files fail. Web verification separately requires exact `.next/BUILD_ID`, `server.js`, `.next/server`, square-bracket chunks and `.next/static`. API application files are also compared exactly.
+- App Service `NodeProjectOptimizer` may compress or expand `node_modules`. Evidence therefore records the expected and deployed dependency entry counts, paths and fingerprints and labels this one category `platform-transformed-node-modules`; it never silently omits non-dependency application files. A missing dependency payload still fails.
+- Deployment and content evidence publish under `condition: always()` after an attempted web deploy. Any deploy/content mismatch prevents the later smoke, release-approval and swap stages.
+- Package and staging smoke checks now require `/` = 200, `/inventory/servers` = 200 and a fixed nonexistent route = 404, all with the existing signed-out Entra shell/demo marker and no generic 500 page. The CSP nonce regression includes the same 404 route.
+
+### API configuration ordering
+
+The existing resource-group Bicep apply is the concrete configuration step; this repair did not introduce another broad apply. The pending host repair adds the trusted production/staging resource IDs, Azure-reported default hostnames and slot name to the existing complete API app-setting definitions, and adds the seven host/origin identity settings to the existing slot-stickiness list. Existing secret references and other app settings remain in those complete definitions.
+
+Immediately after the existing apply, and before repaired API ZIP deployment/start, the pipeline now queries the exact web/API slot identities and API slot settings. It requires the Azure-reported `AllowedHosts`, `AllowedOrigins__0`, five trusted host-identity values, remote-build-disabled value and slot-stickiness to match exactly. A failed query, missing/duplicate/unexpected selected setting, wrong value or non-sticky identity setting stops the job.
+
+This is not deployment readiness: the unchanged Azure Platform/Operations approval is still absent. In addition, the architecture/product package says one S1 worker and requires fresh approval before scale-up, while the supplied live inventory is S2/one instance. Bicep treats the plan as `existing` and does not manage its SKU, so no capacity change is made, but Architecture and Product/PRB must reconcile this stale S1 design/cost baseline before any protected run.
+
+### Local verification
+
+| Check | Result |
+|---|---|
+| Complete .NET tests | PASS: 234/234 unit and 149/149 integration tests; NuGet vulnerability-feed retrieval emitted `NU1900` because network access is restricted. |
+| Applied API configuration regression | PASS: one valid and six fail-closed settings/slot-stickiness cases. |
+| Clean web deployment regression | PASS: exact artifact selection and command; four unexpected targets rejected; CLI exit 17 retained as failure. |
+| Deployed-content regression | PASS: two deterministic packages with identical paths/sizes/1980 timestamps but different bytes; stale content, missing square-bracket chunk and changed build ID rejected; dependency compression recorded explicitly. |
+| Pipeline structural regression | PASS: seven ordered stages, service connection, immutable guards, configuration apply/verification order, clean flags, authenticated content verification, evidence retention and later-gate ordering. |
+| Smoke/source/security regressions | PASS locally: supplemental PowerShell 5.1 smoke orchestration, target resolution, native command stream/exit handling, smoke evidence and 203-file source/security boundary. |
+| App Service source regressions | PASS: native-runtime positive/fail-closed cases and existing-subnet/site-slot contracts. |
+| Diff hygiene | PASS: `git diff --check`; only repository line-ending conversion warnings were emitted. |
+| Linux production package routes/CSP | NOT RUN and not claimed: Linux/PowerShell 7 is unavailable and the supplied run `20261006.4` ZIP is not present locally. The local ZIP has a different SHA-256/build ID and is not substitute evidence. |
+| Frontend install/lint/build/audit | NOT RUN successfully and not claimed: offline npm caches are incomplete and network access is restricted. |
+| Bicep compile/emitted dependency inspection | NOT RUN and not claimed: Azure CLI/Bicep is unavailable locally. |
+| Actual Azure CLI compatibility/deploy/content/smoke | NOT RUN and not claimed: Azure CLI is unavailable locally and Azure action is prohibited; the protected agent preflight and independent run remain required. |
+
+### Changed artefacts
+
+The six pre-existing API repair files above remain changed. This continuation also changes `azure-pipelines.yml`, `scripts/build/New-AzureDemoPackages.ps1`, `scripts/build/Test-AzureDemoSmokeOrchestration.ps1`, `scripts/build/Test-AzurePipelineStructure.ps1`, `scripts/smoke/Invoke-AzureDemoSmokeTests.ps1`, `src/web/tests/production-csp-nonce.mjs` and this implementation package. It adds `scripts/build/Test-AzureDemoAppliedApiHostConfiguration.ps1`, `scripts/build/Test-AzureDemoCleanWebDeployment.ps1`, `scripts/build/Test-AzureDemoDeployedContentVerification.ps1`, `scripts/deployment/Assert-AzureDemoAppliedApiHostConfiguration.ps1`, `scripts/deployment/AzureDemoStagingDeployment.ps1`, `scripts/deployment/Invoke-AzureDemoCleanWebSlotDeployment.ps1` and `scripts/deployment/Invoke-AzureDemoSlotContentVerification.ps1`.
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "architect"
+  state: "NEEDS_ARCHITECTURE_DECISION"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_1b29e4e0fcce4a2f110c065d47ad9c1516944676"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01", "C-11"]
+    functional_requirements: ["F-01", "F-02", "F-13", "F-14", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-07", "NF-10", "NF-12", "NF-13"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-13", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-02", "Q-08"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml and the exact changed/added files listed above"
+    - "local regression output; no protected Azure evidence"
+  evidence:
+    - "Local application, deployment, content-reconciliation, pipeline, smoke and security regressions pass as listed above."
+    - "Unavailable Linux, frontend, Bicep, Azure CLI and connected Azure checks are explicitly not claimed."
+  decisions:
+    - "Use a supported clean ZIP deployment only for the exact web staging slot."
+    - "Hash-verify every application file against the immutable ZIP and explicitly record the documented dependency transformation."
+    - "Apply and validate trusted API host identity before API deployment through the existing protected Bicep sequence."
+  assumptions:
+    - "Timestamp/size collision remains a hypothesis until exact Kudu rsync comparison flags or equivalent proof is obtained."
+  risks:
+    - "Protected agent Azure CLI/Kudu behavior and exact run-package verification remain unexecuted."
+    - "The live S2 plan conflicts with the approved S1 architecture/cost baseline."
+  defects:
+    - "REPAIRED LOCALLY: incremental web ZIP deployment could leave stale application files without exact post-deploy reconciliation."
+    - "REPAIRED LOCALLY: pipeline did not prove applied trusted API host settings before repaired API start."
+  blockers:
+    - "Azure Platform/Operations approval remains PENDING_PRE_DEPLOYMENT."
+    - "Architecture/Product/PRB must reconcile the live S2 plan with the approved S1 design and cost envelope."
+    - "Independent Linux/PowerShell 7, connected dependency, Bicep and protected Azure staging evidence is outstanding."
+  approvals: []
+  requested_action: "Architect and Product/PRB must reconcile and approve or reject the S2 one-instance capacity drift against the S1 design/cost baseline before the independent protected staging test is authorised."
+```
+
+NEEDS_ARCHITECTURE_DECISION
+
 ## Staging smoke orchestration execution and diagnostic repair
 
 ### Baseline, role, scope and traceability
@@ -2953,3 +3072,9 @@ handoff:
 ```
 
 READY_FOR_TEST
+
+## Current worktree terminal state - staging reconciliation
+
+The latest worktree continuation is the section **Azure demo staging clean-deployment and exact-content reconciliation** above, based on exact HEAD `1b29e4e0fcce4a2f110c065d47ad9c1516944676`. Its local implementation and regressions are complete, but its hand-off supersedes older terminal markers in this cumulative document because the supplied live S2 plan conflicts with the approved S1 design/cost baseline and Azure Platform/Operations approval is still pending.
+
+NEEDS_ARCHITECTURE_DECISION

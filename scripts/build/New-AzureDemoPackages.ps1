@@ -94,6 +94,16 @@ try {
         if ($null -eq $root -or $root.StatusCode -ne 200) { throw 'Standalone web root did not start successfully.' }
         $deep = Invoke-WebRequest -Uri 'http://127.0.0.1:3127/inventory/servers' -UseBasicParsing -TimeoutSec 10
         if ($deep.StatusCode -ne 200) { throw 'Standalone deep route did not return 200.' }
+        $notFound = Invoke-WebRequest -Uri 'http://127.0.0.1:3127/__azure_demo_route_that_must_not_exist__' `
+            -UseBasicParsing -SkipHttpErrorCheck -TimeoutSec 10
+        if ($notFound.StatusCode -ne 404) { throw 'Standalone nonexistent route did not return 404.' }
+        foreach ($page in @($root, $deep, $notFound)) {
+            if ($page.Content -notmatch 'Sign in required' -or
+                $page.Content -notmatch 'Restricted synthetic non-production management demo' -or
+                $page.Content -match '(?i)(?:<title>\s*500\b|\bInternal Server Error\b|\bApplication Error\b)') {
+                throw 'Standalone page did not retain the production authentication contract or returned generic failure content.'
+            }
+        }
         $cspNonceTest = Join-Path $repo 'src/web/tests/production-csp-nonce.mjs'
         & node $cspNonceTest 'http://127.0.0.1:3127'
         if ($LASTEXITCODE) { throw 'Standalone production CSP nonce regression failed.' }

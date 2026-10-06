@@ -68,7 +68,14 @@ public sealed class AzureDemoDeploymentBoundaryTests
         Assert.Contains("@('account', 'show'", pipeline, StringComparison.Ordinal);
         Assert.Contains("@('webapp', 'show'", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("@('webapp', 'deployment', 'slot', 'show'", pipeline, StringComparison.Ordinal);
-        Assert.Equal(4, pipeline.Split("'--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}'", StringSplitOptions.None).Length - 1);
+        const string slotIdentityQuery = "'--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}'";
+        var appliedConfigurationStart = pipeline.IndexOf("displayName: Verify applied API staging host identity before API start", StringComparison.Ordinal);
+        var appliedConfigurationEnd = pipeline.IndexOf("displayName: Require durable independently produced SQL Entra bootstrap evidence", appliedConfigurationStart, StringComparison.Ordinal);
+        Assert.True(appliedConfigurationStart >= 0 && appliedConfigurationEnd > appliedConfigurationStart);
+        var appliedConfiguration = pipeline[appliedConfigurationStart..appliedConfigurationEnd];
+        var smokeResolutionPipeline = pipeline[..appliedConfigurationStart] + pipeline[appliedConfigurationEnd..];
+        Assert.Equal(2, appliedConfiguration.Split(slotIdentityQuery, StringSplitOptions.None).Length - 1);
+        Assert.Equal(4, smokeResolutionPipeline.Split(slotIdentityQuery, StringSplitOptions.None).Length - 1);
         Assert.Equal(2, pipeline.Split("$rows = @(& az @Arguments 2> $stderrPath)", StringSplitOptions.None).Length - 1);
         Assert.DoesNotContain("& az @Arguments 2>&1", pipeline, StringComparison.Ordinal);
         Assert.Contains("Test-AzureDemoPipelineSmokeTargetCommands.ps1", pipeline, StringComparison.Ordinal);
@@ -125,6 +132,10 @@ public sealed class AzureDemoDeploymentBoundaryTests
         const string stagingAllowedHost = "value: apiSlot.properties.defaultHostName";
         const string productionAllowedOrigin = "value: 'https://${web.properties.defaultHostName}'";
         const string stagingAllowedOrigin = "value: 'https://${webSlot.properties.defaultHostName}'";
+        const string productionApiResourceId = "value: api.id";
+        const string stagingApiResourceId = "value: apiSlot.id";
+        const string productionWebResourceId = "value: web.id";
+        const string stagingWebResourceId = "value: webSlot.id";
 
         Assert.Contains(productionApiOrigin, productionWebConfiguration, StringComparison.Ordinal);
         Assert.DoesNotContain(stagingApiOrigin, productionWebConfiguration, StringComparison.Ordinal);
@@ -132,25 +143,41 @@ public sealed class AzureDemoDeploymentBoundaryTests
         Assert.DoesNotContain(productionApiOrigin, stagingWebConfiguration, StringComparison.Ordinal);
         Assert.Contains(productionAllowedHost, productionApiConfiguration, StringComparison.Ordinal);
         Assert.Contains(productionAllowedOrigin, productionApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains(productionApiResourceId, productionApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains(productionWebResourceId, productionApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains("name: 'AzureDemoHostIdentity__SlotName'", productionApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains("value: 'production'", productionApiConfiguration, StringComparison.Ordinal);
         Assert.DoesNotContain(stagingAllowedHost, productionApiConfiguration, StringComparison.Ordinal);
         Assert.DoesNotContain(stagingAllowedOrigin, productionApiConfiguration, StringComparison.Ordinal);
+        Assert.DoesNotContain(stagingApiResourceId, productionApiConfiguration, StringComparison.Ordinal);
+        Assert.DoesNotContain(stagingWebResourceId, productionApiConfiguration, StringComparison.Ordinal);
         Assert.Contains(stagingAllowedHost, stagingApiConfiguration, StringComparison.Ordinal);
         Assert.Contains(stagingAllowedOrigin, stagingApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains(stagingApiResourceId, stagingApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains(stagingWebResourceId, stagingApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains("name: 'AzureDemoHostIdentity__SlotName'", stagingApiConfiguration, StringComparison.Ordinal);
+        Assert.Contains("value: 'staging'", stagingApiConfiguration, StringComparison.Ordinal);
         Assert.DoesNotContain(productionAllowedHost, stagingApiConfiguration, StringComparison.Ordinal);
         Assert.DoesNotContain(productionAllowedOrigin, stagingApiConfiguration, StringComparison.Ordinal);
+        Assert.DoesNotContain(productionApiResourceId, stagingApiConfiguration, StringComparison.Ordinal);
+        Assert.DoesNotContain(productionWebResourceId, stagingApiConfiguration, StringComparison.Ordinal);
 
         foreach (var exactMapping in new[]
         {
             productionApiOrigin,
             stagingApiOrigin,
-            productionAllowedHost,
-            stagingAllowedHost,
             productionAllowedOrigin,
-            stagingAllowedOrigin
+            stagingAllowedOrigin,
+            productionApiResourceId,
+            stagingApiResourceId,
+            productionWebResourceId,
+            stagingWebResourceId
         })
         {
             Assert.Equal(1, appService.Split(exactMapping, StringSplitOptions.None).Length - 1);
         }
+        Assert.Equal(2, appService.Split(productionAllowedHost, StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, appService.Split(stagingAllowedHost, StringSplitOptions.None).Length - 1);
 
         Assert.DoesNotContain("appSettings:", stagingWebSlot, StringComparison.Ordinal);
         Assert.DoesNotContain("apiSlot.properties", stagingWebSlot, StringComparison.Ordinal);
@@ -172,6 +199,11 @@ public sealed class AzureDemoDeploymentBoundaryTests
             {
                 "AllowedHosts",
                 "AllowedOrigins__0",
+                "AzureDemoHostIdentity__SlotName",
+                "AzureDemoHostIdentity__ApiResourceId",
+                "AzureDemoHostIdentity__ApiDefaultHostName",
+                "AzureDemoHostIdentity__WebResourceId",
+                "AzureDemoHostIdentity__WebDefaultHostName",
                 "AzureIdentity__ManagedIdentityClientId",
                 "ConnectionStrings__LgrDatabase",
                 "OTEL_SERVICE_NAME"
@@ -183,6 +215,17 @@ public sealed class AzureDemoDeploymentBoundaryTests
         Assert.Contains("'API_ORIGIN'", webSlotSettings, StringComparison.Ordinal);
         Assert.Contains("'AllowedHosts'", appService[apiSlotSettingsStart..], StringComparison.Ordinal);
         Assert.Contains("'AllowedOrigins__0'", appService[apiSlotSettingsStart..], StringComparison.Ordinal);
+        foreach (var stickyHostIdentitySetting in new[]
+        {
+            "AzureDemoHostIdentity__SlotName",
+            "AzureDemoHostIdentity__ApiResourceId",
+            "AzureDemoHostIdentity__ApiDefaultHostName",
+            "AzureDemoHostIdentity__WebResourceId",
+            "AzureDemoHostIdentity__WebDefaultHostName"
+        })
+        {
+            Assert.Contains($"'{stickyHostIdentitySetting}'", appService[apiSlotSettingsStart..], StringComparison.Ordinal);
+        }
         Assert.DoesNotContain("value: 'https://${apiAppName}.azurewebsites.net'", appService, StringComparison.Ordinal);
         Assert.DoesNotContain("value: 'https://${apiAppName}-${stagingSlotName}.azurewebsites.net'", appService, StringComparison.Ordinal);
         Assert.DoesNotContain("value: '${apiAppName}.azurewebsites.net'", appService, StringComparison.Ordinal);

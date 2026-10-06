@@ -17,6 +17,9 @@ $deploymentArtifactUtilitiesScript = Get-Content -LiteralPath (Join-Path $repo '
 $seedPackageScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-AzureDemoSeedArtifact.ps1') -Raw
 $seedInvocationScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invoke-AzureDemoSeed.ps1') -Raw
 $seedResetScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invoke-AzureDemoReset.ps1') -Raw
+$cleanWebDeploymentScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\Invoke-AzureDemoCleanWebSlotDeployment.ps1') -Raw
+$slotContentVerificationScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\Invoke-AzureDemoSlotContentVerification.ps1') -Raw
+$stagingDeploymentUtilitiesScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\AzureDemoStagingDeployment.ps1') -Raw
 $approvedMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev-v2'
 $retiredMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev'
 
@@ -107,6 +110,9 @@ $requiredFragments = @(
     'Test-AzureDemoSmokeHttp.ps1',
     'Test-AzureDemoSmokeOrchestration.ps1',
     'Test-AzureDemoSmokeEvidence.ps1',
+    'Test-AzureDemoAppliedApiHostConfiguration.ps1',
+    'Test-AzureDemoCleanWebDeployment.ps1',
+    'Test-AzureDemoDeployedContentVerification.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
     'Assert-AzureDemoMigrationIdentity.ps1',
@@ -136,6 +142,9 @@ $requiredFragments = @(
     "New-AzureDemoSeedArtifact.ps1 -PackageDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'",
     'New-AzureDemoDeploymentArtifactManifest.ps1',
     'Assert-AzureDemoDeploymentArtifact.ps1',
+    'Invoke-AzureDemoCleanWebSlotDeployment.ps1',
+    'Invoke-AzureDemoSlotContentVerification.ps1',
+    'Assert-AzureDemoAppliedApiHostConfiguration.ps1',
     'Test-AzureDemoImmutableSeedArtifact.ps1',
     "Test-AzureDemoArtifacts.ps1 -ArtifactDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application'",
     "Test-AzureDemoPackageGeneration.ps1 -PackageDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages'",
@@ -213,10 +222,12 @@ if ($appServiceSubnetValidatorScript.Contains($forbiddenMetadataCheck)) {
     throw 'The App Service subnet validator must not treat provider-managed subnet privateEndpoints metadata as actual private-endpoint resources.'
 }
 $deploymentStageStart = $text.IndexOf('- stage: MigrateAndDeploySlots', [StringComparison]::Ordinal)
-if ($deploymentStageStart -lt 0 -or
+$deploymentStageEnd = $text.IndexOf('- stage: ReleaseApproval', [StringComparison]::Ordinal)
+if ($deploymentStageStart -lt 0 -or $deploymentStageEnd -le $deploymentStageStart -or
     $text.IndexOf('dependsOn: PreDeploymentGate', $deploymentStageStart, [StringComparison]::Ordinal) -lt $deploymentStageStart) {
     throw 'Application deployment must remain dependent on the protected PreDeploymentGate.'
 }
+$migrateAndDeploy = $text.Substring($deploymentStageStart, $deploymentStageEnd - $deploymentStageStart)
 $subnetTestWithoutCompiled = [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoAppServiceSubnet\.ps1\s*$').Count
 $subnetTestWithCompiled = [regex]::Matches($text, "Test-AzureDemoAppServiceSubnet\.ps1 -CompiledTemplatePath '`\$\(Build\.ArtifactStagingDirectory\)/main\.json'").Count
 if ($subnetTestWithoutCompiled -ne 1 -or $subnetTestWithCompiled -ne 1) {
@@ -653,6 +664,72 @@ $seedTaskIndex = $text.IndexOf('displayName: Reconcile approved synthetic seed w
 $apiDeploymentIndex = $text.IndexOf('displayName: Deploy API ZIP to staging only', [StringComparison]::Ordinal)
 if ($migrationTaskIndex -lt 0 -or $seedTaskIndex -le $migrationTaskIndex -or $apiDeploymentIndex -le $seedTaskIndex) {
     throw 'Migration, seed and application deployment order must fail closed.'
+}
+$artifactDownloadIndex = $migrateAndDeploy.IndexOf('artifact: azure-demo-immutable', [StringComparison]::Ordinal)
+$artifactRevalidationIndex = $migrateAndDeploy.IndexOf("displayName: Revalidate this run's exact immutable deployment ZIPs", [StringComparison]::Ordinal)
+$bicepApplyIndex = $migrateAndDeploy.IndexOf('displayName: Deploy approved resource-group Bicep with workload identity', [StringComparison]::Ordinal)
+$appliedHostValidationIndex = $migrateAndDeploy.IndexOf('displayName: Verify applied API staging host identity before API start', [StringComparison]::Ordinal)
+$apiDeploymentInStageIndex = $migrateAndDeploy.IndexOf('displayName: Deploy API ZIP to staging only', [StringComparison]::Ordinal)
+$webDeploymentIndex = $migrateAndDeploy.IndexOf('displayName: Deploy web ZIP to staging only', [StringComparison]::Ordinal)
+$webContentVerificationIndex = $migrateAndDeploy.IndexOf('Invoke-AzureDemoSlotContentVerification.ps1 @common -Workload Web', [StringComparison]::Ordinal)
+$apiContentVerificationIndex = $migrateAndDeploy.IndexOf('Invoke-AzureDemoSlotContentVerification.ps1 @common -Workload Api', [StringComparison]::Ordinal)
+if ($artifactDownloadIndex -lt 0 -or $artifactRevalidationIndex -le $artifactDownloadIndex -or
+    $bicepApplyIndex -le $artifactRevalidationIndex -or $appliedHostValidationIndex -le $bicepApplyIndex -or
+    $apiDeploymentInStageIndex -le $appliedHostValidationIndex -or $webDeploymentIndex -le $apiDeploymentInStageIndex -or
+    $webContentVerificationIndex -le $webDeploymentIndex -or $apiContentVerificationIndex -le $webContentVerificationIndex) {
+    throw 'Immutable artifact validation, concrete configuration apply, applied-setting verification, API/web deployment and exact deployed-content verification order is invalid.'
+}
+foreach ($fragment in @(
+        "- download: current`n            artifact: azure-demo-immutable",
+        "-ExpectedSourceCommit '`$(Build.SourceVersion)'",
+        "azureSubscription: sc-mtp-azure-demo-dev",
+        "SubscriptionId = '`$(AZDEMO_SUBSCRIPTION_ID)'",
+        "ResourceGroupName = '`$(AZDEMO_RESOURCE_GROUP_NAME)'",
+        "SlotName = 'staging'",
+        "condition: and(always(), eq(variables['AZDEMO_STAGING_DEPLOYMENT_ATTEMPTED'], 'true'))",
+        'artifact: staging-deployment-evidence')) {
+    if (-not $migrateAndDeploy.Replace("`r`n", "`n").Contains($fragment)) {
+        throw "Protected clean deployment or evidence retention is missing: $fragment"
+    }
+}
+foreach ($fragment in @(
+        "'webapp', 'deploy'",
+        "'--slot', `$SlotName",
+        "'--src-path', `$artifact.Path",
+        "'--type', 'zip'",
+        "'--clean', 'true'",
+        "'--async', 'false'",
+        "'--restart', 'true'",
+        "'--track-status', 'true'",
+        "'--timeout', '1800000'",
+        "`$deployExitCode = `$deployResult.ExitCode")) {
+    if (-not $cleanWebDeploymentScript.Contains($fragment)) {
+        throw "Clean web deployment script is missing a required exact-target or completion contract: $fragment"
+    }
+}
+if ($cleanWebDeploymentScript -match '(?i)\b(?:ssh|rm\s+-rf|list-publishing-(?:credentials|profiles))\b' -or
+    $slotContentVerificationScript -match '(?i)\b(?:ssh|list-publishing-(?:credentials|profiles))\b') {
+    throw 'Staging repair must not use broad SSH deletion or publishing credentials.'
+}
+foreach ($targetLiteral in @(
+        '633398e2-6c00-4bb7-a576-2db0d210ee77',
+        'Onkar.Pathre',
+        'app-mtp-web-dev-uks-001',
+        'app-mtp-api-dev-uks-001',
+        "AzureDemoStagingSlotName = 'staging'")) {
+    if (-not $stagingDeploymentUtilitiesScript.Contains($targetLiteral)) {
+        throw "Staging deployment target guard is missing exact boundary $targetLiteral."
+    }
+}
+foreach ($verificationFragment in @(
+        '/api/zip/site/wwwroot/',
+        'Authorization = "Bearer $accessToken"',
+        'Compare-AzureDemoDeployedZip',
+        'Remove-Variable accessToken',
+        'Remove-Item -LiteralPath $temporaryZip')) {
+    if (-not $slotContentVerificationScript.Contains($verificationFragment)) {
+        throw "Authenticated deployed-content verification is missing: $verificationFragment"
+    }
 }
 foreach ($fragment in @(
         '$startInfo.UseShellExecute = $false',

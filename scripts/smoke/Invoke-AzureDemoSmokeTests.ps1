@@ -271,12 +271,24 @@ foreach ($check in $catalog) {
                 $health = Invoke-CheckedWebRequest -CheckId $check.id -Uri ([uri]::new($WebBaseUri, '/health'))
                 $homeResponse = Invoke-CheckedWebRequest -CheckId $check.id -Uri $WebBaseUri
                 $deep = Invoke-CheckedWebRequest -CheckId $check.id -Uri ([uri]::new($WebBaseUri, '/inventory/servers'))
+                $notFound = Invoke-CheckedWebRequest -CheckId $check.id -Uri ([uri]::new($WebBaseUri, '/__azure_demo_route_that_must_not_exist__'))
                 $executionPhase = 'response-assertion'
-                $passed = $health.TransportSucceeded -and $homeResponse.TransportSucceeded -and $deep.TransportSucceeded -and
-                    $health.StatusCode -eq 200 -and $homeResponse.StatusCode -eq 200 -and $deep.StatusCode -eq 200 -and
-                    $homeResponse.RawContentLength -gt 0 -and $deep.RawContentLength -gt 0
-                $category = Get-HttpCheckFailureCategory -Responses @($health, $homeResponse, $deep) -AssertionPassed $passed -ExpectedStatusCodes @(200)
-                Add-Result -Id $check.id -Passed $passed -Summary 'Web health, home and direct deep route must all return non-empty successful responses.' -FailureCategories @($category)
+                $responses = @($health, $homeResponse, $deep, $notFound)
+                $expectedStatusesPassed = $health.StatusCode -eq 200 -and $homeResponse.StatusCode -eq 200 -and
+                    $deep.StatusCode -eq 200 -and $notFound.StatusCode -eq 404
+                $authenticationContractPassed = @(@($homeResponse, $deep, $notFound) | Where-Object {
+                        $_.Content -notmatch 'Sign in required' -or
+                        $_.Content -notmatch 'Restricted synthetic non-production management demo' -or
+                        $_.Content -match '(?i)(?:<title>\s*500\b|\bInternal Server Error\b|\bApplication Error\b)'
+                    }).Count -eq 0
+                $passed = @($responses | Where-Object { -not $_.TransportSucceeded }).Count -eq 0 -and
+                    $expectedStatusesPassed -and $authenticationContractPassed -and
+                    $homeResponse.RawContentLength -gt 0 -and $deep.RawContentLength -gt 0 -and $notFound.RawContentLength -gt 0
+                $category = if (@($responses | Where-Object { -not $_.TransportSucceeded }).Count -gt 0) { 'transport-failure' }
+                    elseif (-not $expectedStatusesPassed) { 'application-response-failure' }
+                    elseif (-not $passed) { 'assertion-failure' }
+                    else { $null }
+                Add-Result -Id $check.id -Passed $passed -Summary 'Health must pass; home and deep routes must return the signed-out Entra gate; a nonexistent route must return the same bounded auth shell with HTTP 404 and never a generic 500 page.' -FailureCategories @($category)
             }
             'SMK-03' {
                 $root = Invoke-CheckedWebRequest -CheckId $check.id -Uri $WebBaseUri

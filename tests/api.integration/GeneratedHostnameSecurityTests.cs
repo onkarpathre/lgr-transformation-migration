@@ -10,6 +10,25 @@ public sealed class GeneratedHostnameSecurityTests
     private const string StagingApiHost = "api-mtp-generated-7f3a-staging.azurewebsites.net";
     private const string ProductionWebOrigin = "https://web-mtp-generated-91bd.azurewebsites.net";
     private const string StagingWebOrigin = "https://web-mtp-generated-91bd-staging.azurewebsites.net";
+    private const string AzureDemoStagingApiHost =
+        "app-mtp-api-dev-uks-001-staging-athrc5epbzcdetb8.uksouth-01.azurewebsites.net";
+    private const string AzureDemoStagingWebHost =
+        "app-mtp-web-dev-uks-001-staging-csdtetbtbeh3h7fy.uksouth-01.azurewebsites.net";
+
+    [Fact]
+    public async Task Actual_AzureDemo_application_startup_accepts_Azure_reported_generated_staging_hosts()
+    {
+        using var factory = new AzureDemoStartupFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            BaseAddress = new Uri($"https://{AzureDemoStagingApiHost}")
+        });
+
+        using var response = await client.GetAsync("/health/live");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
 
     [Theory]
     [InlineData(ProductionApiHost, ProductionWebOrigin, StagingApiHost, StagingWebOrigin)]
@@ -89,4 +108,39 @@ public sealed class GeneratedHostnameSecurityTests
 
     private static string? Header(HttpResponseMessage response, string name) =>
         response.Headers.TryGetValues(name, out var values) ? Assert.Single(values) : null;
+
+    private sealed class AzureDemoStartupFactory : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            const string identity = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+            builder.UseEnvironment("AzureDemo");
+            foreach (var setting in new Dictionary<string, string>
+            {
+                ["Authentication:Mode"] = "Entra",
+                ["Authentication:Entra:TenantId"] = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                ["Authentication:Entra:Issuer"] = "https://login.microsoftonline.com/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/v2.0",
+                ["Authentication:Entra:Audience"] = "api://cccccccc-cccc-cccc-cccc-cccccccccccc",
+                ["Authentication:Entra:AllowedClientIds:0"] = "dddddddd-dddd-dddd-dddd-dddddddddddd",
+                ["Authentication:EntraDemoMemberships:SecretUri"] = "https://kv-mtp-dev-uks-op01.vault.azure.net/secrets/entra-demo-memberships",
+                ["Authentication:EntraDemoMemberships:CacheSeconds"] = "300",
+                ["AzureIdentity:ManagedIdentityClientId"] = identity,
+                ["AzureDemoHostIdentity:SlotName"] = "staging",
+                ["AzureDemoHostIdentity:ApiResourceId"] = "/subscriptions/633398e2-6c00-4bb7-a576-2db0d210ee77/resourceGroups/Onkar.Pathre/providers/Microsoft.Web/sites/app-mtp-api-dev-uks-001/slots/staging",
+                ["AzureDemoHostIdentity:ApiDefaultHostName"] = AzureDemoStagingApiHost,
+                ["AzureDemoHostIdentity:WebResourceId"] = "/subscriptions/633398e2-6c00-4bb7-a576-2db0d210ee77/resourceGroups/Onkar.Pathre/providers/Microsoft.Web/sites/app-mtp-web-dev-uks-001/slots/staging",
+                ["AzureDemoHostIdentity:WebDefaultHostName"] = AzureDemoStagingWebHost,
+                ["DiscoveryImport:StorageMode"] = "AzureBlob",
+                ["DiscoveryImport:StorageAccountUri"] = "https://stmtpdevuks001.blob.core.windows.net",
+                ["DiscoveryImport:ContainerName"] = "discovery-imports",
+                ["DemoData:Enabled"] = "false",
+                ["AllowedHosts"] = AzureDemoStagingApiHost,
+                ["AllowedOrigins:0"] = $"https://{AzureDemoStagingWebHost}",
+                ["ConnectionStrings:LgrDatabase"] = $"Server=tcp:sql-mtp-dev-uks-001.database.windows.net,1433;Database=sqldb-mtp-dev-uks-001;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id={identity}"
+            })
+            {
+                builder.UseSetting(setting.Key, setting.Value);
+            }
+        }
+    }
 }
