@@ -1840,6 +1840,135 @@ handoff:
 
 NEEDS_ARCHITECTURE_DECISION
 
+## Web staging equal-timestamp content-reconciliation repair
+
+### Baseline, scope and traceability
+
+This bounded Developer repair started from the requested branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `89bff5682b2a2bdead2e81c6b32dea120e46fe05`. The index and worktree were clean before editing, so there was no baseline difference or existing user change to reconcile. Nothing was staged, committed, pushed, deployed, migrated, seeded or swapped, and no Azure resource or setting was changed.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-06", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+Q-01 remains closed only for the existing controlled Azure demo package. This repair does not change the approved stack, authentication, tenant isolation, SQL, networking, service connections, production controls or release gates. Q-08 and connected CI, staging, protected smoke and human deployment/release decisions remain pending and unchanged.
+
+### Evidence and cause assessment
+
+The supplied immutable ZIP SHA-256 is `06616e5529319761161268e987a0f9f8eb09802a43510ba85e72123738154717`; this repair does not rewrite that historical evidence. Deployment `7a6f6a71-b892-494a-b09f-948ba175f3d3` reported OneDeploy success, `clean=True`, `use manifest=False`, 427 considered files, four transferred regular files and 85 obsolete deletions. Independent verification then found 66 changed application hashes, no missing files, identical expected/deployed lengths, and one additional root `oryx-manifest.toml`. The expected BUILD_ID `SyIeOuurTS_H-Clua5oW0` remained the prior deployed `Xwvb4L_dSTn4jJilCsPfY`, while `server.js`, 105 server chunks and 37 static assets matched. Every one of the 1,543 ZIP entries and the deployed stale BUILD_ID/build manifest had the same 1980 timestamp.
+
+The confirmed failure class is a file-transfer quick-check collision: equal path, length and timestamp concealed changed bytes. The new Linux regression constructs that condition with the two observed equal-length BUILD_ID values and 65 other changed application files. When connected CI executes it, the test requires real Linux `rsync -a` and must prove that the legacy 1980 package transfers none of the 66 changed files, leaving the stale BUILD_ID, while one package-creation timestamp transfers all 67 regular files, including unchanged `server.js`, and reconciles all 66 changed hashes and BUILD_ID. This is a controlled Linux simulation of the observed mechanism, not real Azure execution, and no Linux result is claimed from the current host.
+
+The exact private `NodeProjectOptimizer`/`parallel_rsync.sh` implementation and arguments used by deployment `7a6f6a71-b892-494a-b09f-948ba175f3d3` are not available in the cited public source. A connected staging deployment is therefore still required to prove the correction through that exact platform version. The Azure evidence strongly fits the reproduced mechanism, but this document does not claim visibility into unpublished optimizer code.
+
+### Setting applicability and selected correction
+
+Microsoft's App Service ZIP deployment documentation states that ZIP files are copied only when timestamps differ and that `az webapp deploy` uses the Kudu publish API: <https://learn.microsoft.com/en-us/azure/app-service/deploy-zip>. The archived classic Kudu ZIP Deploy guidance recommends `SCM_ZIPDEPLOY_DONOT_PRESERVE_FILETIME=1`: <https://github.com/projectkudu/kudu/wiki/Deploying-from-a-zip-file-or-url>. Its classic controller passes `GetZipDeployDoNotPreserveFileTime()` into ZIP extraction: <https://github.com/projectkudu/kudu/blob/master/Kudu.Services/Deployment/PushDeploymentController.cs>.
+
+That does not establish support for this Linux OneDeploy path. Current public KuduLite source maps OneDeploy `type=zip` to `LocalZipHandler`, which calls `LocalZipFetch`; its extraction call supplies only the symlink option and contains no lookup of `GetZipDeployDoNotPreserveFileTime`: <https://github.com/Azure-App-Service/KuduLite/blob/dev/Kudu.Services/Deployment/PushDeploymentController.cs>. The setting is therefore **not supported or verified for the relevant public Linux OneDeploy/KuduLite code path** and was not added to Bicep. The pipeline structural regression pins its absence. The existing complete settings owners—`webConfiguration`, `apiConfiguration`, `webSlotConfiguration` and `apiSlotConfiguration`—and existing slot isolation/stickiness remain unchanged.
+
+The smallest documented-path correction is at package creation. API ZIPs retain the deterministic 1980 timestamp. A web ZIP now receives one UTC package-creation timestamp, rounded to the ZIP format's two-second resolution, before its SHA-256 and manifests are calculated. Deployment preflight requires every web entry to carry that one timestamp, requires it to be within five minutes of immutable manifest `createdAtUtc`, and validates the existing manifest-bound SHA-256 before invoking OneDeploy. The ZIP is never patched after hashing, and BUILD_ID is never rewritten or specially excluded.
+
+### Platform metadata boundary
+
+Oryx documents `oryx-manifest.toml` as its generated build/run manifest: <https://github.com/microsoft/Oryx/blob/main/doc/configuration.md#oryx-generated-manifest-file>. KuduLite also explicitly removes a prior root `oryx-manifest.toml` before accepting a pushed artifact. Deployed-content verification therefore treats only the ordinal exact root path `oryx-manifest.toml` as separately recorded platform metadata. When present it must be exactly one non-empty file, no larger than 64 KiB, strict UTF-8 without prohibited control characters, and contain at least one bounded TOML-like assignment. Its length and SHA-256 are recorded. The immutable expected ZIP must not supply it. Any other extra path, missing application path, changed application hash or BUILD_ID mismatch still fails.
+
+### Exact implementation files
+
+- `azure-pipelines.yml`
+- `scripts/build/AzureDemoPackageUtilities.ps1`
+- `scripts/build/New-AzureDemoPackages.ps1`
+- `scripts/build/Test-AzureDemoCleanWebDeployment.ps1`
+- `scripts/build/Test-AzureDemoDeployedContentVerification.ps1`
+- `scripts/build/Test-AzureDemoLinuxWebDeploymentTimestamp.ps1`
+- `scripts/build/Test-AzureDemoPackageGeneration.ps1`
+- `scripts/build/Test-AzurePipelineStructure.ps1`
+- `scripts/deployment/AzureDemoStagingDeployment.ps1`
+- `scripts/deployment/Invoke-AzureDemoCleanWebSlotDeployment.ps1`
+- `docs/implementation/AZURE_DEMO_Implementation_Work_Package.md`
+
+`infra/bicep/modules/appservice.bicep` was inspected but intentionally not changed because the proposed setting is not consumed by the relevant public Linux handler.
+
+### Verification and required connected evidence
+
+| Check | Result |
+|---|---|
+| Requested baseline | PASS: exact branch and HEAD; initially clean index/worktree. |
+| PowerShell parsing | PASS on Windows PowerShell 5.1 for all nine changed PowerShell files. |
+| Clean web deployment regression | PASS locally: fixed-1980 package rejection, manifest-correlated web timestamp acceptance, exact target and synchronous clean OneDeploy contract, and invalid target/exit evidence. |
+| Generated-caller process boundary | PASS locally: assertion, native, missing-script and cleanup failures remained nonzero; real focused regression returned zero. |
+| Deployed-content verification | PASS locally: exact application SHA-256, BUILD_ID, missing/changed/unknown-extra failures, dependency transformation boundary and bounded root Oryx metadata. |
+| Pipeline structural contract | PASS locally: seven stages; the Linux regression is exactly once in `ubuntu-latest`; unsupported setting absence, package timestamp creation and pre-deploy validation order are pinned. |
+| Source/security and whitespace | PASS locally: source-boundary scan covered 206 source/configuration files; `git diff --check` passed. No Bicep file changed, so Bicep format/build remains the existing connected IaC check. |
+| Local environment | Windows `10.0.26100`; Windows PowerShell `5.1.26100.9444`; Node `v24.18.0`; .NET SDK `10.0.401`. `pwsh`, Docker, Linux `rsync`, Azure CLI and an installed WSL distribution are unavailable. |
+| Linux PowerShell 7 + real rsync regression | **PENDING CONNECTED CI** on the existing `ubuntu-latest` Validate job. No Linux result is claimed locally. |
+| Fresh full application package generation | **PENDING CONNECTED CI** in the existing Package job. An isolated local attempt reached API publish but could not start `next build` because the local frontend CLI/dependencies are absent; its explicitly verified generated directory was removed. Existing local package evidence belongs to another source commit and was preserved rather than overwritten. |
+| Real OneDeploy/staging reconciliation | **PENDING AUTHORIZED STAGING EXECUTION**. Rebuild once, retain the new immutable web ZIP SHA-256/manifest and entry timestamp, apply unchanged complete Bicep settings before deployment, deploy only to staging, then retain deployment logs and exact downloaded-content evidence. Require expected/deployed BUILD_ID equality, zero missing/changed/unexpected application paths, bounded separately recorded root `oryx-manifest.toml`, and the original immutable ZIP hash unchanged before/after. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, Entra, deployment, migration, seed, swap, smoke, rollback or approval action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_89bff5682b2a2bdead2e81c6b32dea120e46fe05"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-06", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/build/AzureDemoPackageUtilities.ps1"
+    - "scripts/build/New-AzureDemoPackages.ps1"
+    - "scripts/build/Test-AzureDemoCleanWebDeployment.ps1"
+    - "scripts/build/Test-AzureDemoDeployedContentVerification.ps1"
+    - "scripts/build/Test-AzureDemoLinuxWebDeploymentTimestamp.ps1"
+    - "scripts/build/Test-AzureDemoPackageGeneration.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "scripts/deployment/AzureDemoStagingDeployment.ps1"
+    - "scripts/deployment/Invoke-AzureDemoCleanWebSlotDeployment.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Local exact-content, deployment-preflight, process-boundary and seven-stage structural regressions pass on Windows PowerShell 5.1."
+    - "Authoritative public source distinguishes classic Kudu setting support from the KuduLite Linux OneDeploy handler that does not consume it."
+    - "A Linux/PowerShell 7/rsync regression is connected to ubuntu-latest and explicitly labels itself a simulation rather than Azure execution."
+  decisions:
+    - "Do not add SCM_ZIPDEPLOY_DONOT_PRESERVE_FILETIME because support is absent from the relevant public Linux OneDeploy extraction path."
+    - "Use one manifest-correlated package-creation timestamp for immutable web ZIP entries while retaining deterministic API ZIP behavior."
+    - "Record only the exact root oryx-manifest.toml as bounded platform metadata; retain exact-hash failure for all application mismatches and failure for unknown extras."
+  assumptions: []
+  risks:
+    - "The private deployed NodeProjectOptimizer arguments are not publicly verified."
+    - "The selected correction has not yet executed through connected Linux CI or the authorized staging slot."
+  defects:
+    - "REPAIRED LOCALLY: deterministic 1980 web ZIP timestamps permitted equal-size changed application bytes to survive timestamp-based synchronization."
+  blockers: []
+  approvals: []
+  requested_action: "Independent Tester must retain the connected ubuntu-latest Linux/PowerShell 7/rsync and package-generation evidence, then an authorized operator must run the existing staging-only deployment and exact content verification without weakening any protected gate."
+```
+
+READY_FOR_TEST
+
 ## Focused staging-path execution and process-boundary reconciliation
 
 ### Baseline, role and traceability
@@ -3196,3 +3325,9 @@ READY_FOR_TEST
 The latest worktree continuation is the section **Focused staging-path execution and process-boundary reconciliation** above, based on exact HEAD `17c67ebc2dce731681245dd720d5577be7d209e7`. Its focused local implementation and supplemental regressions pass, and the unavailable Linux/PowerShell 7, Bicep and production-package checks are pinned to existing unprotected `ubuntu-latest` jobs. This hand-off supersedes older terminal markers in this cumulative document. It does not override the unchanged architecture/Product decision for the supplied live S2 plan, Azure Platform/Operations approval, protected smoke evidence, first-release rollback evidence or human release gates.
 
 NEEDS_ARCHITECTURE_DECISION
+
+## Current worktree terminal state - web content reconciliation
+
+The latest bounded continuation is **Web staging equal-timestamp content-reconciliation repair** above, based on exact HEAD `89bff5682b2a2bdead2e81c6b32dea120e46fe05`. Its local Windows PowerShell 5.1 regressions pass. The real Linux/PowerShell 7/`rsync` regression, fresh package generation and authorized staging-only OneDeploy/content reconciliation remain explicit connected checks. This hand-off supersedes older terminal markers in this cumulative document without overriding the unchanged live-plan architecture decision, Azure Platform/Operations approval, protected evidence or human release/deployment gates.
+
+READY_FOR_TEST

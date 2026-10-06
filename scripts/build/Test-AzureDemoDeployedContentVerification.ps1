@@ -55,6 +55,7 @@ try {
     New-WebTree $expectedOneRoot 'BUILD00000000001' 'AAAA'
     New-WebTree $expectedTwoRoot 'BUILD00000000002' 'BBBB'
     New-WebTree $deployedRoot 'BUILD00000000002' 'BBBB' -CompressedDependencies
+    New-TextFile $deployedRoot 'oryx-manifest.toml' "OperationId = 'platform-fixture'`nPlatformName = 'nodejs'`n"
     $expectedOneZip = Join-Path $temporaryDirectory 'expected-one.zip'
     $expectedTwoZip = Join-Path $temporaryDirectory 'expected-two.zip'
     $deployedZip = Join-Path $temporaryDirectory 'deployed.zip'
@@ -79,6 +80,9 @@ try {
     if ($pass.status -cne 'PASS' -or $pass.buildId.deployed -cne 'BUILD00000000002' -or
         $pass.dependencyTransformation.mode -cne 'platform-transformed-node-modules' -or
         [bool] $pass.dependencyTransformation.exactDependencyBytesCompared -or
+        @($pass.platformMetadata.files).Count -ne 1 -or
+        $pass.platformMetadata.files[0].path -cne 'oryx-manifest.toml' -or
+        [string] $pass.platformMetadata.files[0].sha256 -cnotmatch '^[0-9a-f]{64}$' -or
         $pass.applicationVerification.expectedFingerprint -cne $pass.applicationVerification.deployedFingerprint -or
         $pass.applicationVerification.webFileEvidence.serverJs.expectedSha256 -cne $pass.applicationVerification.webFileEvidence.serverJs.deployedSha256 -or
         $pass.applicationVerification.webFileEvidence.serverPages.expectedFingerprint -cne $pass.applicationVerification.webFileEvidence.serverPages.deployedFingerprint -or
@@ -110,12 +114,43 @@ try {
             -EvidencePath (Join-Path $temporaryDirectory 'changed-build.json') -SourceCommit $sourceCommit -ResourceId $resourceId | Out-Null
     } 'changed Next.js build ID'
 
-    foreach ($failureEvidence in @('stale.json', 'missing.json', 'changed-build.json')) {
+    $unknownExtraRoot = Join-Path $temporaryDirectory 'unknown-extra'
+    New-WebTree $unknownExtraRoot 'BUILD00000000002' 'BBBB' -CompressedDependencies
+    New-TextFile $unknownExtraRoot 'oryx-manifest.toml' "OperationId = 'platform-fixture'`n"
+    New-TextFile $unknownExtraRoot 'unexpected-platform-file.toml' "OperationId = 'unknown'`n"
+    $unknownExtraZip = Join-Path $temporaryDirectory 'unknown-extra.zip'
+    New-Zip $unknownExtraRoot $unknownExtraZip
+    Assert-Rejected {
+        Compare-AzureDemoDeployedZip -Workload Web -ExpectedZipPath $expectedTwoZip -DeployedZipPath $unknownExtraZip `
+            -EvidencePath (Join-Path $temporaryDirectory 'unknown-extra.json') -SourceCommit $sourceCommit -ResourceId $resourceId | Out-Null
+    } 'an unknown additional platform file'
+
+    $invalidManifestRoot = Join-Path $temporaryDirectory 'invalid-platform-metadata'
+    New-WebTree $invalidManifestRoot 'BUILD00000000002' 'BBBB' -CompressedDependencies
+    New-TextFile $invalidManifestRoot 'oryx-manifest.toml' ''
+    $invalidManifestZip = Join-Path $temporaryDirectory 'invalid-platform-metadata.zip'
+    New-Zip $invalidManifestRoot $invalidManifestZip
+    Assert-Rejected {
+        Compare-AzureDemoDeployedZip -Workload Web -ExpectedZipPath $expectedTwoZip -DeployedZipPath $invalidManifestZip `
+            -EvidencePath (Join-Path $temporaryDirectory 'invalid-platform-metadata.json') -SourceCommit $sourceCommit -ResourceId $resourceId | Out-Null
+    } 'an empty root oryx-manifest.toml'
+
+    $packagedManifestRoot = Join-Path $temporaryDirectory 'packaged-platform-metadata'
+    New-WebTree $packagedManifestRoot 'BUILD00000000002' 'BBBB'
+    New-TextFile $packagedManifestRoot 'oryx-manifest.toml' "OperationId = 'must-not-be-packaged'`n"
+    $packagedManifestZip = Join-Path $temporaryDirectory 'packaged-platform-metadata.zip'
+    New-Zip $packagedManifestRoot $packagedManifestZip
+    Assert-Rejected {
+        Compare-AzureDemoDeployedZip -Workload Web -ExpectedZipPath $packagedManifestZip -DeployedZipPath $deployedZip `
+            -EvidencePath (Join-Path $temporaryDirectory 'packaged-platform-metadata.json') -SourceCommit $sourceCommit -ResourceId $resourceId | Out-Null
+    } 'oryx-manifest.toml supplied by the immutable application package'
+
+    foreach ($failureEvidence in @('stale.json', 'missing.json', 'changed-build.json', 'unknown-extra.json', 'packaged-platform-metadata.json')) {
         $failure = Get-Content -LiteralPath (Join-Path $temporaryDirectory $failureEvidence) -Raw | ConvertFrom-Json
         if ($failure.status -cne 'FAIL') { throw "$failureEvidence did not retain mismatch evidence." }
     }
 
-    Write-Output 'Deployed-content regression passed exact SHA-256 reconciliation, explicit dependency transformation, deterministic timestamp/size collision, square-bracket chunk, missing chunk and changed build-ID gates.'
+    Write-Output 'Deployed-content regression passed exact SHA-256 reconciliation, bounded root oryx-manifest.toml metadata, unknown-extra rejection, explicit dependency transformation, deterministic timestamp/size collision, square-bracket chunk, missing chunk and changed build-ID gates.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryDirectory) { Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force }

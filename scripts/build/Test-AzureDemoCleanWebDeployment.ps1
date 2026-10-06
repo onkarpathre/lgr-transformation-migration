@@ -6,6 +6,7 @@ Set-StrictMode -Version Latest
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
 . (Join-Path $repo 'scripts\build\AzureDemoPackageUtilities.ps1')
 . (Join-Path $repo 'scripts\build\AzureDemoDeploymentArtifactUtilities.ps1')
+. (Join-Path $repo 'scripts\deployment\AzureDemoStagingDeployment.ps1')
 $deploymentScript = Join-Path $repo 'scripts\deployment\Invoke-AzureDemoCleanWebSlotDeployment.ps1'
 $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("azdemo-clean-deploy-$([Guid]::NewGuid().ToString('N'))")
 $artifactRoot = Join-Path $temporaryDirectory 'artifact'
@@ -34,13 +35,15 @@ try {
     New-TextFile $stageRoot '.next/static/chunks/app-12345678.js' 'static-entry'
     New-TextFile $stageRoot 'node_modules/next/index.js' 'dependency-entry'
     $webZip = Join-Path $applicationRoot 'web.zip'
-    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $webZip
+    $fixtureTimestamp = [DateTimeOffset]::UtcNow
+    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $webZip `
+        -EntryTimestamp $fixtureTimestamp
     $apiZip = Join-Path $applicationRoot 'api.zip'
     New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $apiZip
     [ordered]@{
         schemaVersion = '1'
         sourceCommit = $sourceCommit
-        createdAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        createdAtUtc = $fixtureTimestamp.ToString('O')
         nodeVersion = 'v24.0.0'
         dotnetSdkVersion = '10.0.100'
         artifacts = @(
@@ -49,6 +52,30 @@ try {
         )
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $applicationRoot 'application-artifact-manifest.json') -Encoding UTF8
     $deploymentManifest = New-AzureDemoDeploymentArtifactManifest -ArtifactRoot $artifactRoot -SourceCommit $sourceCommit
+
+    $legacyArtifactRoot = Join-Path $temporaryDirectory 'legacy-artifact'
+    $legacyApplicationRoot = Join-Path $legacyArtifactRoot 'application'
+    New-Item -ItemType Directory -Path $legacyApplicationRoot -Force | Out-Null
+    $legacyWebZip = Join-Path $legacyApplicationRoot 'web.zip'
+    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $legacyWebZip
+    [ordered]@{
+        schemaVersion = '1'
+        sourceCommit = $sourceCommit
+        createdAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        nodeVersion = 'v24.0.0'
+        dotnetSdkVersion = '10.0.100'
+        artifacts = @([ordered]@{ name = 'web.zip'; sha256 = (Get-FileHash $legacyWebZip -Algorithm SHA256).Hash.ToLowerInvariant() })
+    } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $legacyApplicationRoot 'application-artifact-manifest.json') -Encoding UTF8
+    $legacyRejection = $null
+    try {
+        Assert-AzureDemoApplicationArtifact -ArtifactRoot $legacyArtifactRoot -Workload Web `
+            -ExpectedSourceCommit $sourceCommit | Out-Null
+    }
+    catch { $legacyRejection = $_ }
+    if ($null -eq $legacyRejection -or
+        $legacyRejection.Exception.Message -cne 'Web ZIP must use one deployment-specific entry timestamp instead of the fixed deterministic timestamp.') {
+        throw 'Clean deployment preflight did not reject the legacy fixed-timestamp web ZIP for the expected reason.'
+    }
 
     $stubScript = Join-Path $temporaryDirectory 'az-stub.ps1'
     $stubBody = @'
@@ -124,7 +151,16 @@ exit 42
         }
     }
     $successEvidence = Get-Content -LiteralPath $valid.EvidencePath -Raw | ConvertFrom-Json
-    if ($successEvidence.status -cne 'PASS' -or $successEvidence.processExitCode -ne 0 -or -not [bool] $successEvidence.clean -or [bool] $successEvidence.asynchronous) {
+    $expectedFixtureTimestamp = [DateTimeOffset]::new(
+        $fixtureTimestamp.Year,
+        $fixtureTimestamp.Month,
+        $fixtureTimestamp.Day,
+        $fixtureTimestamp.Hour,
+        $fixtureTimestamp.Minute,
+        ($fixtureTimestamp.Second - ($fixtureTimestamp.Second % 2)),
+        [TimeSpan]::Zero).ToString('yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+    if ($successEvidence.status -cne 'PASS' -or $successEvidence.processExitCode -ne 0 -or -not [bool] $successEvidence.clean -or
+        [bool] $successEvidence.asynchronous -or $successEvidence.artifactEntryTimestamp -cne $expectedFixtureTimestamp) {
         throw 'Successful clean deployment evidence did not retain completion semantics.'
     }
 

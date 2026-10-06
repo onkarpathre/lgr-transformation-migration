@@ -10,6 +10,7 @@ $utilities = Join-Path $PSScriptRoot 'AzureDemoPackageUtilities.ps1'
 $packageScript = Join-Path $PSScriptRoot 'New-AzureDemoPackages.ps1'
 . $utilities
 . (Join-Path $PSScriptRoot 'AzureDemoDeploymentArtifactUtilities.ps1')
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 if ([string]::IsNullOrWhiteSpace($ExpectedSourceCommit)) {
     $ExpectedSourceCommit = (& git -C $repo rev-parse HEAD).Trim()
@@ -64,6 +65,15 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 if (@($manifest.artifacts).Count -ne 2) {
     throw 'Application package manifest must contain exactly the API and web ZIP evidence.'
 }
+$manifestCreatedAt = [DateTimeOffset]::MinValue
+if (-not [DateTimeOffset]::TryParseExact(
+        [string] $manifest.createdAtUtc,
+        'O',
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::RoundtripKind,
+        [ref] $manifestCreatedAt)) {
+    throw 'Application package manifest createdAtUtc is invalid.'
+}
 
 $regressionDirectory = Join-Path $packageRoot '.package-regression'
 if (Test-Path -LiteralPath $regressionDirectory) {
@@ -86,6 +96,35 @@ try {
             throw "Manifest SHA-256 does not match $name."
         }
 
+        $archive = [IO.Compression.ZipFile]::OpenRead($zipPath)
+        try {
+            $archiveFiles = @($archive.Entries | Where-Object {
+                    -not $_.FullName.Replace('\', '/').EndsWith('/', [StringComparison]::Ordinal)
+                })
+            $entryTimestamps = @($archiveFiles | ForEach-Object {
+                    $_.LastWriteTime.DateTime.ToString('yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+                } | Sort-Object -Unique)
+            if ($archiveFiles.Count -eq 0 -or $entryTimestamps.Count -ne 1) {
+                throw "$name must contain files with one uniform immutable entry timestamp."
+            }
+            $entryTimestamp = $archiveFiles[0].LastWriteTime
+            $entryTimestampUtcWallClock = [DateTimeOffset]::new(
+                $entryTimestamp.Year,
+                $entryTimestamp.Month,
+                $entryTimestamp.Day,
+                $entryTimestamp.Hour,
+                $entryTimestamp.Minute,
+                $entryTimestamp.Second,
+                [TimeSpan]::Zero)
+            $manifestDifferenceMinutes = [Math]::Abs(
+                ($manifestCreatedAt.ToUniversalTime() - $entryTimestampUtcWallClock).TotalMinutes)
+            if (($name -ceq 'api.zip' -and $entryTimestamp.Year -ne 1980) -or
+                ($name -ceq 'web.zip' -and ($entryTimestamp.Year -lt 2020 -or $manifestDifferenceMinutes -gt 5))) {
+                throw "$name does not retain its required API-deterministic or web-deployment-specific timestamp contract."
+            }
+        }
+        finally { $archive.Dispose() }
+
         $expanded = Join-Path $regressionDirectory ([IO.Path]::GetFileNameWithoutExtension($name))
         Expand-Archive -LiteralPath $zipPath -DestinationPath $expanded
         $expandedFiles = @(Get-ChildItem -LiteralPath $expanded -Recurse -File -Force)
@@ -95,8 +134,9 @@ try {
 
         $repeatOne = Join-Path $regressionDirectory ("repeat-1-$name")
         $repeatTwo = Join-Path $regressionDirectory ("repeat-2-$name")
-        New-AzureDemoDeterministicZip -SourceDirectory $expanded -DestinationPath $repeatOne
-        New-AzureDemoDeterministicZip -SourceDirectory $expanded -DestinationPath $repeatTwo
+        $repeatArguments = @{ SourceDirectory = $expanded; EntryTimestamp = $entryTimestamp }
+        New-AzureDemoDeterministicZip @repeatArguments -DestinationPath $repeatOne
+        New-AzureDemoDeterministicZip @repeatArguments -DestinationPath $repeatTwo
         $repeatOneHash = (Get-FileHash -LiteralPath $repeatOne -Algorithm SHA256).Hash
         $repeatTwoHash = (Get-FileHash -LiteralPath $repeatTwo -Algorithm SHA256).Hash
         if ($repeatOneHash -ne $repeatTwoHash -or $repeatOneHash -ne (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash) {
@@ -133,4 +173,4 @@ foreach ($requiredPath in @(
     }
 }
 
-Write-Output "Azure demo package regression passed repository-boundary, ZIP, exact-file manifest, SHA-256 and deterministic-generation checks for $($deployment.ArtifactCount) payload files."
+Write-Output "Azure demo package regression passed repository-boundary, ZIP timestamp, exact-file manifest, SHA-256 and immutable-generation checks for $($deployment.ArtifactCount) payload files."

@@ -158,11 +158,52 @@ function Assert-AzureDemoApplicationArtifact {
         throw 'Selected application ZIP does not match its immutable SHA-256 evidence.'
     }
 
+    $entryTimestamp = $null
+    if ($Workload -ceq 'Web') {
+        $manifestCreatedAt = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParseExact(
+                [string] $manifest.createdAtUtc,
+                'O',
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::RoundtripKind,
+                [ref] $manifestCreatedAt)) {
+            throw 'Web application artifact manifest createdAtUtc is invalid.'
+        }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $artifactPath).ProviderPath)
+        try {
+            $fileEntries = @($archive.Entries | Where-Object {
+                    -not $_.FullName.Replace('\', '/').EndsWith('/', [StringComparison]::Ordinal)
+                })
+            if ($fileEntries.Count -eq 0) { throw 'Web ZIP contains no files.' }
+            $timestamps = @($fileEntries | ForEach-Object {
+                    $_.LastWriteTime.DateTime.ToString('yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+                } | Sort-Object -Unique)
+            $firstTimestamp = $fileEntries[0].LastWriteTime
+            $entryTimestampUtcWallClock = [DateTimeOffset]::new(
+                $firstTimestamp.Year,
+                $firstTimestamp.Month,
+                $firstTimestamp.Day,
+                $firstTimestamp.Hour,
+                $firstTimestamp.Minute,
+                $firstTimestamp.Second,
+                [TimeSpan]::Zero)
+            $manifestTimestampDifference = [Math]::Abs(
+                ($manifestCreatedAt.ToUniversalTime() - $entryTimestampUtcWallClock).TotalMinutes)
+            if ($timestamps.Count -ne 1 -or $firstTimestamp.Year -lt 2020 -or $manifestTimestampDifference -gt 5) {
+                throw 'Web ZIP must use one deployment-specific entry timestamp instead of the fixed deterministic timestamp.'
+            }
+            $entryTimestamp = $timestamps[0]
+        }
+        finally { $archive.Dispose() }
+    }
+
     return [pscustomobject]@{
         Path = (Resolve-Path -LiteralPath $artifactPath).ProviderPath
         Name = $artifactName
         Sha256 = $actualHash
         SourceCommit = $ExpectedSourceCommit
+        EntryTimestamp = $entryTimestamp
     }
 }
 
@@ -213,6 +254,49 @@ function Test-AzureDemoDependencyPath {
         $Path -in @('node_modules.tar.gz', 'node_modules.tgz', 'node_modules.zip')
 }
 
+function Test-AzureDemoPlatformMetadataPath {
+    param([Parameter(Mandatory)] [string] $Path)
+    return $Path -ceq 'oryx-manifest.toml'
+}
+
+function Assert-AzureDemoOryxManifestMetadata {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $ZipPath,
+        [Parameter(Mandatory)] $Entry
+    )
+
+    if ([string] $Entry.Path -cne 'oryx-manifest.toml' -or
+        [long] $Entry.Length -le 0 -or [long] $Entry.Length -gt 65536) {
+        throw 'Platform-generated oryx-manifest.toml metadata failed its exact-path or size boundary.'
+    }
+
+    $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $ZipPath).ProviderPath)
+    try {
+        $matches = @($archive.Entries | Where-Object { $_.FullName.Replace('\', '/') -ceq 'oryx-manifest.toml' })
+        if ($matches.Count -ne 1) { throw 'Deployed snapshot must contain exactly one root oryx-manifest.toml metadata entry.' }
+        $stream = $matches[0].Open()
+        try {
+            $memory = [IO.MemoryStream]::new()
+            try {
+                $stream.CopyTo($memory)
+                $strictUtf8 = [Text.UTF8Encoding]::new($false, $true)
+                try { $text = $strictUtf8.GetString($memory.ToArray()) }
+                catch { throw 'Platform-generated oryx-manifest.toml metadata is not valid UTF-8 text.' }
+            }
+            finally { $memory.Dispose() }
+        }
+        finally { $stream.Dispose() }
+    }
+    finally { $archive.Dispose() }
+
+    if ([string]::IsNullOrWhiteSpace($text) -or $text.IndexOf([char] 0) -ge 0 -or
+        $text -match '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]' -or
+        $text -notmatch '(?m)^\s*[A-Za-z][A-Za-z0-9_]*\s*=') {
+        throw 'Platform-generated oryx-manifest.toml metadata failed its bounded text validation.'
+    }
+}
+
 function Get-AzureDemoZipTextEntry {
     param(
         [Parameter(Mandatory)] [string] $ZipPath,
@@ -246,10 +330,16 @@ function Compare-AzureDemoDeployedZip {
 
     $expected = @(Get-AzureDemoZipInventory -Path $ExpectedZipPath)
     $deployed = @(Get-AzureDemoZipInventory -Path $DeployedZipPath)
-    $expectedApplication = @(if ($Workload -ceq 'Web') { $expected | Where-Object { -not (Test-AzureDemoDependencyPath $_.Path) } } else { $expected })
-    $deployedApplication = @(if ($Workload -ceq 'Web') { $deployed | Where-Object { -not (Test-AzureDemoDependencyPath $_.Path) } } else { $deployed })
+    $expectedApplication = @(if ($Workload -ceq 'Web') { $expected | Where-Object {
+                -not (Test-AzureDemoDependencyPath $_.Path) -and -not (Test-AzureDemoPlatformMetadataPath $_.Path)
+            } } else { $expected })
+    $deployedApplication = @(if ($Workload -ceq 'Web') { $deployed | Where-Object {
+                -not (Test-AzureDemoDependencyPath $_.Path) -and -not (Test-AzureDemoPlatformMetadataPath $_.Path)
+            } } else { $deployed })
     $expectedDependencies = @(if ($Workload -ceq 'Web') { $expected | Where-Object { Test-AzureDemoDependencyPath $_.Path } })
     $deployedDependencies = @(if ($Workload -ceq 'Web') { $deployed | Where-Object { Test-AzureDemoDependencyPath $_.Path } })
+    $expectedPlatformMetadata = @(if ($Workload -ceq 'Web') { $expected | Where-Object { Test-AzureDemoPlatformMetadataPath $_.Path } })
+    $deployedPlatformMetadata = @(if ($Workload -ceq 'Web') { $deployed | Where-Object { Test-AzureDemoPlatformMetadataPath $_.Path } })
 
     $expectedByPath = @{}
     foreach ($entry in $expectedApplication) { $expectedByPath[$entry.Path] = $entry }
@@ -274,6 +364,11 @@ function Compare-AzureDemoDeployedZip {
     $expectedBuildId = $null
     $deployedBuildId = $null
     if ($Workload -ceq 'Web') {
+        if ($expectedPlatformMetadata.Count -ne 0) { $requiredFailures.Add('expected-platform-metadata-path') }
+        if ($deployedPlatformMetadata.Count -gt 1) { $requiredFailures.Add('duplicate-platform-metadata-path') }
+        if ($deployedPlatformMetadata.Count -eq 1) {
+            Assert-AzureDemoOryxManifestMetadata -ZipPath $DeployedZipPath -Entry $deployedPlatformMetadata[0]
+        }
         foreach ($requiredPath in @('server.js', '.next/BUILD_ID')) {
             if (-not $expectedByPath.ContainsKey($requiredPath)) { $requiredFailures.Add("expected:$requiredPath") }
             if (-not $deployedByPath.ContainsKey($requiredPath)) { $requiredFailures.Add("deployed:$requiredPath") }
@@ -355,6 +450,16 @@ function Compare-AzureDemoDeployedZip {
             webFileEvidence = $webFileEvidence
         }
         buildId = if ($Workload -ceq 'Web') { [ordered]@{ expected = $expectedBuildId; deployed = $deployedBuildId } } else { $null }
+        platformMetadata = if ($Workload -ceq 'Web') {
+            [ordered]@{
+                mode = 'bounded-platform-generated-metadata'
+                exactAllowedPaths = @('oryx-manifest.toml')
+                files = @($deployedPlatformMetadata | ForEach-Object {
+                        [ordered]@{ path = $_.Path; length = $_.Length; sha256 = $_.Sha256 }
+                    })
+            }
+        }
+        else { [ordered]@{ mode = 'none'; exactAllowedPaths = @(); files = @() } }
         dependencyTransformation = if ($Workload -ceq 'Web') {
             [ordered]@{
                 mode = 'platform-transformed-node-modules'

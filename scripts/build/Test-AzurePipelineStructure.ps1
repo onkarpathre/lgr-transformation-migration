@@ -20,6 +20,8 @@ $seedResetScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invok
 $cleanWebDeploymentScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\Invoke-AzureDemoCleanWebSlotDeployment.ps1') -Raw
 $slotContentVerificationScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\Invoke-AzureDemoSlotContentVerification.ps1') -Raw
 $stagingDeploymentUtilitiesScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\AzureDemoStagingDeployment.ps1') -Raw
+$applicationPackageScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-AzureDemoPackages.ps1') -Raw
+$appServiceBicep = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\appservice.bicep') -Raw
 $approvedMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev-v2'
 $retiredMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev'
 
@@ -113,6 +115,7 @@ $requiredFragments = @(
     'Test-AzureDemoAppliedApiHostConfiguration.ps1',
     'Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1',
     'Test-AzureDemoDeployedContentVerification.ps1',
+    'Test-AzureDemoLinuxWebDeploymentTimestamp.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
     'Assert-AzureDemoMigrationIdentity.ps1',
@@ -162,6 +165,30 @@ if ([regex]::Matches($text, [regex]::Escape($cleanDeploymentProcessTask)).Count 
     -not $validateStage.Contains($cleanDeploymentProcessTask) -or
     $text.Contains('- pwsh: ./scripts/build/Test-AzureDemoCleanWebDeployment.ps1')) {
     throw 'The clean deployment regression must run once through its isolated generated-caller process boundary in Linux validation.'
+}
+$linuxTimestampRegressionTask = './scripts/build/Test-AzureDemoLinuxWebDeploymentTimestamp.ps1'
+if ([regex]::Matches($text, [regex]::Escape($linuxTimestampRegressionTask)).Count -ne 1 -or
+    -not $validateStage.Contains($linuxTimestampRegressionTask) -or
+    -not $validateStage.Contains('pool: { vmImage: ubuntu-latest }')) {
+    throw 'The equal-timestamp deployment correction regression must run exactly once on Linux validation.'
+}
+
+$unsupportedFileTimeSetting = 'SCM_ZIPDEPLOY_DONOT_PRESERVE_FILETIME'
+if ($text.Contains($unsupportedFileTimeSetting) -or $appServiceBicep.Contains($unsupportedFileTimeSetting)) {
+    throw 'The unsupported Linux OneDeploy file-time setting must not be added to pipeline or Bicep configuration.'
+}
+foreach ($fragment in @(
+        '$webDeploymentTimestamp = [DateTimeOffset]::UtcNow',
+        '-EntryTimestamp $webDeploymentTimestamp',
+        'createdAtUtc = $webDeploymentTimestamp.ToString(''O'')')) {
+    if (-not $applicationPackageScript.Contains($fragment)) {
+        throw "Web packaging is missing its deployment-specific immutable ZIP timestamp contract: $fragment"
+    }
+}
+foreach ($owner in @('resource webConfiguration', 'resource apiConfiguration', 'resource webSlotConfiguration', 'resource apiSlotConfiguration')) {
+    if (-not $appServiceBicep.Contains($owner)) {
+        throw "The complete App Service settings owner is missing: $owner"
+    }
 }
 
 $preDeploymentGateStart = $text.IndexOf('- stage: PreDeploymentGate', [StringComparison]::Ordinal)
@@ -714,6 +741,20 @@ foreach ($fragment in @(
         "`$deployExitCode = `$deployResult.ExitCode")) {
     if (-not $cleanWebDeploymentScript.Contains($fragment)) {
         throw "Clean web deployment script is missing a required exact-target or completion contract: $fragment"
+    }
+}
+$webArtifactValidationIndex = $cleanWebDeploymentScript.IndexOf('Assert-AzureDemoApplicationArtifact', [StringComparison]::Ordinal)
+$webDeployInvocationIndex = $cleanWebDeploymentScript.IndexOf("'webapp', 'deploy'", [StringComparison]::Ordinal)
+if ($webArtifactValidationIndex -lt 0 -or $webDeployInvocationIndex -le $webArtifactValidationIndex -or
+    -not $stagingDeploymentUtilitiesScript.Contains('Web ZIP must use one deployment-specific entry timestamp instead of the fixed deterministic timestamp.')) {
+    throw 'Web ZIP timestamp validation must fail closed before the OneDeploy invocation.'
+}
+foreach ($fragment in @(
+        "return `$Path -ceq 'oryx-manifest.toml'",
+        "exactAllowedPaths = @('oryx-manifest.toml')",
+        'bounded-platform-generated-metadata')) {
+    if (-not $stagingDeploymentUtilitiesScript.Contains($fragment)) {
+        throw "Deployed-content verification is missing its bounded platform-metadata contract: $fragment"
     }
 }
 if ($cleanWebDeploymentScript -match '(?i)\b(?:ssh|rm\s+-rf|list-publishing-(?:credentials|profiles))\b' -or

@@ -121,12 +121,14 @@ try {
     $apiZip = Join-Path $output 'api.zip'
     $webZip = Join-Path $output 'web.zip'
     New-AzureDemoDeterministicZip -SourceDirectory $apiStage -DestinationPath $apiZip
-    New-AzureDemoDeterministicZip -SourceDirectory $webStage -DestinationPath $webZip
+    $webDeploymentTimestamp = [DateTimeOffset]::UtcNow
+    New-AzureDemoDeterministicZip -SourceDirectory $webStage -DestinationPath $webZip `
+        -EntryTimestamp $webDeploymentTimestamp
 
     $manifest = [ordered]@{
         schemaVersion = '1'
         sourceCommit = (git rev-parse HEAD).Trim()
-        createdAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        createdAtUtc = $webDeploymentTimestamp.ToString('O')
         nodeVersion = (node --version).Trim()
         dotnetSdkVersion = (dotnet --version).Trim()
         artifacts = @(

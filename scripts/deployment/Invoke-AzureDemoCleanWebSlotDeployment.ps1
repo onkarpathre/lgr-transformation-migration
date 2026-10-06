@@ -100,6 +100,7 @@ finally {
         sourceCommit = $ExpectedSourceCommit
         artifactPath = if ($null -eq $artifact) { $null } else { 'application/web.zip' }
         artifactSha256 = if ($null -eq $artifact) { $null } else { $artifact.Sha256 }
+        artifactEntryTimestamp = if ($null -eq $artifact) { $null } else { $artifact.EntryTimestamp }
         resourceId = if ($null -eq $target) { $null } else { $target.ResourceId }
         slot = $SlotName
         clean = $true

@@ -66,7 +66,8 @@ function New-AzureDemoDeterministicZip {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)] [string] $SourceDirectory,
-        [Parameter(Mandatory)] [string] $DestinationPath
+        [Parameter(Mandatory)] [string] $DestinationPath,
+        [DateTimeOffset] $EntryTimestamp = [DateTimeOffset]::MinValue
     )
 
     Add-Type -AssemblyName System.IO.Compression
@@ -92,7 +93,23 @@ function New-AzureDemoDeterministicZip {
         Remove-Item -LiteralPath $destination -Force
     }
 
-    $fixedTimestamp = [DateTimeOffset]::Parse('1980-01-01T00:00:00+00:00', [Globalization.CultureInfo]::InvariantCulture)
+    if ($EntryTimestamp -eq [DateTimeOffset]::MinValue) {
+        $EntryTimestamp = [DateTimeOffset]::Parse('1980-01-01T00:00:00+00:00', [Globalization.CultureInfo]::InvariantCulture)
+    }
+    if ($EntryTimestamp.Offset -ne [TimeSpan]::Zero) {
+        throw 'ZIP entry timestamp must use a UTC offset.'
+    }
+    if ($EntryTimestamp.Year -lt 1980 -or $EntryTimestamp.Year -gt 2107) {
+        throw 'ZIP entry timestamp must be within the supported DOS date range.'
+    }
+    $zipTimestamp = [DateTimeOffset]::new(
+        $EntryTimestamp.Year,
+        $EntryTimestamp.Month,
+        $EntryTimestamp.Day,
+        $EntryTimestamp.Hour,
+        $EntryTimestamp.Minute,
+        ($EntryTimestamp.Second - ($EntryTimestamp.Second % 2)),
+        [TimeSpan]::Zero)
     $fileStream = [IO.File]::Open($destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     $archive = $null
     try {
@@ -100,7 +117,7 @@ function New-AzureDemoDeterministicZip {
         foreach ($file in $files) {
             $entryName = $file.FullName.Substring($source.Length).TrimStart([char[]] @('\', '/')).Replace('\', '/')
             $entry = $archive.CreateEntry($entryName, [IO.Compression.CompressionLevel]::Optimal)
-            $entry.LastWriteTime = $fixedTimestamp
+            $entry.LastWriteTime = $zipTimestamp
             $inputStream = $file.OpenRead()
             $entryStream = $entry.Open()
             try {
