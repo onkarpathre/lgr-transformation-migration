@@ -3331,3 +3331,119 @@ NEEDS_ARCHITECTURE_DECISION
 The latest bounded continuation is **Web staging equal-timestamp content-reconciliation repair** above, based on exact HEAD `89bff5682b2a2bdead2e81c6b32dea120e46fe05`. Its local Windows PowerShell 5.1 regressions pass. The real Linux/PowerShell 7/`rsync` regression, fresh package generation and authorized staging-only OneDeploy/content reconciliation remain explicit connected checks. This hand-off supersedes older terminal markers in this cumulative document without overriding the unchanged live-plan architecture decision, Azure Platform/Operations approval, protected evidence or human release/deployment gates.
 
 READY_FOR_TEST
+
+## Legacy web-package timestamp fixture and classification repair
+
+### Baseline, scope and traceability
+
+This bounded Developer repair started from branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `7ec94c45e8527f41404928112a68e515d104e22c`. The index and worktree were clean before editing. The repair is limited to application-manifest timestamp normalization, structured preflight rejection identity, and the timestamp/package/content regressions that prove those controls. It does not change deployment exit-code handling, target allowlists, immutable manifest or ZIP-hash enforcement, Azure resources, release gates, or any production state. Nothing was committed, pushed, deployed, migrated, seeded, swapped, reset or stashed.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+This regression repair is separable from the remaining Q-01 and Q-08 production decisions: it retains the approved PowerShell/package architecture, performs only local synthetic validation, and neither changes nor exercises a protected environment. All existing connected-CI, staging, protected-evidence and human release gates remain in force.
+
+### Observed rejection and root cause
+
+The original fixture passed on Windows PowerShell 5.1 because `ConvertFrom-Json` retained `createdAtUtc` as `System.String`. A bounded reproduction of the PowerShell 6+ JSON materialization path supplied the same manifest value as `System.DateTime`. The unmodified validator cast that object to a culture-formatted string before `TryParseExact('O')` and rejected it as follows:
+
+- exception type: `System.Management.Automation.RuntimeException`;
+- `FullyQualifiedErrorId`: `Web application artifact manifest createdAtUtc is invalid.`;
+- engine category: `OperationStopped`;
+- bounded rejection category: `MANIFEST_CREATED_AT_PARSE`.
+
+The fixture therefore did not return successfully and did not reach the intended legacy ZIP timestamp rejection. It was rejected earlier for manifest timestamp parsing, and exact message matching then replaced the original error with the generic assertion at line 77. The ZIP target, source commit and inner SHA-256 were otherwise valid in the original fixture, but the fixture did not validate a complete API/web application manifest, outer deployment manifest or exact staging target before exercising the application validator.
+
+The production parser now normalizes an invariant round-trip string, a timezone-aware `System.DateTime`, or a `System.DateTimeOffset` to UTC without first applying culture-dependent string formatting. An unspecified `DateTime`, malformed string, null or unrelated type still fails closed. ZIP DOS timestamps remain treated as UTC wall-clock components because the format stores no timezone offset. The package regression now uses that zero-offset wall clock when recreating an archive; this prevents a Windows local offset such as BST `+01:00` from being passed into the ZIP creator while retaining the existing UTC-only creation contract and two-second ZIP rounding.
+
+### Structured rejection and fixture isolation
+
+`Assert-AzureDemoApplicationArtifact` now emits `System.IO.InvalidDataException` records with stable error IDs and rejection categories:
+
+- `AzureDemo.ApplicationArtifact.WebEntryTimestampInvalid` / `web-entry-timestamp-invalid`;
+- `AzureDemo.ApplicationArtifact.ZipHashMismatch` / `immutable-zip-hash-mismatch`;
+- `AzureDemo.ApplicationArtifact.ManifestCreatedAtUtcInvalid` / `manifest-created-at-invalid`.
+
+The regression classifies the structured error data rather than message text. Before each negative application check it proves the exact staging target and validates a complete outer deployment manifest bound to the expected source commit. Both fixtures contain API and web ZIPs. The legacy fixture contains a correct manifest hash and only the 1980 web-entry timestamp is invalid. The hash fixture uses a fresh deployment-specific web timestamp but declares the wrong inner SHA-256, and must receive only the hash-mismatch identity. Bounded stdout diagnostics contain only exception type, `FullyQualifiedErrorId` and rejection category. On an assertion mismatch, the original exception is retained as `InnerException` and the original structured identifiers are copied into the assertion exception data before it is thrown.
+
+### Changed files and verification
+
+- `scripts/deployment/AzureDemoStagingDeployment.ps1`: adds cross-runtime typed UTC timestamp normalization and structured application-artifact rejection records while retaining hash-before-timestamp validation.
+- `scripts/build/Test-AzureDemoCleanWebDeployment.ps1`: completes the legacy fixture prerequisites, adds the independent hash-negative fixture, verifies string/`DateTime`/`DateTimeOffset` normalization, and records bounded structured diagnostics.
+- `scripts/build/Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1`: requires both bounded rejection categories in the successful generated caller while retaining all nonzero failure cases.
+- `scripts/build/Test-AzureDemoPackageGeneration.ps1`: shares the production timestamp normalizer and uses the reconstructed UTC ZIP wall clock for deterministic re-packaging.
+- `scripts/build/Test-AzurePipelineStructure.ps1`: pins both stable production rejection IDs before OneDeploy.
+- `docs/implementation/AZURE_DEMO_Implementation_Work_Package.md`: records this implementation hand-off and pending Linux evidence.
+
+| Check | Result |
+|---|---|
+| Baseline and preservation | PASS: requested branch/HEAD, clean index/worktree, no reset/stash/commit/push and no pre-existing tracked changes to reconcile. |
+| PowerShell parsing and diff whitespace | PASS on Windows PowerShell 5.1; all five changed scripts parse and `git diff --check` exits `0`. |
+| Typed timestamp normalization | PASS on Windows PowerShell 5.1 for invariant string, UTC/local `System.DateTime`, and `System.DateTimeOffset`; unspecified and malformed inputs fail closed. |
+| Clean deployment regression | PASS on Windows PowerShell 5.1: valid new timestamp reaches the successful clean synchronous deployment fixture; 1980 timestamp rejects with `WebEntryTimestampInvalid`; wrong hash rejects with `ZipHashMismatch`; four invalid targets and exit 17 remain rejected. |
+| Generated-caller process boundary | PASS on Windows PowerShell 5.1: assertion/native/missing/cleanup cases each exit `1`; actual regression exits `0`; structured timestamp and hash categories are present in child stdout. |
+| Package generation regression | PASS on Windows PowerShell 5.1 against a synthetic current-commit six-file package: path boundary, manifest binding, timestamp policy, SHA-256 and deterministic regeneration pass. Pre-existing ignored package output was restored afterward. |
+| Deployed-content regression | PASS on Windows PowerShell 5.1: exact SHA-256/content reconciliation, stale-file and BUILD_ID rejection, dependency transformation and bounded Oryx metadata. |
+| Pipeline structural regression | PASS on Windows PowerShell 5.1: seven ordered stages and both structured preflight identities retained. |
+| PowerShell 7 materialization simulation | PASS on Windows PowerShell 5.1: forcing `createdAtUtc` to the `System.DateTime` shape that caused the Linux failure now reaches `WebEntryTimestampInvalid` instead of manifest parsing. This is supplemental, not Linux evidence. |
+| Real Linux / PowerShell 7 / `rsync` timestamp regression | `LINUX_VERIFICATION_PENDING`: no `pwsh`, WSL, Docker or Podman runtime is available locally. Windows and simulated checks are not represented as Linux proof. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, Entra, deployment, migration, seed, smoke, swap, release or approval action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_7ec94c45e8527f41404928112a68e515d104e22c"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "scripts/deployment/AzureDemoStagingDeployment.ps1"
+    - "scripts/build/Test-AzureDemoCleanWebDeployment.ps1"
+    - "scripts/build/Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1"
+    - "scripts/build/Test-AzureDemoPackageGeneration.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Windows PowerShell 5.1 clean-deployment, generated-caller boundary, package, content, structure, parsing and diff checks pass."
+    - "The legacy and hash fixtures expose distinct structured error identities after all preceding target/manifest/commit prerequisites pass."
+  decisions:
+    - "Normalize JSON timestamp strings and PowerShell 6+ DateTime materialization without culture-dependent string conversion."
+    - "Classify negative fixtures using production error identity and category, never generic exception acceptance or broader message matching."
+    - "Retain immutable manifest/ZIP hash ordering, UTC ZIP creation and original process exit semantics."
+  assumptions: []
+  risks:
+    - "Real Linux PowerShell 7 and rsync execution remains mandatory before independent acceptance."
+  defects:
+    - "REPAIRED LOCALLY: PowerShell 6+ DateTime materialization caused createdAtUtc parsing to reject before the intended legacy timestamp condition."
+    - "REPAIRED LOCALLY: the package regression reused a locally offset ZIP timestamp instead of its UTC wall-clock representation."
+  blockers: []
+  approvals: []
+  requested_action: "Independent Tester must run the full clean-deployment, generated-caller, package/content and real Linux PowerShell 7/rsync timestamp regressions against this exact worktree before quality review."
+```
+
+READY_FOR_TEST

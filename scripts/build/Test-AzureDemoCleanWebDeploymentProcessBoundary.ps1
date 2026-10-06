@@ -103,6 +103,10 @@ finally {
             "runtimeVersion=$expectedRuntime",
             "testFileSha256=$expectedHash",
             'childExitCode=0',
+            'Legacy timestamp rejection diagnostic:',
+            'rejectionCategory=web-entry-timestamp-invalid',
+            'Hash mismatch rejection diagnostic:',
+            'rejectionCategory=immutable-zip-hash-mismatch',
             'Clean web deployment regression passed')) {
         if ($actual.Stdout.IndexOf($fragment, [StringComparison]::Ordinal) -lt 0) {
             throw "Generated caller success output is missing diagnostic fragment: $fragment"

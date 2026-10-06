@@ -25,7 +25,92 @@ function New-TextFile([string] $Root, [string] $RelativePath, [string] $Content)
     [IO.File]::WriteAllText($path, $Content, [Text.UTF8Encoding]::new($false))
 }
 
+function Assert-FixturePreflightPrerequisites([string] $FixtureArtifactRoot, [string] $ManifestPath) {
+    Assert-AzureDemoStagingTarget `
+        -SubscriptionId '633398e2-6c00-4bb7-a576-2db0d210ee77' `
+        -ResourceGroupName 'Onkar.Pathre' `
+        -Workload Web `
+        -AppName 'app-mtp-web-dev-uks-001' `
+        -SlotName 'staging' `
+        -Account ([pscustomobject]@{ id = '633398e2-6c00-4bb7-a576-2db0d210ee77' }) `
+        -Resource ([pscustomobject]@{
+            id = '/subscriptions/633398e2-6c00-4bb7-a576-2db0d210ee77/resourceGroups/Onkar.Pathre/providers/Microsoft.Web/sites/app-mtp-web-dev-uks-001/slots/staging'
+            name = 'app-mtp-web-dev-uks-001/staging'
+            resourceGroup = 'Onkar.Pathre'
+            type = 'Microsoft.Web/sites/slots'
+            defaultHostName = 'app-mtp-web-dev-uks-001-staging.azurewebsites.net'
+        }) | Out-Null
+    Assert-AzureDemoDeploymentArtifact -ArtifactRoot $FixtureArtifactRoot -ManifestPath $ManifestPath `
+        -ExpectedSourceCommit $sourceCommit | Out-Null
+}
+
+function Get-FixtureRejectionDiagnostic([AllowNull()] [Management.Automation.ErrorRecord] $ErrorRecord) {
+    if ($null -eq $ErrorRecord) {
+        return [pscustomobject]@{
+            ExceptionType = 'none'
+            FullyQualifiedErrorId = 'none'
+            RejectionCategory = 'none'
+            ErrorId = 'none'
+        }
+    }
+    $errorId = $ErrorRecord.Exception.Data['AzureDemoErrorId']
+    return [pscustomobject]@{
+        ExceptionType = $ErrorRecord.Exception.GetType().FullName
+        FullyQualifiedErrorId = [string] $ErrorRecord.FullyQualifiedErrorId
+        RejectionCategory = Get-AzureDemoApplicationArtifactRejectionCategory -ErrorRecord $ErrorRecord
+        ErrorId = if ($errorId -is [string]) { [string] $errorId } else { 'unclassified' }
+    }
+}
+
+function Assert-FixtureRejection(
+    [string] $Name,
+    [AllowNull()] [Management.Automation.ErrorRecord] $ErrorRecord,
+    [string] $ExpectedErrorId,
+    [string] $ExpectedCategory) {
+    $diagnostic = Get-FixtureRejectionDiagnostic -ErrorRecord $ErrorRecord
+    if ($null -eq $ErrorRecord -or $diagnostic.ErrorId -cne $ExpectedErrorId -or
+        $diagnostic.RejectionCategory -cne $ExpectedCategory) {
+        $message = ("{0} did not reject for the expected reason; exceptionType={1}; " +
+            "fullyQualifiedErrorId={2}; rejectionCategory={3}; errorId={4}.") -f `
+            $Name, $diagnostic.ExceptionType, $diagnostic.FullyQualifiedErrorId,
+            $diagnostic.RejectionCategory, $diagnostic.ErrorId
+        $assertion = if ($null -eq $ErrorRecord) {
+            [InvalidOperationException]::new($message)
+        }
+        else {
+            [InvalidOperationException]::new($message, $ErrorRecord.Exception)
+        }
+        $assertion.Data['OriginalFullyQualifiedErrorId'] = $diagnostic.FullyQualifiedErrorId
+        $assertion.Data['OriginalRejectionCategory'] = $diagnostic.RejectionCategory
+        $assertion.Data['OriginalErrorId'] = $diagnostic.ErrorId
+        throw $assertion
+    }
+    return $diagnostic
+}
+
 try {
+    $timestampContract = '2026-10-06T12:34:56.0000000+00:00'
+    $expectedTimestamp = [DateTimeOffset]::Parse(
+        $timestampContract,
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::RoundtripKind)
+    $timestampInputs = @(
+        $timestampContract,
+        [DateTime]::Parse(
+            $timestampContract,
+            [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::RoundtripKind),
+        $expectedTimestamp
+    )
+    foreach ($timestampInput in $timestampInputs) {
+        $normalizedTimestamp = ConvertTo-AzureDemoManifestUtcTimestamp -Value $timestampInput
+        if ($null -eq $normalizedTimestamp -or $normalizedTimestamp -ne $expectedTimestamp) {
+            throw "Manifest timestamp normalization failed for input type $($timestampInput.GetType().FullName)."
+        }
+    }
+    Write-Output ('Manifest timestamp normalization diagnostic: inputTypes={0}.' -f `
+            (@($timestampInputs | ForEach-Object { $_.GetType().FullName }) -join ','))
+
     New-Item -ItemType Directory -Path $applicationRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
     New-TextFile $stageRoot 'server.js' 'server-entry'
@@ -58,24 +143,69 @@ try {
     New-Item -ItemType Directory -Path $legacyApplicationRoot -Force | Out-Null
     $legacyWebZip = Join-Path $legacyApplicationRoot 'web.zip'
     New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $legacyWebZip
+    $legacyApiZip = Join-Path $legacyApplicationRoot 'api.zip'
+    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $legacyApiZip
     [ordered]@{
         schemaVersion = '1'
         sourceCommit = $sourceCommit
         createdAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
         nodeVersion = 'v24.0.0'
         dotnetSdkVersion = '10.0.100'
-        artifacts = @([ordered]@{ name = 'web.zip'; sha256 = (Get-FileHash $legacyWebZip -Algorithm SHA256).Hash.ToLowerInvariant() })
+        artifacts = @(
+            [ordered]@{ name = 'api.zip'; sha256 = (Get-FileHash $legacyApiZip -Algorithm SHA256).Hash.ToLowerInvariant() },
+            [ordered]@{ name = 'web.zip'; sha256 = (Get-FileHash $legacyWebZip -Algorithm SHA256).Hash.ToLowerInvariant() }
+        )
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $legacyApplicationRoot 'application-artifact-manifest.json') -Encoding UTF8
+    $legacyDeploymentManifest = New-AzureDemoDeploymentArtifactManifest -ArtifactRoot $legacyArtifactRoot -SourceCommit $sourceCommit
+    Assert-FixturePreflightPrerequisites -FixtureArtifactRoot $legacyArtifactRoot -ManifestPath $legacyDeploymentManifest
     $legacyRejection = $null
     try {
         Assert-AzureDemoApplicationArtifact -ArtifactRoot $legacyArtifactRoot -Workload Web `
             -ExpectedSourceCommit $sourceCommit | Out-Null
     }
     catch { $legacyRejection = $_ }
-    if ($null -eq $legacyRejection -or
-        $legacyRejection.Exception.Message -cne 'Web ZIP must use one deployment-specific entry timestamp instead of the fixed deterministic timestamp.') {
-        throw 'Clean deployment preflight did not reject the legacy fixed-timestamp web ZIP for the expected reason.'
+    $legacyDiagnostic = Assert-FixtureRejection `
+        -Name 'Clean deployment legacy fixed-timestamp preflight' `
+        -ErrorRecord $legacyRejection `
+        -ExpectedErrorId 'AzureDemo.ApplicationArtifact.WebEntryTimestampInvalid' `
+        -ExpectedCategory 'web-entry-timestamp-invalid'
+    Write-Output ("Legacy timestamp rejection diagnostic: exceptionType={0}; fullyQualifiedErrorId={1}; rejectionCategory={2}." -f `
+            $legacyDiagnostic.ExceptionType, $legacyDiagnostic.FullyQualifiedErrorId, $legacyDiagnostic.RejectionCategory)
+
+    $hashInvalidArtifactRoot = Join-Path $temporaryDirectory 'hash-invalid-artifact'
+    $hashInvalidApplicationRoot = Join-Path $hashInvalidArtifactRoot 'application'
+    New-Item -ItemType Directory -Path $hashInvalidApplicationRoot -Force | Out-Null
+    $hashInvalidWebZip = Join-Path $hashInvalidApplicationRoot 'web.zip'
+    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $hashInvalidWebZip `
+        -EntryTimestamp $fixtureTimestamp
+    $hashInvalidApiZip = Join-Path $hashInvalidApplicationRoot 'api.zip'
+    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $hashInvalidApiZip
+    [ordered]@{
+        schemaVersion = '1'
+        sourceCommit = $sourceCommit
+        createdAtUtc = $fixtureTimestamp.ToString('O')
+        nodeVersion = 'v24.0.0'
+        dotnetSdkVersion = '10.0.100'
+        artifacts = @(
+            [ordered]@{ name = 'api.zip'; sha256 = (Get-FileHash $hashInvalidApiZip -Algorithm SHA256).Hash.ToLowerInvariant() },
+            [ordered]@{ name = 'web.zip'; sha256 = ('0' * 64) }
+        )
+    } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $hashInvalidApplicationRoot 'application-artifact-manifest.json') -Encoding UTF8
+    $hashInvalidDeploymentManifest = New-AzureDemoDeploymentArtifactManifest -ArtifactRoot $hashInvalidArtifactRoot -SourceCommit $sourceCommit
+    Assert-FixturePreflightPrerequisites -FixtureArtifactRoot $hashInvalidArtifactRoot -ManifestPath $hashInvalidDeploymentManifest
+    $hashInvalidRejection = $null
+    try {
+        Assert-AzureDemoApplicationArtifact -ArtifactRoot $hashInvalidArtifactRoot -Workload Web `
+            -ExpectedSourceCommit $sourceCommit | Out-Null
     }
+    catch { $hashInvalidRejection = $_ }
+    $hashInvalidDiagnostic = Assert-FixtureRejection `
+        -Name 'Clean deployment immutable hash preflight' `
+        -ErrorRecord $hashInvalidRejection `
+        -ExpectedErrorId 'AzureDemo.ApplicationArtifact.ZipHashMismatch' `
+        -ExpectedCategory 'immutable-zip-hash-mismatch'
+    Write-Output ("Hash mismatch rejection diagnostic: exceptionType={0}; fullyQualifiedErrorId={1}; rejectionCategory={2}." -f `
+            $hashInvalidDiagnostic.ExceptionType, $hashInvalidDiagnostic.FullyQualifiedErrorId, $hashInvalidDiagnostic.RejectionCategory)
 
     $stubScript = Join-Path $temporaryDirectory 'az-stub.ps1'
     $stubBody = @'
@@ -201,7 +331,7 @@ exit 42
         throw 'Clean deployment evidence disclosed native Azure CLI stderr.'
     }
 
-    $successMessage = "Clean web deployment regression passed exact artifact selection, target rejection, synchronous clean CLI options and expected exit-17 rejection evidence for $($negativeTargets.Count) invalid targets."
+    $successMessage = "Clean web deployment regression passed exact artifact selection, structured timestamp/hash rejection, target rejection, synchronous clean CLI options and expected exit-17 rejection evidence for $($negativeTargets.Count) invalid targets."
 }
 finally {
     $env:PATH = $originalPath

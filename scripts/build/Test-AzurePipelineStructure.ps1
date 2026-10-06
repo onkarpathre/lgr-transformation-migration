@@ -746,7 +746,9 @@ foreach ($fragment in @(
 $webArtifactValidationIndex = $cleanWebDeploymentScript.IndexOf('Assert-AzureDemoApplicationArtifact', [StringComparison]::Ordinal)
 $webDeployInvocationIndex = $cleanWebDeploymentScript.IndexOf("'webapp', 'deploy'", [StringComparison]::Ordinal)
 if ($webArtifactValidationIndex -lt 0 -or $webDeployInvocationIndex -le $webArtifactValidationIndex -or
-    -not $stagingDeploymentUtilitiesScript.Contains('Web ZIP must use one deployment-specific entry timestamp instead of the fixed deterministic timestamp.')) {
+    -not $stagingDeploymentUtilitiesScript.Contains('Web ZIP must use one deployment-specific entry timestamp instead of the fixed deterministic timestamp.') -or
+    -not $stagingDeploymentUtilitiesScript.Contains('AzureDemo.ApplicationArtifact.WebEntryTimestampInvalid') -or
+    -not $stagingDeploymentUtilitiesScript.Contains('AzureDemo.ApplicationArtifact.ZipHashMismatch')) {
     throw 'Web ZIP timestamp validation must fail closed before the OneDeploy invocation.'
 }
 foreach ($fragment in @(

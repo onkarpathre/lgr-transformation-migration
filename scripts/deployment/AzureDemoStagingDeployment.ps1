@@ -126,6 +126,63 @@ function ConvertTo-AzureDemoObjectArray {
     return @($InputObject)
 }
 
+function ConvertTo-AzureDemoManifestUtcTimestamp {
+    [CmdletBinding()]
+    param([AllowNull()] [object] $Value)
+
+    if ($Value -is [DateTimeOffset]) {
+        return ([DateTimeOffset] $Value).ToUniversalTime()
+    }
+    if ($Value -is [DateTime]) {
+        $dateTime = [DateTime] $Value
+        if ($dateTime.Kind -eq [DateTimeKind]::Unspecified) { return $null }
+        return ([DateTimeOffset] $dateTime).ToUniversalTime()
+    }
+    if ($Value -isnot [string]) { return $null }
+
+    $timestamp = [DateTimeOffset]::MinValue
+    if (-not [DateTimeOffset]::TryParseExact(
+            [string] $Value,
+            'O',
+            [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::RoundtripKind,
+            [ref] $timestamp)) {
+        return $null
+    }
+    return $timestamp.ToUniversalTime()
+}
+
+function New-AzureDemoApplicationArtifactErrorRecord {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $ErrorId,
+        [Parameter(Mandatory)] [string] $RejectionCategory,
+        [Parameter(Mandatory)] [string] $Message,
+        [Parameter(Mandatory)] [string] $ArtifactName
+    )
+
+    $exception = [IO.InvalidDataException]::new($Message)
+    $exception.Data['AzureDemoErrorId'] = $ErrorId
+    $exception.Data['AzureDemoRejectionCategory'] = $RejectionCategory
+    return [Management.Automation.ErrorRecord]::new(
+        $exception,
+        $ErrorId,
+        [Management.Automation.ErrorCategory]::InvalidData,
+        $ArtifactName)
+}
+
+function Get-AzureDemoApplicationArtifactRejectionCategory {
+    [CmdletBinding()]
+    param([AllowNull()] [Management.Automation.ErrorRecord] $ErrorRecord)
+
+    if ($null -eq $ErrorRecord -or $null -eq $ErrorRecord.Exception) { return 'none' }
+    $category = $ErrorRecord.Exception.Data['AzureDemoRejectionCategory']
+    if ($category -isnot [string] -or [string]::IsNullOrWhiteSpace([string] $category)) {
+        return 'unclassified'
+    }
+    return [string] $category
+}
+
 function Assert-AzureDemoApplicationArtifact {
     [CmdletBinding()]
     param(
@@ -155,19 +212,22 @@ function Assert-AzureDemoApplicationArtifact {
     }
     $actualHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualHash -cne [string] $entries[0].sha256) {
-        throw 'Selected application ZIP does not match its immutable SHA-256 evidence.'
+        $PSCmdlet.ThrowTerminatingError((New-AzureDemoApplicationArtifactErrorRecord `
+                    -ErrorId 'AzureDemo.ApplicationArtifact.ZipHashMismatch' `
+                    -RejectionCategory 'immutable-zip-hash-mismatch' `
+                    -Message 'Selected application ZIP does not match its immutable SHA-256 evidence.' `
+                    -ArtifactName $artifactName))
     }
 
     $entryTimestamp = $null
     if ($Workload -ceq 'Web') {
-        $manifestCreatedAt = [DateTimeOffset]::MinValue
-        if (-not [DateTimeOffset]::TryParseExact(
-                [string] $manifest.createdAtUtc,
-                'O',
-                [Globalization.CultureInfo]::InvariantCulture,
-                [Globalization.DateTimeStyles]::RoundtripKind,
-                [ref] $manifestCreatedAt)) {
-            throw 'Web application artifact manifest createdAtUtc is invalid.'
+        $manifestCreatedAt = ConvertTo-AzureDemoManifestUtcTimestamp -Value $manifest.createdAtUtc
+        if ($null -eq $manifestCreatedAt) {
+            $PSCmdlet.ThrowTerminatingError((New-AzureDemoApplicationArtifactErrorRecord `
+                        -ErrorId 'AzureDemo.ApplicationArtifact.ManifestCreatedAtUtcInvalid' `
+                        -RejectionCategory 'manifest-created-at-invalid' `
+                        -Message 'Web application artifact manifest createdAtUtc is invalid.' `
+                        -ArtifactName $artifactName))
         }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $artifactPath).ProviderPath)
@@ -189,9 +249,13 @@ function Assert-AzureDemoApplicationArtifact {
                 $firstTimestamp.Second,
                 [TimeSpan]::Zero)
             $manifestTimestampDifference = [Math]::Abs(
-                ($manifestCreatedAt.ToUniversalTime() - $entryTimestampUtcWallClock).TotalMinutes)
+                ($manifestCreatedAt - $entryTimestampUtcWallClock).TotalMinutes)
             if ($timestamps.Count -ne 1 -or $firstTimestamp.Year -lt 2020 -or $manifestTimestampDifference -gt 5) {
-                throw 'Web ZIP must use one deployment-specific entry timestamp instead of the fixed deterministic timestamp.'
+                $PSCmdlet.ThrowTerminatingError((New-AzureDemoApplicationArtifactErrorRecord `
+                            -ErrorId 'AzureDemo.ApplicationArtifact.WebEntryTimestampInvalid' `
+                            -RejectionCategory 'web-entry-timestamp-invalid' `
+                            -Message 'Web ZIP must use one deployment-specific entry timestamp instead of the fixed deterministic timestamp.' `
+                            -ArtifactName $artifactName))
             }
             $entryTimestamp = $timestamps[0]
         }

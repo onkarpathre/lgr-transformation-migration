@@ -10,6 +10,7 @@ $utilities = Join-Path $PSScriptRoot 'AzureDemoPackageUtilities.ps1'
 $packageScript = Join-Path $PSScriptRoot 'New-AzureDemoPackages.ps1'
 . $utilities
 . (Join-Path $PSScriptRoot 'AzureDemoDeploymentArtifactUtilities.ps1')
+. (Join-Path $repo 'scripts\deployment\AzureDemoStagingDeployment.ps1')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 if ([string]::IsNullOrWhiteSpace($ExpectedSourceCommit)) {
@@ -65,13 +66,8 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 if (@($manifest.artifacts).Count -ne 2) {
     throw 'Application package manifest must contain exactly the API and web ZIP evidence.'
 }
-$manifestCreatedAt = [DateTimeOffset]::MinValue
-if (-not [DateTimeOffset]::TryParseExact(
-        [string] $manifest.createdAtUtc,
-        'O',
-        [Globalization.CultureInfo]::InvariantCulture,
-        [Globalization.DateTimeStyles]::RoundtripKind,
-        [ref] $manifestCreatedAt)) {
+$manifestCreatedAt = ConvertTo-AzureDemoManifestUtcTimestamp -Value $manifest.createdAtUtc
+if ($null -eq $manifestCreatedAt) {
     throw 'Application package manifest createdAtUtc is invalid.'
 }
 
@@ -117,7 +113,7 @@ try {
                 $entryTimestamp.Second,
                 [TimeSpan]::Zero)
             $manifestDifferenceMinutes = [Math]::Abs(
-                ($manifestCreatedAt.ToUniversalTime() - $entryTimestampUtcWallClock).TotalMinutes)
+                ($manifestCreatedAt - $entryTimestampUtcWallClock).TotalMinutes)
             if (($name -ceq 'api.zip' -and $entryTimestamp.Year -ne 1980) -or
                 ($name -ceq 'web.zip' -and ($entryTimestamp.Year -lt 2020 -or $manifestDifferenceMinutes -gt 5))) {
                 throw "$name does not retain its required API-deterministic or web-deployment-specific timestamp contract."
@@ -134,7 +130,7 @@ try {
 
         $repeatOne = Join-Path $regressionDirectory ("repeat-1-$name")
         $repeatTwo = Join-Path $regressionDirectory ("repeat-2-$name")
-        $repeatArguments = @{ SourceDirectory = $expanded; EntryTimestamp = $entryTimestamp }
+        $repeatArguments = @{ SourceDirectory = $expanded; EntryTimestamp = $entryTimestampUtcWallClock }
         New-AzureDemoDeterministicZip @repeatArguments -DestinationPath $repeatOne
         New-AzureDemoDeterministicZip @repeatArguments -DestinationPath $repeatTwo
         $repeatOneHash = (Get-FileHash -LiteralPath $repeatOne -Algorithm SHA256).Hash
