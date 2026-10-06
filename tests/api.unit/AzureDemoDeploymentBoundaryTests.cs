@@ -67,7 +67,11 @@ public sealed class AzureDemoDeploymentBoundaryTests
         Assert.Contains("value: 633398e2-6c00-4bb7-a576-2db0d210ee77", pipeline, StringComparison.Ordinal);
         Assert.Contains("@('account', 'show'", pipeline, StringComparison.Ordinal);
         Assert.Contains("@('webapp', 'show'", pipeline, StringComparison.Ordinal);
-        Assert.Contains("@('webapp', 'deployment', 'slot', 'show'", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("@('webapp', 'deployment', 'slot', 'show'", pipeline, StringComparison.Ordinal);
+        Assert.Equal(4, pipeline.Split("'--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}'", StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, pipeline.Split("$rows = @(& az @Arguments 2> $stderrPath)", StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("& az @Arguments 2>&1", pipeline, StringComparison.Ordinal);
+        Assert.Contains("Test-AzureDemoPipelineSmokeTargetCommands.ps1", pipeline, StringComparison.Ordinal);
         Assert.Contains("-WebBaseUri 'https://$(AZDEMO_WEB_STAGING_HOST)'", pipeline, StringComparison.Ordinal);
         Assert.Contains("-TargetSlotName staging", pipeline, StringComparison.Ordinal);
         Assert.Contains("-WebBaseUri 'https://$(AZDEMO_WEB_PRODUCTION_HOST)'", pipeline, StringComparison.Ordinal);

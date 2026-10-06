@@ -122,6 +122,8 @@ stages:
       displayName: Secret, LocalTest, header and prohibited-capability boundaries
     - pwsh: ./scripts/build/Test-AzureDemoSmokeTargetResolution.ps1
       displayName: Azure demo smoke exact-target regression
+    - pwsh: ./scripts/build/Test-AzureDemoPipelineSmokeTargetCommands.ps1
+      displayName: Azure demo pipeline smoke-target CLI regression
     - pwsh: ./scripts/build/Test-AzureDemoSmokeHttp.ps1
       displayName: PowerShell 7 local HTTP smoke redirect and redaction regression
     - pwsh: ./scripts/build/Test-AzureDemoSmokeEvidence.ps1
@@ -518,14 +520,35 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 function Invoke-AzJson([string[]] $Arguments) {
-                  $rows = @(& az @Arguments 2>&1)
-                  return [pscustomobject]@{ Json = [string]::Join([Environment]::NewLine, [string[]] $rows); ExitCode = $LASTEXITCODE }
+                  $stderrPath = Join-Path ([IO.Path]::GetTempPath()) ("az-json-{0}.stderr" -f [Guid]::NewGuid().ToString('N'))
+                  try {
+                    $rows = @(& az @Arguments 2> $stderrPath)
+                    $exitCode = $LASTEXITCODE
+                    $stderrText = if (Test-Path -LiteralPath $stderrPath) { [IO.File]::ReadAllText($stderrPath) } else { '' }
+                    if ($exitCode -ne 0) {
+                      $operationKey = if ($Arguments.Count -ge 2) { "$($Arguments[0]) $($Arguments[1])" } else { '' }
+                      $operation = switch ($operationKey) { 'account show' { 'account-show' } 'webapp show' { 'webapp-show' } default { 'unknown' } }
+                      $errorCategory = if ([string]::IsNullOrWhiteSpace($stderrText)) { 'no-stderr' }
+                        elseif ($stderrText -match '(?i)AuthenticationFailed|AADSTS|az login|not logged in') { 'authentication' }
+                        elseif ($stderrText -match '(?i)AuthorizationFailed|Forbidden|not authorized|does not have authorization') { 'authorization' }
+                        elseif ($stderrText -match '(?i)ResourceNotFound|not found') { 'resource-not-found' }
+                        elseif ($stderrText -match '(?i)unrecognized arguments|invalid argument|usage error') { 'invalid-argument' }
+                        elseif ($stderrText -match '(?i)TooManyRequests|throttl|rate.?limit') { 'throttled' }
+                        elseif ($stderrText -match '(?i)timed out|timeout|connection|network|temporarily unavailable') { 'transport' }
+                        else { 'azure-cli-error' }
+                      Write-Warning "Azure CLI query failed: operation=$operation; exitCode=$exitCode; errorCategory=$errorCategory."
+                    }
+                    return [pscustomobject]@{ Json = [string]::Join([Environment]::NewLine, [string[]] $rows); ExitCode = $exitCode }
+                  }
+                  finally {
+                    if (Test-Path -LiteralPath $stderrPath) { Remove-Item -LiteralPath $stderrPath -Force }
+                  }
                 }
                 $account = Invoke-AzJson @('account', 'show', '--query', '{id:id,tenantId:tenantId}', '--output', 'json', '--only-show-errors')
                 $webProduction = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
-                $webSlot = Invoke-AzJson @('webapp', 'deployment', 'slot', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $webSlot = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
                 $apiProduction = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
-                $apiSlot = Invoke-AzJson @('webapp', 'deployment', 'slot', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $apiSlot = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
                 $targets = ./scripts/smoke/Resolve-AzureDemoSmokeTargets.ps1 -ExpectedSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -ExpectedTenantId '$(AZDEMO_ENTRA_TENANT_ID)' -ExpectedResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -ExpectedWebAppName '$(AZDEMO_WEB_APP_NAME)' -ExpectedApiAppName '$(AZDEMO_API_APP_NAME)' -ExpectedSlotName staging -AccountJson $account.Json -AccountCommandExitCode $account.ExitCode -WebProductionJson $webProduction.Json -WebProductionCommandExitCode $webProduction.ExitCode -WebSlotJson $webSlot.Json -WebSlotCommandExitCode $webSlot.ExitCode -ApiProductionJson $apiProduction.Json -ApiProductionCommandExitCode $apiProduction.ExitCode -ApiSlotJson $apiSlot.Json -ApiSlotCommandExitCode $apiSlot.ExitCode
                 Write-Host "##vso[task.setvariable variable=AZDEMO_WEB_STAGING_HOST]$($targets.WebStagingHost)"
                 Write-Host "##vso[task.setvariable variable=AZDEMO_API_STAGING_HOST]$($targets.ApiStagingHost)"
@@ -585,14 +608,35 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 function Invoke-AzJson([string[]] $Arguments) {
-                  $rows = @(& az @Arguments 2>&1)
-                  return [pscustomobject]@{ Json = [string]::Join([Environment]::NewLine, [string[]] $rows); ExitCode = $LASTEXITCODE }
+                  $stderrPath = Join-Path ([IO.Path]::GetTempPath()) ("az-json-{0}.stderr" -f [Guid]::NewGuid().ToString('N'))
+                  try {
+                    $rows = @(& az @Arguments 2> $stderrPath)
+                    $exitCode = $LASTEXITCODE
+                    $stderrText = if (Test-Path -LiteralPath $stderrPath) { [IO.File]::ReadAllText($stderrPath) } else { '' }
+                    if ($exitCode -ne 0) {
+                      $operationKey = if ($Arguments.Count -ge 2) { "$($Arguments[0]) $($Arguments[1])" } else { '' }
+                      $operation = switch ($operationKey) { 'account show' { 'account-show' } 'webapp show' { 'webapp-show' } default { 'unknown' } }
+                      $errorCategory = if ([string]::IsNullOrWhiteSpace($stderrText)) { 'no-stderr' }
+                        elseif ($stderrText -match '(?i)AuthenticationFailed|AADSTS|az login|not logged in') { 'authentication' }
+                        elseif ($stderrText -match '(?i)AuthorizationFailed|Forbidden|not authorized|does not have authorization') { 'authorization' }
+                        elseif ($stderrText -match '(?i)ResourceNotFound|not found') { 'resource-not-found' }
+                        elseif ($stderrText -match '(?i)unrecognized arguments|invalid argument|usage error') { 'invalid-argument' }
+                        elseif ($stderrText -match '(?i)TooManyRequests|throttl|rate.?limit') { 'throttled' }
+                        elseif ($stderrText -match '(?i)timed out|timeout|connection|network|temporarily unavailable') { 'transport' }
+                        else { 'azure-cli-error' }
+                      Write-Warning "Azure CLI query failed: operation=$operation; exitCode=$exitCode; errorCategory=$errorCategory."
+                    }
+                    return [pscustomobject]@{ Json = [string]::Join([Environment]::NewLine, [string[]] $rows); ExitCode = $exitCode }
+                  }
+                  finally {
+                    if (Test-Path -LiteralPath $stderrPath) { Remove-Item -LiteralPath $stderrPath -Force }
+                  }
                 }
                 $account = Invoke-AzJson @('account', 'show', '--query', '{id:id,tenantId:tenantId}', '--output', 'json', '--only-show-errors')
                 $webProduction = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
-                $webSlot = Invoke-AzJson @('webapp', 'deployment', 'slot', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $webSlot = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_WEB_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
                 $apiProduction = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
-                $apiSlot = Invoke-AzJson @('webapp', 'deployment', 'slot', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                $apiSlot = Invoke-AzJson @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
                 $targets = ./scripts/smoke/Resolve-AzureDemoSmokeTargets.ps1 -ExpectedSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -ExpectedTenantId '$(AZDEMO_ENTRA_TENANT_ID)' -ExpectedResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -ExpectedWebAppName '$(AZDEMO_WEB_APP_NAME)' -ExpectedApiAppName '$(AZDEMO_API_APP_NAME)' -ExpectedSlotName staging -AccountJson $account.Json -AccountCommandExitCode $account.ExitCode -WebProductionJson $webProduction.Json -WebProductionCommandExitCode $webProduction.ExitCode -WebSlotJson $webSlot.Json -WebSlotCommandExitCode $webSlot.ExitCode -ApiProductionJson $apiProduction.Json -ApiProductionCommandExitCode $apiProduction.ExitCode -ApiSlotJson $apiSlot.Json -ApiSlotCommandExitCode $apiSlot.ExitCode
                 Write-Host "##vso[task.setvariable variable=AZDEMO_WEB_PRODUCTION_HOST]$($targets.WebProductionHost)"
                 Write-Host "##vso[task.setvariable variable=AZDEMO_API_PRODUCTION_HOST]$($targets.ApiProductionHost)"

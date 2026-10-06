@@ -1721,6 +1721,104 @@ handoff:
 
 READY_FOR_TEST
 
+## Azure CLI App Service slot-show command repair
+
+### Baseline, scope and traceability
+
+This bounded Developer repair started from the requested branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `0502523181afde81412f857e1be97f379f650c42`. The index and worktree were clean before editing. Nothing was staged, committed, pushed, reset or stashed. The repair changes only the two protected smoke-target resolver callers, their native Azure CLI capture, focused/structural regressions and supporting documentation. It does not change RBAC, host validation, release gates, swaps, Azure state or smoke acceptance.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+This local pipeline-command repair is separable from Q-01 and Q-08: it does not select an application stack, change the operating model or alter any approval. Connected Azure validation and all existing human gates remain in force.
+
+### Confirmed command defect and correction
+
+Both protected Azure CLI tasks used the unsupported argument sequence `az webapp deployment slot show` for each staging-slot lookup. The four corrected callers are:
+
+- staging resolver: web staging slot;
+- staging resolver: API staging slot;
+- pre-swap resolver: web staging slot;
+- pre-swap resolver: API staging slot.
+
+Each now executes `az webapp show` with the existing exact subscription, resource group, application, `--slot staging`, resource projection, JSON output and `--only-show-errors` arguments. The four production lookups remain `az webapp show` without `--slot`. The valid API-first/web-second `az webapp deployment slot swap` commands are unchanged.
+
+Both `Invoke-AzJson` helpers now send native stdout only to the `Json` result, redirect stderr to a unique temporary file, capture `$LASTEXITCODE` on the immediately following statement and remove the file in `finally`. The public `Json`/`ExitCode` result contract is unchanged. A nonzero result emits only a bounded operation (`account-show`, `webapp-show` or `unknown`), integer exit code and allowlisted error category; raw stderr is not printed. `Resolve-AzureDemoSmokeTargets.ps1` is unchanged and still fails closed on the exact subscription, tenant, resource group, app, slot, resource ID, resource type and generated default hostname.
+
+### Regression and verification
+
+`Test-AzureDemoPipelineSmokeTargetCommands.ps1` extracts both real inline pipeline scripts, substitutes only their pipeline variables and executes each caller against a native recording `az` stub. It proves the exact web/API staging and production arrays, rejects the invalid sequence, verifies success JSON remains parseable when native stderr is present, and verifies native exit `17` with valid stdout still fails closed. The failure fixture includes unrestricted marker text in stderr and proves only `operation=webapp-show`, `exitCode=17` and `errorCategory=authorization` reach diagnostics. It also checks that helper stderr files are removed.
+
+| Check | Result |
+|---|---|
+| Baseline and inventory | PASS before editing: exact requested branch/HEAD, clean worktree and empty staged index. |
+| PowerShell parsing | PASS: the new caller regression, structural regression and unchanged resolver parse under Windows PowerShell 5.1. |
+| Actual pipeline caller/native-stub regression | PASS, exit `0`: both callers retained exact arguments; stdout/stderr remained separate; native nonzero failed closed with bounded diagnostics; temporary stderr was removed. |
+| Smoke-target resolver regression | PASS, exit `0`: generated hosts, exact identities, staging/production separation, unsafe URI rejection, catalogue order and 12 invalid cases. |
+| Pipeline structural regression | PASS, exit `0`: seven ordered stages; four supported slot lookups; four production lookups without `--slot`; no invalid lookup; swap commands retained. |
+| Focused .NET deployment-boundary tests | PASS, exit `0`: 13 passed, 0 failed, 0 skipped. NuGet emitted `NU1900` because external vulnerability metadata was unreachable; no connected vulnerability-audit success is claimed. |
+| PowerShell 7/Linux | NOT RUN: `pwsh` is unavailable on the authorized local host. The pipeline pins this regression to `ubuntu-latest`, where it remains to be executed. |
+| Live Azure/same-service-connection proof | NOT RUN: no Azure mutation or query was authorized. The repository still binds both resolver tasks to `sc-mtp-azure-demo-dev`; a protected run must prove that identity can read both production sites and both staging slots with the corrected command. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, Entra, deployment, migration, seed, swap, smoke endpoint, rollback or approval action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_0502523181afde81412f857e1be97f379f650c42"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/build/Test-AzureDemoPipelineSmokeTargetCommands.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "scripts/smoke/README.md"
+    - "tests/api.unit/AzureDemoDeploymentBoundaryTests.cs"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Both actual inline callers pass the native recording-stub command and stream-separation regression."
+    - "Resolver, structural and focused deployment-boundary regressions pass locally."
+  decisions:
+    - "Use the supported webapp show command for both sites and slots, adding --slot only for staging."
+    - "Keep native stderr out of JSON and emit only bounded operation/exit/category diagnostics."
+    - "Retain the resolver's existing exact identity and generated-hostname validation unchanged."
+  assumptions: []
+  risks:
+    - "PowerShell 7/Linux and connected same-service-connection reads remain unverified locally."
+  defects:
+    - "REPAIRED LOCALLY: all four staging-slot lookups used unsupported az webapp deployment slot show arguments."
+  blockers: []
+  approvals: []
+  requested_action: "Independent Tester must run the new caller regression and protected pipeline validation on Linux/PowerShell 7, then verify sc-mtp-azure-demo-dev can read the exact production and staging resources without exposing stderr."
+```
+
+READY_FOR_TEST
+
 ## Smoke evidence workflow reconciliation and fail-closed contract
 
 ### Baseline, role and authority

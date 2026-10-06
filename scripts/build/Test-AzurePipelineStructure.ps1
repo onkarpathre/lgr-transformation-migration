@@ -103,6 +103,7 @@ $requiredFragments = @(
     'Invoke-AzureDemoSmokeTests.ps1',
     'Resolve-AzureDemoSmokeTargets.ps1',
     'Test-AzureDemoSmokeTargetResolution.ps1',
+    'Test-AzureDemoPipelineSmokeTargetCommands.ps1',
     'Test-AzureDemoSmokeHttp.ps1',
     'Test-AzureDemoSmokeEvidence.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
@@ -851,10 +852,11 @@ $rollback = $text.Substring($text.IndexOf('- stage: Rollback', [StringComparison
 $migrateAndDeploy = $text.Substring($text.IndexOf('- stage: MigrateAndDeploySlots', [StringComparison]::Ordinal),
     $text.IndexOf('- stage: ReleaseApproval', [StringComparison]::Ordinal) - $text.IndexOf('- stage: MigrateAndDeploySlots', [StringComparison]::Ordinal))
 if ([regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeTargetResolution\.ps1\s*$').Count -ne 1 -or
+    [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoPipelineSmokeTargetCommands\.ps1\s*$').Count -ne 1 -or
     [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeHttp\.ps1\s*$').Count -ne 1 -or
     [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeEvidence\.ps1\s*$').Count -ne 1 -or
     -not $text.Substring($text.IndexOf('- stage: Validate', [StringComparison]::Ordinal), $text.IndexOf('- stage: Package', [StringComparison]::Ordinal) - $text.IndexOf('- stage: Validate', [StringComparison]::Ordinal)).Contains('pool: { vmImage: ubuntu-latest }')) {
-    throw 'Smoke target, real PowerShell 7 HTTP and evidence-provenance regressions must each run once in Linux validation.'
+    throw 'Smoke target fixtures, actual pipeline CLI callers, real PowerShell 7 HTTP and evidence-provenance regressions must each run once in Linux validation.'
 }
 if ([regex]::Matches($text, '(?m)^\s+value:\s+633398e2-6c00-4bb7-a576-2db0d210ee77\s*$').Count -ne 1 -or
     -not $text.Contains('- name: AZDEMO_SUBSCRIPTION_ID')) {
@@ -868,7 +870,6 @@ foreach ($deploymentBlock in @($migrateAndDeploy, $swap)) {
             'azureSubscription: sc-mtp-azure-demo-dev',
             "@('account', 'show'",
             "@('webapp', 'show'",
-            "@('webapp', 'deployment', 'slot', 'show'",
             "'--subscription', '`$(AZDEMO_SUBSCRIPTION_ID)'",
             "-ExpectedSubscriptionId '`$(AZDEMO_SUBSCRIPTION_ID)'",
             "-ExpectedResourceGroupName '`$(AZDEMO_RESOURCE_GROUP_NAME)'",
@@ -879,6 +880,42 @@ foreach ($deploymentBlock in @($migrateAndDeploy, $swap)) {
             throw "A protected smoke job is missing exact Azure target resolution through the general deployment connection: $fragment"
         }
     }
+}
+if ($text.Contains("@('webapp', 'deployment', 'slot', 'show'")) {
+    throw 'Pipeline retained the unsupported Azure CLI deployment slot show argument sequence.'
+}
+$productionQueries = @([regex]::Matches($text, '(?m)^\s+\$(?:web|api)Production = Invoke-AzJson (?<arguments>.+)$'))
+$slotQueries = @([regex]::Matches($text, '(?m)^\s+\$(?:web|api)Slot = Invoke-AzJson (?<arguments>.+)$'))
+if ($productionQueries.Count -ne 4 -or $slotQueries.Count -ne 4) {
+    throw 'Both protected callers must each retain exact web/API production and staging-slot queries.'
+}
+foreach ($query in $productionQueries) {
+    $arguments = $query.Groups['arguments'].Value
+    if (-not $arguments.StartsWith("@('webapp', 'show'", [StringComparison]::Ordinal) -or
+        $arguments.Contains("'--slot'") -or
+        -not $arguments.Contains("'--subscription', '`$(AZDEMO_SUBSCRIPTION_ID)'") -or
+        -not $arguments.Contains("'--resource-group', '`$(AZDEMO_RESOURCE_GROUP_NAME)'") -or
+        -not $arguments.Contains("'--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}'")) {
+        throw 'A production smoke-target query changed command, scope, projection or slot identity.'
+    }
+}
+foreach ($query in $slotQueries) {
+    $arguments = $query.Groups['arguments'].Value
+    if (-not $arguments.StartsWith("@('webapp', 'show'", [StringComparison]::Ordinal) -or
+        -not $arguments.Contains("'--slot', 'staging'") -or
+        -not $arguments.Contains("'--subscription', '`$(AZDEMO_SUBSCRIPTION_ID)'") -or
+        -not $arguments.Contains("'--resource-group', '`$(AZDEMO_RESOURCE_GROUP_NAME)'") -or
+        -not $arguments.Contains("'--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}'")) {
+        throw 'A staging smoke-target query changed command, scope, projection or slot identity.'
+    }
+}
+if ([regex]::Matches($text, 'function Invoke-AzJson\(\[string\[\]\] \$Arguments\)').Count -ne 2 -or
+    [regex]::Matches($text, '\$rows = @\(& az @Arguments 2> \$stderrPath\)').Count -ne 2 -or
+    [regex]::Matches($text, '(?m)^\s+\$exitCode = \$LASTEXITCODE\s*$').Count -ne 2 -or
+    [regex]::Matches($text, '(?m)^\s+finally \{\s*$').Count -lt 2 -or
+    [regex]::Matches($text, 'Remove-Item -LiteralPath \$stderrPath -Force').Count -ne 2 -or
+    $text.Contains('& az @Arguments 2>&1')) {
+    throw 'Both Azure JSON helpers must isolate stderr, capture native exit immediately and clean temporary files in finally.'
 }
 foreach ($legacyHostConstruction in @(
         'https://$(AZDEMO_WEB_APP_NAME)-staging.azurewebsites.net',
