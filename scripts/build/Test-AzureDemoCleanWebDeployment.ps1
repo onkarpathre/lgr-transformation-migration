@@ -165,7 +165,7 @@ exit 42
         throw 'Clean deployment evidence disclosed native Azure CLI stderr.'
     }
 
-    $successMessage = "Clean web deployment regression passed exact artifact selection, target rejection, synchronous clean CLI options and nonzero exit evidence for $($negativeTargets.Count) invalid targets."
+    $successMessage = "Clean web deployment regression passed exact artifact selection, target rejection, synchronous clean CLI options and expected exit-17 rejection evidence for $($negativeTargets.Count) invalid targets."
 }
 finally {
     $env:PATH = $originalPath

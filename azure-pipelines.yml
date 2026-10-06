@@ -132,8 +132,8 @@ stages:
       displayName: Smoke evidence provenance and substitution regression
     - pwsh: ./scripts/build/Test-AzureDemoAppliedApiHostConfiguration.ps1
       displayName: Applied API host-identity and slot-stickiness regression
-    - pwsh: ./scripts/build/Test-AzureDemoCleanWebDeployment.ps1
-      displayName: Clean web staging deployment target and CLI regression
+    - pwsh: ./scripts/build/Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1 -ExpectedSourceCommit '$(Build.SourceVersion)'
+      displayName: Clean web staging deployment process-boundary, target and CLI regression
     - pwsh: ./scripts/build/Test-AzureDemoDeployedContentVerification.ps1
       displayName: Exact deployed ZIP content and stale-file regression
     - pwsh: ./scripts/build/Test-AzureAppServiceNativeRuntimes.ps1

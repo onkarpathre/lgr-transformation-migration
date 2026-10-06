@@ -111,7 +111,7 @@ $requiredFragments = @(
     'Test-AzureDemoSmokeOrchestration.ps1',
     'Test-AzureDemoSmokeEvidence.ps1',
     'Test-AzureDemoAppliedApiHostConfiguration.ps1',
-    'Test-AzureDemoCleanWebDeployment.ps1',
+    'Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1',
     'Test-AzureDemoDeployedContentVerification.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
@@ -153,6 +153,15 @@ $requiredFragments = @(
 )
 foreach ($fragment in $requiredFragments) {
     if (-not $text.Contains($fragment)) { throw "Azure Pipelines YAML is missing required structure: $fragment" }
+}
+
+$validateStage = $text.Substring($text.IndexOf('- stage: Validate', [StringComparison]::Ordinal),
+    $text.IndexOf('- stage: Package', [StringComparison]::Ordinal) - $text.IndexOf('- stage: Validate', [StringComparison]::Ordinal))
+$cleanDeploymentProcessTask = "./scripts/build/Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1 -ExpectedSourceCommit '`$(Build.SourceVersion)'"
+if ([regex]::Matches($text, [regex]::Escape($cleanDeploymentProcessTask)).Count -ne 1 -or
+    -not $validateStage.Contains($cleanDeploymentProcessTask) -or
+    $text.Contains('- pwsh: ./scripts/build/Test-AzureDemoCleanWebDeployment.ps1')) {
+    throw 'The clean deployment regression must run once through its isolated generated-caller process boundary in Linux validation.'
 }
 
 $preDeploymentGateStart = $text.IndexOf('- stage: PreDeploymentGate', [StringComparison]::Ordinal)

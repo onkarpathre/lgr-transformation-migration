@@ -1840,6 +1840,124 @@ handoff:
 
 NEEDS_ARCHITECTURE_DECISION
 
+## Focused staging-path execution and process-boundary reconciliation
+
+### Baseline, role and traceability
+
+This bounded Developer investigation started on `fix/mtp-azure-demo-reconciliation` at exact HEAD `17c67ebc2dce731681245dd720d5577be7d209e7`. The branch matched the supplied last-known HEAD; the index and worktree were clean. No pending uncommitted repair existed to preserve. Nothing was reset, stashed, staged, committed or pushed, and no Azure, Azure DevOps, SQL, Entra, migration, seed, deployment, swap, rollback or endpoint action was performed.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-01", "C-11"]
+  functional_requirements: ["F-01", "F-02", "F-13", "F-14", "F-15"]
+  non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-07", "NF-10", "NF-12", "NF-13"]
+  risks: ["R-02", "R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-13", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-02", "Q-08"]
+  approvals: []
+```
+
+Q-01 remains closed for the approved Azure demo package scope. This change does not select a stack, change the S2 plan, apply infrastructure or alter a release decision. The existing architecture/cost reconciliation, Azure Platform/Operations approval, protected evidence and human release gates remain unchanged.
+
+### Confirmed execution path and branch attribution
+
+- `Validate` and `Package` run on `ubuntu-latest` after checkout for both `deployAzureDemo=false` and `deployAzureDemo=true`. `Validate` calls the applied-host regression, isolated clean-deployment process regression, deployed-content regression and pipeline structural regression. `Package` calls `New-AzureDemoPackages.ps1`, whose standalone server check exercises `/`, `/inventory/servers`, the fixed 404 route, CSP nonces and a hashed static asset before producing `web.zip` and `api.zip`.
+- `PreDeploymentGate` runs only after successful packaging when `deployAzureDemo=true`, the definition is exactly `mtp-azure-demo-deploy`, and the source branch is exactly `refs/heads/release/azure-demo-v1`. It performs prerequisite inventory, runtime validation and `az deployment group what-if`; it does not apply settings.
+- `MigrateAndDeploySlots` depends on the protected gate. Its existing `az deployment group create` is the approved apply mechanism. The immediately following task reads and validates the applied API staging settings before migration, seed or API start. API ZIP deployment precedes the clean web ZIP deployment; exact web and API content verification precedes staging smoke.
+- `azure-pipelines.yml` is identical between release baseline `7d6ad54` and supplied HEAD `17c67eb` for the affected task and parameter paths. The direct task therefore ran for both parameter values, but the test file differed: only `17c67eb` contains the prior explicit exit repair. A supplied run cannot be attributed to that repair without its source SHA and test-file hash.
+
+### Process-boundary correction
+
+`Validate` now calls `Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1` with `$(Build.SourceVersion)`. The regression constructs and dot-sources an Azure DevOps-style generated caller containing the normal `$LASTEXITCODE` epilogue. That caller invokes `Invoke-AzureDemoCleanWebDeploymentRegression.ps1`, which verifies the checked-out source SHA, emits the PowerShell runtime and exact test-file SHA-256, launches the existing clean-deployment regression in a separate PowerShell process, captures its exit code on the immediately following line and fails on any nonzero result.
+
+The boundary regression proves that the real success path returns outer exit `0`, while assertion, unexpected native exit, missing script and cleanup failure fixtures each return nonzero. The real regression still proves that Azure CLI exit `17` is rejected and recorded as failure evidence. `Invoke-AzureDemoCleanWebSlotDeployment.ps1` is unchanged; no blanket `ignoreLASTEXITCODE`, `continueOnError` or error suppression was added.
+
+### Deployment prerequisite findings
+
+The five new API keys are `AzureDemoHostIdentity__SlotName`, `AzureDemoHostIdentity__ApiResourceId`, `AzureDemoHostIdentity__ApiDefaultHostName`, `AzureDemoHostIdentity__WebResourceId` and `AzureDemoHostIdentity__WebDefaultHostName`. `infra/bicep/modules/appservice.bicep` maps them in both the production API configuration and staging API-slot configuration from the exact site/slot resource IDs and Azure-reported `defaultHostName` properties; all five are included in `apiSlots.properties.appSettingNames`. `AllowedHosts` and `AllowedOrigins__0` use the same trusted API/web host identities and are also slot-sticky.
+
+The protected apply is not missing: `az deployment group create` precedes `Assert-AzureDemoAppliedApiHostConfiguration.ps1`, and that applied-state assertion precedes API deployment. The earlier what-if remains a non-mutating review gate. No infrastructure command was invented or added.
+
+The clean web wrapper selects `application/web.zip` only after root-manifest, source-commit, application-manifest and SHA-256 validation. It supplies the exact approved subscription, resource group, web app and explicit `staging` slot to synchronous `az webapp deploy --type zip --clean true`; production and every unexpected target fail closed. Content reconciliation compares every non-dependency application path, size and SHA-256, including `.next/BUILD_ID`, `server.js`, server pages/chunks and static assets. Only `node_modules/` or the documented platform-compressed `node_modules` archive names are classified as dependencies; missing dependency payload, stale application bytes, unexpected application files and missing chunks still fail.
+
+### Verification and evidence boundary
+
+| Check | Result |
+|---|---|
+| Windows PowerShell process boundary | Supplemental PASS, `5.1.26100.9444`, outer exit `0`: source SHA `17c67ebc2dce731681245dd720d5577be7d209e7`, real child exit `0`, generated-caller outer exit `0`; assertion/native/missing/cleanup outer exits were each `1`. The real regression retained expected exit-17 rejection. |
+| Applied API configuration regression | Supplemental PASS, outer exit `0`: one valid and six fail-closed applied-setting/slot-stickiness cases. |
+| Deployed-content regression | Supplemental PASS, outer exit `0`: exact SHA-256, deterministic timestamp/size collision, dependency compression, stale content, missing square-bracket chunk and changed build ID. |
+| Pipeline/source contracts | Supplemental PASS, outer exit `0`: seven stages and 205 source/configuration files. |
+| Focused API host tests | Supplemental PASS on .NET SDK `10.0.401`: 55 unit and 4 integration tests, both outer exit `0`. NuGet advisory retrieval remained unavailable (`NU1900`), so no vulnerability-clean claim is made. |
+| Linux PowerShell 7 focused sequence | ARRANGED, NOT YET EVIDENCED: the existing unprotected `Validate` job runs the real process-boundary, applied-configuration and content regressions on `ubuntu-latest`; the `IaC` job compiles Bicep and both parameter files; `Package` builds and starts the standalone production web package and exercises the required routes/CSP. |
+| Local Linux/Bicep | UNAVAILABLE: `pwsh`, Docker, an installed WSL distribution, `az` and `bicep` are absent. Windows results are not Linux proof. |
+| Live staging content and health | NOT RUN: clean deployment and exact content verification remain unproved against live Azure. |
+
+### Ordered protected staging procedure and blockers
+
+1. Run `Validate`, `IaC` and `Package` on one reviewed exact source SHA; retain the emitted runtime/test hash/child and outer exit diagnostics, Bicep compilation, immutable artifact manifest and standalone route/CSP results.
+2. Obtain the unchanged architecture/Product decision for the live S2 plan, Azure Platform/Operations pre-deployment approval and all existing protected environment/service-connection prerequisites. Confirm durable SQL bootstrap evidence and reviewed migration/seed prerequisites before authorising the protected run.
+3. Queue only `mtp-azure-demo-deploy` from `release/azure-demo-v1` with `deployAzureDemo=true`. Review the protected prerequisite inventory and Bicep what-if; do not treat what-if as apply.
+4. Allow the existing reviewed `az deployment group create` to apply the complete Bicep configuration. Require the subsequent applied-state preflight to match the exact staging resource IDs, generated hostnames, host/origin settings, remote-build setting and slot stickiness before any API start.
+5. Revalidate this run's immutable artifact, then execute the separately governed SQL checkpoint/migration/seed steps. Deploy the API ZIP to `staging`, clean-deploy the current run's selected immutable web ZIP to `staging`, and publish deployment evidence even on failure.
+6. Require exact deployed-content reconciliation for both web and API, then resolve exact staging smoke targets and exercise health plus `/`, `/inventory/servers`, fixed 404 and CSP behavior. Stop on any mismatch; do not proceed to release approval or swap.
+7. Keep protected smoke evidence ingestion and first-release SMK-19 rollback evidence as separate release requirements. Even healthy staging does not satisfy them and does not authorise production swap.
+
+Application-health blockers are the unexecuted Linux/PowerShell 7, Bicep compile, immutable package server, live applied-setting/content and protected staging smoke evidence. Production-release blockers remain the separate protected evidence-delivery decision, genuine previous-release/SMK-19 rollback evidence, independent Tester and Quality records, and named human release approval.
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "architect"
+  state: "NEEDS_ARCHITECTURE_DECISION"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_17c67ebc2dce731681245dd720d5577be7d209e7"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01", "C-11"]
+    functional_requirements: ["F-01", "F-02", "F-13", "F-14", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-06", "NF-07", "NF-10", "NF-12", "NF-13"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-13", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-02", "Q-08"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/build/Invoke-AzureDemoCleanWebDeploymentRegression.ps1"
+    - "scripts/build/Test-AzureDemoCleanWebDeployment.ps1"
+    - "scripts/build/Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Focused supplemental Windows process/configuration/content/source and API host tests pass with recorded outer exits."
+    - "Required Linux validation, Bicep compilation and production standalone route/CSP checks are pinned to existing unprotected ubuntu-latest jobs but have not yet run on this worktree."
+  decisions:
+    - "Isolate the clean deployment regression in its own PowerShell process and test the complete generated caller boundary."
+    - "Use the existing protected Bicep apply and applied-state preflight; do not add an infrastructure deployment path."
+    - "Keep application-health evidence separate from protected production-release evidence."
+  assumptions: []
+  risks:
+    - "No Linux/PowerShell 7, Bicep compilation or live Azure content evidence exists for this uncommitted worktree."
+    - "The live S2 plan remains unchanged and still requires the recorded architecture/Product reconciliation."
+  defects:
+    - "REPAIRED LOCALLY: the validation task shared native process state with a regression that deliberately exercised Azure CLI exit 17."
+  blockers:
+    - "Architecture/Product and Azure Platform/Operations decisions remain pending for a protected staging attempt."
+    - "Protected smoke ingestion and genuine first-release rollback evidence remain separate unresolved release blockers."
+  approvals: []
+  requested_action: "Run the exact changed SHA through the existing unprotected Linux Validate/IaC/Package jobs, then obtain the unchanged architecture and platform decisions before any protected staging attempt."
+```
+
+NEEDS_ARCHITECTURE_DECISION
+
 ## Staging smoke orchestration execution and diagnostic repair
 
 ### Baseline, role, scope and traceability
@@ -3075,6 +3193,6 @@ READY_FOR_TEST
 
 ## Current worktree terminal state - staging reconciliation
 
-The latest worktree continuation is the section **Azure demo staging clean-deployment and exact-content reconciliation** above, based on exact HEAD `1b29e4e0fcce4a2f110c065d47ad9c1516944676`. Its local implementation and regressions are complete, but its hand-off supersedes older terminal markers in this cumulative document because the supplied live S2 plan conflicts with the approved S1 design/cost baseline and Azure Platform/Operations approval is still pending.
+The latest worktree continuation is the section **Focused staging-path execution and process-boundary reconciliation** above, based on exact HEAD `17c67ebc2dce731681245dd720d5577be7d209e7`. Its focused local implementation and supplemental regressions pass, and the unavailable Linux/PowerShell 7, Bicep and production-package checks are pinned to existing unprotected `ubuntu-latest` jobs. This hand-off supersedes older terminal markers in this cumulative document. It does not override the unchanged architecture/Product decision for the supplied live S2 plan, Azure Platform/Operations approval, protected smoke evidence, first-release rollback evidence or human release gates.
 
 NEEDS_ARCHITECTURE_DECISION
