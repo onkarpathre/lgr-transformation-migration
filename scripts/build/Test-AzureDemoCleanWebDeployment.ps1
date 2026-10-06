@@ -25,20 +25,24 @@ function New-TextFile([string] $Root, [string] $RelativePath, [string] $Content)
     [IO.File]::WriteAllText($path, $Content, [Text.UTF8Encoding]::new($false))
 }
 
-function Assert-FixturePreflightPrerequisites([string] $FixtureArtifactRoot, [string] $ManifestPath) {
+function Assert-FixturePreflightPrerequisites(
+    [string] $FixtureArtifactRoot,
+    [string] $ManifestPath,
+    [ValidateSet('Web', 'Api')] [string] $Workload) {
+    $appName = if ($Workload -ceq 'Web') { 'app-mtp-web-dev-uks-001' } else { 'app-mtp-api-dev-uks-001' }
     Assert-AzureDemoStagingTarget `
         -SubscriptionId '633398e2-6c00-4bb7-a576-2db0d210ee77' `
         -ResourceGroupName 'Onkar.Pathre' `
-        -Workload Web `
-        -AppName 'app-mtp-web-dev-uks-001' `
+        -Workload $Workload `
+        -AppName $appName `
         -SlotName 'staging' `
         -Account ([pscustomobject]@{ id = '633398e2-6c00-4bb7-a576-2db0d210ee77' }) `
         -Resource ([pscustomobject]@{
-            id = '/subscriptions/633398e2-6c00-4bb7-a576-2db0d210ee77/resourceGroups/Onkar.Pathre/providers/Microsoft.Web/sites/app-mtp-web-dev-uks-001/slots/staging'
-            name = 'app-mtp-web-dev-uks-001/staging'
+            id = "/subscriptions/633398e2-6c00-4bb7-a576-2db0d210ee77/resourceGroups/Onkar.Pathre/providers/Microsoft.Web/sites/$appName/slots/staging"
+            name = "$appName/staging"
             resourceGroup = 'Onkar.Pathre'
             type = 'Microsoft.Web/sites/slots'
-            defaultHostName = 'app-mtp-web-dev-uks-001-staging.azurewebsites.net'
+            defaultHostName = "$appName-staging.azurewebsites.net"
         }) | Out-Null
     Assert-AzureDemoDeploymentArtifact -ArtifactRoot $FixtureArtifactRoot -ManifestPath $ManifestPath `
         -ExpectedSourceCommit $sourceCommit | Out-Null
@@ -100,7 +104,11 @@ try {
             $timestampContract,
             [Globalization.CultureInfo]::InvariantCulture,
             [Globalization.DateTimeStyles]::RoundtripKind),
-        $expectedTimestamp
+        $expectedTimestamp,
+        [DateTimeOffset]::Parse(
+            '2026-10-06T13:34:56.0000000+01:00',
+            [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::RoundtripKind)
     )
     foreach ($timestampInput in $timestampInputs) {
         $normalizedTimestamp = ConvertTo-AzureDemoManifestUtcTimestamp -Value $timestampInput
@@ -124,7 +132,8 @@ try {
     New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $webZip `
         -EntryTimestamp $fixtureTimestamp
     $apiZip = Join-Path $applicationRoot 'api.zip'
-    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $apiZip
+    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $apiZip `
+        -EntryTimestamp $fixtureTimestamp
     [ordered]@{
         schemaVersion = '1'
         sourceCommit = $sourceCommit
@@ -137,6 +146,18 @@ try {
         )
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $applicationRoot 'application-artifact-manifest.json') -Encoding UTF8
     $deploymentManifest = New-AzureDemoDeploymentArtifactManifest -ArtifactRoot $artifactRoot -SourceCommit $sourceCommit
+    $validPreflights = @{}
+    foreach ($workload in @('Web', 'Api')) {
+        Assert-FixturePreflightPrerequisites -FixtureArtifactRoot $artifactRoot `
+            -ManifestPath $deploymentManifest -Workload $workload
+        $validPreflights[$workload] = Assert-AzureDemoApplicationArtifact `
+            -ArtifactRoot $artifactRoot -Workload $workload -ExpectedSourceCommit $sourceCommit
+    }
+    if ([string]::IsNullOrWhiteSpace([string] $validPreflights.Web.EntryTimestamp) -or
+        [string] $validPreflights.Web.EntryTimestamp -cne [string] $validPreflights.Api.EntryTimestamp) {
+        throw 'Valid API and Web preflights did not retain one manifest-bound package timestamp.'
+    }
+    Write-Output "Valid timestamp preflight diagnostic: web=$($validPreflights.Web.EntryTimestamp); api=$($validPreflights.Api.EntryTimestamp)."
 
     $legacyArtifactRoot = Join-Path $temporaryDirectory 'legacy-artifact'
     $legacyApplicationRoot = Join-Path $legacyArtifactRoot 'application'
@@ -157,20 +178,77 @@ try {
         )
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $legacyApplicationRoot 'application-artifact-manifest.json') -Encoding UTF8
     $legacyDeploymentManifest = New-AzureDemoDeploymentArtifactManifest -ArtifactRoot $legacyArtifactRoot -SourceCommit $sourceCommit
-    Assert-FixturePreflightPrerequisites -FixtureArtifactRoot $legacyArtifactRoot -ManifestPath $legacyDeploymentManifest
-    $legacyRejection = $null
+    foreach ($legacyCase in @(
+            @{ Workload = 'Web'; ErrorId = 'AzureDemo.ApplicationArtifact.WebEntryTimestampInvalid'; Category = 'web-entry-timestamp-invalid' },
+            @{ Workload = 'Api'; ErrorId = 'AzureDemo.ApplicationArtifact.ApiEntryTimestampInvalid'; Category = 'api-entry-timestamp-invalid' })) {
+        Assert-FixturePreflightPrerequisites -FixtureArtifactRoot $legacyArtifactRoot `
+            -ManifestPath $legacyDeploymentManifest -Workload $legacyCase.Workload
+        $legacyRejection = $null
+        try {
+            Assert-AzureDemoApplicationArtifact -ArtifactRoot $legacyArtifactRoot -Workload $legacyCase.Workload `
+                -ExpectedSourceCommit $sourceCommit | Out-Null
+        }
+        catch { $legacyRejection = $_ }
+        $legacyDiagnostic = Assert-FixtureRejection `
+            -Name "$($legacyCase.Workload) legacy fixed-timestamp preflight" `
+            -ErrorRecord $legacyRejection `
+            -ExpectedErrorId $legacyCase.ErrorId `
+            -ExpectedCategory $legacyCase.Category
+        Write-Output ("{0} legacy timestamp rejection diagnostic: exceptionType={1}; fullyQualifiedErrorId={2}; rejectionCategory={3}." -f `
+                $legacyCase.Workload, $legacyDiagnostic.ExceptionType,
+                $legacyDiagnostic.FullyQualifiedErrorId, $legacyDiagnostic.RejectionCategory)
+    }
+
+    $nonUniformArtifactRoot = Join-Path $temporaryDirectory 'non-uniform-artifact'
+    $nonUniformApplicationRoot = Join-Path $nonUniformArtifactRoot 'application'
+    New-Item -ItemType Directory -Path $nonUniformApplicationRoot -Force | Out-Null
+    $nonUniformWebZip = Join-Path $nonUniformApplicationRoot 'web.zip'
+    $nonUniformApiZip = Join-Path $nonUniformApplicationRoot 'api.zip'
+    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $nonUniformWebZip `
+        -EntryTimestamp $fixtureTimestamp
+    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $nonUniformApiZip `
+        -EntryTimestamp $fixtureTimestamp
+    $nonUniformStream = [IO.File]::Open($nonUniformApiZip, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    $nonUniformArchive = $null
     try {
-        Assert-AzureDemoApplicationArtifact -ArtifactRoot $legacyArtifactRoot -Workload Web `
+        $nonUniformArchive = [IO.Compression.ZipArchive]::new(
+            $nonUniformStream, [IO.Compression.ZipArchiveMode]::Update, $false)
+        $nonUniformArchive.Entries[0].LastWriteTime = ConvertTo-AzureDemoZipEntryTimestamp `
+            -Timestamp $fixtureTimestamp.AddSeconds(2)
+    }
+    finally {
+        if ($null -ne $nonUniformArchive) { $nonUniformArchive.Dispose() }
+        $nonUniformStream.Dispose()
+    }
+    [ordered]@{
+        schemaVersion = '1'
+        sourceCommit = $sourceCommit
+        createdAtUtc = $fixtureTimestamp.ToString('O')
+        nodeVersion = 'v24.0.0'
+        dotnetSdkVersion = '10.0.100'
+        artifacts = @(
+            [ordered]@{ name = 'api.zip'; sha256 = (Get-FileHash $nonUniformApiZip -Algorithm SHA256).Hash.ToLowerInvariant() },
+            [ordered]@{ name = 'web.zip'; sha256 = (Get-FileHash $nonUniformWebZip -Algorithm SHA256).Hash.ToLowerInvariant() }
+        )
+    } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $nonUniformApplicationRoot 'application-artifact-manifest.json') -Encoding UTF8
+    $nonUniformDeploymentManifest = New-AzureDemoDeploymentArtifactManifest `
+        -ArtifactRoot $nonUniformArtifactRoot -SourceCommit $sourceCommit
+    Assert-FixturePreflightPrerequisites -FixtureArtifactRoot $nonUniformArtifactRoot `
+        -ManifestPath $nonUniformDeploymentManifest -Workload Api
+    $nonUniformRejection = $null
+    try {
+        Assert-AzureDemoApplicationArtifact -ArtifactRoot $nonUniformArtifactRoot -Workload Api `
             -ExpectedSourceCommit $sourceCommit | Out-Null
     }
-    catch { $legacyRejection = $_ }
-    $legacyDiagnostic = Assert-FixtureRejection `
-        -Name 'Clean deployment legacy fixed-timestamp preflight' `
-        -ErrorRecord $legacyRejection `
-        -ExpectedErrorId 'AzureDemo.ApplicationArtifact.WebEntryTimestampInvalid' `
-        -ExpectedCategory 'web-entry-timestamp-invalid'
-    Write-Output ("Legacy timestamp rejection diagnostic: exceptionType={0}; fullyQualifiedErrorId={1}; rejectionCategory={2}." -f `
-            $legacyDiagnostic.ExceptionType, $legacyDiagnostic.FullyQualifiedErrorId, $legacyDiagnostic.RejectionCategory)
+    catch { $nonUniformRejection = $_ }
+    $nonUniformDiagnostic = Assert-FixtureRejection `
+        -Name 'API non-uniform timestamp preflight' `
+        -ErrorRecord $nonUniformRejection `
+        -ExpectedErrorId 'AzureDemo.ApplicationArtifact.ApiEntryTimestampInvalid' `
+        -ExpectedCategory 'api-entry-timestamp-invalid'
+    Write-Output ("API non-uniform timestamp rejection diagnostic: exceptionType={0}; fullyQualifiedErrorId={1}; rejectionCategory={2}." -f `
+            $nonUniformDiagnostic.ExceptionType, $nonUniformDiagnostic.FullyQualifiedErrorId,
+            $nonUniformDiagnostic.RejectionCategory)
 
     $hashInvalidArtifactRoot = Join-Path $temporaryDirectory 'hash-invalid-artifact'
     $hashInvalidApplicationRoot = Join-Path $hashInvalidArtifactRoot 'application'
@@ -179,7 +257,8 @@ try {
     New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $hashInvalidWebZip `
         -EntryTimestamp $fixtureTimestamp
     $hashInvalidApiZip = Join-Path $hashInvalidApplicationRoot 'api.zip'
-    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $hashInvalidApiZip
+    New-AzureDemoDeterministicZip -SourceDirectory $stageRoot -DestinationPath $hashInvalidApiZip `
+        -EntryTimestamp $fixtureTimestamp
     [ordered]@{
         schemaVersion = '1'
         sourceCommit = $sourceCommit
@@ -187,25 +266,29 @@ try {
         nodeVersion = 'v24.0.0'
         dotnetSdkVersion = '10.0.100'
         artifacts = @(
-            [ordered]@{ name = 'api.zip'; sha256 = (Get-FileHash $hashInvalidApiZip -Algorithm SHA256).Hash.ToLowerInvariant() },
+            [ordered]@{ name = 'api.zip'; sha256 = ('0' * 64) },
             [ordered]@{ name = 'web.zip'; sha256 = ('0' * 64) }
         )
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $hashInvalidApplicationRoot 'application-artifact-manifest.json') -Encoding UTF8
     $hashInvalidDeploymentManifest = New-AzureDemoDeploymentArtifactManifest -ArtifactRoot $hashInvalidArtifactRoot -SourceCommit $sourceCommit
-    Assert-FixturePreflightPrerequisites -FixtureArtifactRoot $hashInvalidArtifactRoot -ManifestPath $hashInvalidDeploymentManifest
-    $hashInvalidRejection = $null
-    try {
-        Assert-AzureDemoApplicationArtifact -ArtifactRoot $hashInvalidArtifactRoot -Workload Web `
-            -ExpectedSourceCommit $sourceCommit | Out-Null
+    foreach ($workload in @('Web', 'Api')) {
+        Assert-FixturePreflightPrerequisites -FixtureArtifactRoot $hashInvalidArtifactRoot `
+            -ManifestPath $hashInvalidDeploymentManifest -Workload $workload
+        $hashInvalidRejection = $null
+        try {
+            Assert-AzureDemoApplicationArtifact -ArtifactRoot $hashInvalidArtifactRoot -Workload $workload `
+                -ExpectedSourceCommit $sourceCommit | Out-Null
+        }
+        catch { $hashInvalidRejection = $_ }
+        $hashInvalidDiagnostic = Assert-FixtureRejection `
+            -Name "$workload immutable hash preflight" `
+            -ErrorRecord $hashInvalidRejection `
+            -ExpectedErrorId 'AzureDemo.ApplicationArtifact.ZipHashMismatch' `
+            -ExpectedCategory 'immutable-zip-hash-mismatch'
+        Write-Output ("{0} hash mismatch rejection diagnostic: exceptionType={1}; fullyQualifiedErrorId={2}; rejectionCategory={3}." -f `
+                $workload, $hashInvalidDiagnostic.ExceptionType,
+                $hashInvalidDiagnostic.FullyQualifiedErrorId, $hashInvalidDiagnostic.RejectionCategory)
     }
-    catch { $hashInvalidRejection = $_ }
-    $hashInvalidDiagnostic = Assert-FixtureRejection `
-        -Name 'Clean deployment immutable hash preflight' `
-        -ErrorRecord $hashInvalidRejection `
-        -ExpectedErrorId 'AzureDemo.ApplicationArtifact.ZipHashMismatch' `
-        -ExpectedCategory 'immutable-zip-hash-mismatch'
-    Write-Output ("Hash mismatch rejection diagnostic: exceptionType={0}; fullyQualifiedErrorId={1}; rejectionCategory={2}." -f `
-            $hashInvalidDiagnostic.ExceptionType, $hashInvalidDiagnostic.FullyQualifiedErrorId, $hashInvalidDiagnostic.RejectionCategory)
 
     $stubScript = Join-Path $temporaryDirectory 'az-stub.ps1'
     $stubBody = @'
@@ -331,7 +414,7 @@ exit 42
         throw 'Clean deployment evidence disclosed native Azure CLI stderr.'
     }
 
-    $successMessage = "Clean web deployment regression passed exact artifact selection, structured timestamp/hash rejection, target rejection, synchronous clean CLI options and expected exit-17 rejection evidence for $($negativeTargets.Count) invalid targets."
+    $successMessage = "Clean web deployment regression passed valid API/Web timestamp preflights, structured API/Web legacy timestamp and hash rejection, target rejection, synchronous clean CLI options and expected exit-17 rejection evidence for $($negativeTargets.Count) invalid targets."
 }
 finally {
     $env:PATH = $originalPath

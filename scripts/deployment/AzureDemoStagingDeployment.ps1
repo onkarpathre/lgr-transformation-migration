@@ -152,6 +152,38 @@ function ConvertTo-AzureDemoManifestUtcTimestamp {
     return $timestamp.ToUniversalTime()
 }
 
+function ConvertTo-AzureDemoZipUtcWallClockTimestamp {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [DateTimeOffset] $Timestamp)
+
+    $utcTimestamp = $Timestamp.ToUniversalTime()
+    # ZIP persists timezone-free DOS wall-clock fields at two-second precision.
+    # Treat those fields as UTC components; do not apply the validation host's
+    # local timezone when binding an entry to manifest createdAtUtc.
+    return [DateTimeOffset]::new(
+        $utcTimestamp.Year,
+        $utcTimestamp.Month,
+        $utcTimestamp.Day,
+        $utcTimestamp.Hour,
+        $utcTimestamp.Minute,
+        ($utcTimestamp.Second - ($utcTimestamp.Second % 2)),
+        [TimeSpan]::Zero)
+}
+
+function ConvertFrom-AzureDemoZipEntryWallClockTimestamp {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [DateTimeOffset] $Timestamp)
+
+    return [DateTimeOffset]::new(
+        $Timestamp.Year,
+        $Timestamp.Month,
+        $Timestamp.Day,
+        $Timestamp.Hour,
+        $Timestamp.Minute,
+        $Timestamp.Second,
+        [TimeSpan]::Zero)
+}
+
 function New-AzureDemoApplicationArtifactErrorRecord {
     [CmdletBinding()]
     param(
@@ -219,48 +251,49 @@ function Assert-AzureDemoApplicationArtifact {
                     -ArtifactName $artifactName))
     }
 
+    $manifestCreatedAt = ConvertTo-AzureDemoManifestUtcTimestamp -Value $manifest.createdAtUtc
+    if ($null -eq $manifestCreatedAt) {
+        $PSCmdlet.ThrowTerminatingError((New-AzureDemoApplicationArtifactErrorRecord `
+                    -ErrorId 'AzureDemo.ApplicationArtifact.ManifestCreatedAtUtcInvalid' `
+                    -RejectionCategory 'manifest-created-at-invalid' `
+                    -Message "$Workload application artifact manifest createdAtUtc is invalid." `
+                    -ArtifactName $artifactName))
+    }
+
+    $timestampErrorId = if ($Workload -ceq 'Web') {
+        'AzureDemo.ApplicationArtifact.WebEntryTimestampInvalid'
+    }
+    else { 'AzureDemo.ApplicationArtifact.ApiEntryTimestampInvalid' }
+    $timestampRejectionCategory = if ($Workload -ceq 'Web') {
+        'web-entry-timestamp-invalid'
+    }
+    else { 'api-entry-timestamp-invalid' }
     $entryTimestamp = $null
-    if ($Workload -ceq 'Web') {
-        $manifestCreatedAt = ConvertTo-AzureDemoManifestUtcTimestamp -Value $manifest.createdAtUtc
-        if ($null -eq $manifestCreatedAt) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $artifactPath).ProviderPath)
+    try {
+        $fileEntries = @($archive.Entries | Where-Object {
+                -not $_.FullName.Replace('\', '/').EndsWith('/', [StringComparison]::Ordinal)
+            })
+        $timestamps = @($fileEntries | ForEach-Object {
+                $_.LastWriteTime.DateTime.ToString('yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+            } | Sort-Object -Unique)
+        $expectedEntryTimestamp = ConvertTo-AzureDemoZipUtcWallClockTimestamp -Timestamp $manifestCreatedAt
+        $actualEntryTimestamp = if ($fileEntries.Count -eq 0) {
+            $null
+        }
+        else { ConvertFrom-AzureDemoZipEntryWallClockTimestamp -Timestamp $fileEntries[0].LastWriteTime }
+        if ($fileEntries.Count -eq 0 -or $timestamps.Count -ne 1 -or
+            $actualEntryTimestamp.Year -lt 2020 -or $actualEntryTimestamp -ne $expectedEntryTimestamp) {
             $PSCmdlet.ThrowTerminatingError((New-AzureDemoApplicationArtifactErrorRecord `
-                        -ErrorId 'AzureDemo.ApplicationArtifact.ManifestCreatedAtUtcInvalid' `
-                        -RejectionCategory 'manifest-created-at-invalid' `
-                        -Message 'Web application artifact manifest createdAtUtc is invalid.' `
+                        -ErrorId $timestampErrorId `
+                        -RejectionCategory $timestampRejectionCategory `
+                        -Message "$Workload ZIP must use one package-creation entry timestamp bound to manifest createdAtUtc; legacy fixed timestamps are rejected." `
                         -ArtifactName $artifactName))
         }
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $artifactPath).ProviderPath)
-        try {
-            $fileEntries = @($archive.Entries | Where-Object {
-                    -not $_.FullName.Replace('\', '/').EndsWith('/', [StringComparison]::Ordinal)
-                })
-            if ($fileEntries.Count -eq 0) { throw 'Web ZIP contains no files.' }
-            $timestamps = @($fileEntries | ForEach-Object {
-                    $_.LastWriteTime.DateTime.ToString('yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
-                } | Sort-Object -Unique)
-            $firstTimestamp = $fileEntries[0].LastWriteTime
-            $entryTimestampUtcWallClock = [DateTimeOffset]::new(
-                $firstTimestamp.Year,
-                $firstTimestamp.Month,
-                $firstTimestamp.Day,
-                $firstTimestamp.Hour,
-                $firstTimestamp.Minute,
-                $firstTimestamp.Second,
-                [TimeSpan]::Zero)
-            $manifestTimestampDifference = [Math]::Abs(
-                ($manifestCreatedAt - $entryTimestampUtcWallClock).TotalMinutes)
-            if ($timestamps.Count -ne 1 -or $firstTimestamp.Year -lt 2020 -or $manifestTimestampDifference -gt 5) {
-                $PSCmdlet.ThrowTerminatingError((New-AzureDemoApplicationArtifactErrorRecord `
-                            -ErrorId 'AzureDemo.ApplicationArtifact.WebEntryTimestampInvalid' `
-                            -RejectionCategory 'web-entry-timestamp-invalid' `
-                            -Message 'Web ZIP must use one deployment-specific entry timestamp instead of the fixed deterministic timestamp.' `
-                            -ArtifactName $artifactName))
-            }
-            $entryTimestamp = $timestamps[0]
-        }
-        finally { $archive.Dispose() }
+        $entryTimestamp = $timestamps[0]
     }
+    finally { $archive.Dispose() }
 
     return [pscustomobject]@{
         Path = (Resolve-Path -LiteralPath $artifactPath).ProviderPath

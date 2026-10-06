@@ -103,9 +103,14 @@ finally {
             "runtimeVersion=$expectedRuntime",
             "testFileSha256=$expectedHash",
             'childExitCode=0',
-            'Legacy timestamp rejection diagnostic:',
+            'Valid timestamp preflight diagnostic:',
+            'Web legacy timestamp rejection diagnostic:',
             'rejectionCategory=web-entry-timestamp-invalid',
-            'Hash mismatch rejection diagnostic:',
+            'Api legacy timestamp rejection diagnostic:',
+            'rejectionCategory=api-entry-timestamp-invalid',
+            'API non-uniform timestamp rejection diagnostic:',
+            'Web hash mismatch rejection diagnostic:',
+            'Api hash mismatch rejection diagnostic:',
             'rejectionCategory=immutable-zip-hash-mismatch',
             'Clean web deployment regression passed')) {
         if ($actual.Stdout.IndexOf($fragment, [StringComparison]::Ordinal) -lt 0) {

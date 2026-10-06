@@ -62,6 +62,30 @@ function Assert-AzureDemoRepositoryOutputPath {
     return $output
 }
 
+function ConvertTo-AzureDemoZipEntryTimestamp {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [DateTimeOffset] $Timestamp)
+
+    if ($Timestamp.Offset -ne [TimeSpan]::Zero) {
+        throw 'ZIP entry timestamp must use a UTC offset.'
+    }
+    if ($Timestamp.Year -lt 1980 -or $Timestamp.Year -gt 2107) {
+        throw 'ZIP entry timestamp must be within the supported DOS date range.'
+    }
+
+    # ZIP stores a timezone-free DOS wall clock at two-second precision. The
+    # application-package contract writes UTC components and deliberately
+    # truncates, rather than converts, those components for serialization.
+    return [DateTimeOffset]::new(
+        $Timestamp.Year,
+        $Timestamp.Month,
+        $Timestamp.Day,
+        $Timestamp.Hour,
+        $Timestamp.Minute,
+        ($Timestamp.Second - ($Timestamp.Second % 2)),
+        [TimeSpan]::Zero)
+}
+
 function New-AzureDemoDeterministicZip {
     [CmdletBinding()]
     param(
@@ -96,20 +120,7 @@ function New-AzureDemoDeterministicZip {
     if ($EntryTimestamp -eq [DateTimeOffset]::MinValue) {
         $EntryTimestamp = [DateTimeOffset]::Parse('1980-01-01T00:00:00+00:00', [Globalization.CultureInfo]::InvariantCulture)
     }
-    if ($EntryTimestamp.Offset -ne [TimeSpan]::Zero) {
-        throw 'ZIP entry timestamp must use a UTC offset.'
-    }
-    if ($EntryTimestamp.Year -lt 1980 -or $EntryTimestamp.Year -gt 2107) {
-        throw 'ZIP entry timestamp must be within the supported DOS date range.'
-    }
-    $zipTimestamp = [DateTimeOffset]::new(
-        $EntryTimestamp.Year,
-        $EntryTimestamp.Month,
-        $EntryTimestamp.Day,
-        $EntryTimestamp.Hour,
-        $EntryTimestamp.Minute,
-        ($EntryTimestamp.Second - ($EntryTimestamp.Second % 2)),
-        [TimeSpan]::Zero)
+    $zipTimestamp = ConvertTo-AzureDemoZipEntryTimestamp -Timestamp $EntryTimestamp
     $fileStream = [IO.File]::Open($destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     $archive = $null
     try {

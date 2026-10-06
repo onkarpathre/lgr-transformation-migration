@@ -166,22 +166,26 @@ if ([regex]::Matches($text, [regex]::Escape($webDeploymentRegressionTask)).Count
     -not $packageStageForWebRegression.Contains($webDeploymentRegressionTask) -or
     -not $packageStageForWebRegression.Contains('pool: { vmImage: ubuntu-latest }') -or
     $text.Contains('continueOnError:')) {
-    throw 'The web deployment regression chain must run exactly once on unprotected Ubuntu CI without continueOnError.'
+    throw 'The application deployment regression chain must run exactly once on unprotected Ubuntu CI without continueOnError.'
 }
 foreach ($standaloneRegression in @(
         'Test-AzureDemoLinuxWebDeploymentTimestamp.ps1',
+        'Test-AzureDemoLinuxApiDeploymentTimestamp.ps1',
+        'Test-AzureDemoPackageTimestampSemantics.ps1',
         'Test-AzureDemoCleanWebDeployment.ps1',
         'Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1',
         'Test-AzureDemoDeployedContentVerification.ps1',
         'Test-AzureDemoPackageGeneration.ps1',
         'Test-AzurePipelineStructure.ps1')) {
     if ($text -match ('(?m)^\s*- pwsh: .*' + [regex]::Escape($standaloneRegression))) {
-        throw "The pipeline must execute $standaloneRegression only through the collecting web deployment regression chain."
+        throw "The pipeline must execute $standaloneRegression only through the collecting application deployment regression chain."
     }
 }
 $previousRegressionIndex = -1
 foreach ($collectedRegression in @(
         'Test-AzureDemoLinuxWebDeploymentTimestamp.ps1',
+        'Test-AzureDemoLinuxApiDeploymentTimestamp.ps1',
+        'Test-AzureDemoPackageTimestampSemantics.ps1',
         'Test-AzureDemoCleanWebDeployment.ps1',
         'Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1',
         'Test-AzureDemoDeployedContentVerification.ps1',
@@ -189,7 +193,7 @@ foreach ($collectedRegression in @(
         'Test-AzurePipelineStructure.ps1')) {
     $regressionIndex = $webDeploymentRegressionChainScript.IndexOf($collectedRegression, [StringComparison]::Ordinal)
     if ($regressionIndex -le $previousRegressionIndex) {
-        throw "The collecting web deployment regression chain is missing or misorders $collectedRegression."
+        throw "The collecting application deployment regression chain is missing or misorders $collectedRegression."
     }
     $previousRegressionIndex = $regressionIndex
 }
@@ -200,7 +204,7 @@ foreach ($collectorControl in @(
         'failed after all checks completed',
         'exit 1')) {
     if (-not $webDeploymentRegressionChainScript.Contains($collectorControl)) {
-        throw "The web deployment regression chain is missing failure-collection control: $collectorControl"
+        throw "The application deployment regression chain is missing failure-collection control: $collectorControl"
     }
 }
 
@@ -209,12 +213,17 @@ if ($text.Contains($unsupportedFileTimeSetting) -or $appServiceBicep.Contains($u
     throw 'The unsupported Linux OneDeploy file-time setting must not be added to pipeline or Bicep configuration.'
 }
 foreach ($fragment in @(
-        '$webDeploymentTimestamp = [DateTimeOffset]::UtcNow',
-        '-EntryTimestamp $webDeploymentTimestamp',
-        'createdAtUtc = $webDeploymentTimestamp.ToString(''O'')')) {
+        '$applicationPackageTimestamp = [DateTimeOffset]::UtcNow',
+        'New-AzureDemoDeterministicZip -SourceDirectory $apiStage -DestinationPath $apiZip',
+        'New-AzureDemoDeterministicZip -SourceDirectory $webStage -DestinationPath $webZip',
+        '-EntryTimestamp $applicationPackageTimestamp',
+        'createdAtUtc = $applicationPackageTimestamp.ToString(''O'')')) {
     if (-not $applicationPackageScript.Contains($fragment)) {
-        throw "Web packaging is missing its deployment-specific immutable ZIP timestamp contract: $fragment"
+        throw "Application packaging is missing its shared immutable ZIP timestamp contract: $fragment"
     }
+}
+if ([regex]::Matches($applicationPackageScript, [regex]::Escape('-EntryTimestamp $applicationPackageTimestamp')).Count -ne 2) {
+    throw 'API and Web package creation must each receive the shared manifest-bound timestamp exactly once.'
 }
 foreach ($owner in @('resource webConfiguration', 'resource apiConfiguration', 'resource webSlotConfiguration', 'resource apiSlotConfiguration')) {
     if (-not $appServiceBicep.Contains($owner)) {
@@ -728,23 +737,40 @@ if ($bundleInvocationIndex -lt 0 -or $migrationCleanupIndex -le $bundleInvocatio
 }
 $migrationTaskIndex = $text.IndexOf('displayName: Execute reviewed EF bundle with dedicated migration workload identity', [StringComparison]::Ordinal)
 $seedTaskIndex = $text.IndexOf('displayName: Reconcile approved synthetic seed with dedicated migration workload identity', [StringComparison]::Ordinal)
+$apiUploadPreflightIndex = $text.IndexOf('displayName: Preflight API target and immutable ZIP before upload', [StringComparison]::Ordinal)
 $apiDeploymentIndex = $text.IndexOf('displayName: Deploy API ZIP to staging only', [StringComparison]::Ordinal)
-if ($migrationTaskIndex -lt 0 -or $seedTaskIndex -le $migrationTaskIndex -or $apiDeploymentIndex -le $seedTaskIndex) {
-    throw 'Migration, seed and application deployment order must fail closed.'
+if ($migrationTaskIndex -lt 0 -or $seedTaskIndex -le $migrationTaskIndex -or
+    $apiUploadPreflightIndex -le $seedTaskIndex -or $apiDeploymentIndex -le $apiUploadPreflightIndex) {
+    throw 'Migration, seed, API preflight and application deployment order must fail closed.'
 }
 $artifactDownloadIndex = $migrateAndDeploy.IndexOf('artifact: azure-demo-immutable', [StringComparison]::Ordinal)
 $artifactRevalidationIndex = $migrateAndDeploy.IndexOf("displayName: Revalidate this run's exact immutable deployment ZIPs", [StringComparison]::Ordinal)
 $bicepApplyIndex = $migrateAndDeploy.IndexOf('displayName: Deploy approved resource-group Bicep with workload identity', [StringComparison]::Ordinal)
 $appliedHostValidationIndex = $migrateAndDeploy.IndexOf('displayName: Verify applied API staging host identity before API start', [StringComparison]::Ordinal)
+$apiUploadPreflightInStageIndex = $migrateAndDeploy.IndexOf('displayName: Preflight API target and immutable ZIP before upload', [StringComparison]::Ordinal)
 $apiDeploymentInStageIndex = $migrateAndDeploy.IndexOf('displayName: Deploy API ZIP to staging only', [StringComparison]::Ordinal)
 $webDeploymentIndex = $migrateAndDeploy.IndexOf('displayName: Deploy web ZIP to staging only', [StringComparison]::Ordinal)
 $webContentVerificationIndex = $migrateAndDeploy.IndexOf('Invoke-AzureDemoSlotContentVerification.ps1 @common -Workload Web', [StringComparison]::Ordinal)
 $apiContentVerificationIndex = $migrateAndDeploy.IndexOf('Invoke-AzureDemoSlotContentVerification.ps1 @common -Workload Api', [StringComparison]::Ordinal)
 if ($artifactDownloadIndex -lt 0 -or $artifactRevalidationIndex -le $artifactDownloadIndex -or
     $bicepApplyIndex -le $artifactRevalidationIndex -or $appliedHostValidationIndex -le $bicepApplyIndex -or
-    $apiDeploymentInStageIndex -le $appliedHostValidationIndex -or $webDeploymentIndex -le $apiDeploymentInStageIndex -or
+    $apiUploadPreflightInStageIndex -le $appliedHostValidationIndex -or
+    $apiDeploymentInStageIndex -le $apiUploadPreflightInStageIndex -or $webDeploymentIndex -le $apiDeploymentInStageIndex -or
     $webContentVerificationIndex -le $webDeploymentIndex -or $apiContentVerificationIndex -le $webContentVerificationIndex) {
-    throw 'Immutable artifact validation, concrete configuration apply, applied-setting verification, API/web deployment and exact deployed-content verification order is invalid.'
+    throw 'Immutable artifact validation, concrete configuration apply, applied-setting verification, API preflight/upload, web deployment and exact deployed-content verification order is invalid.'
+}
+$apiUploadPreflightStep = Get-YamlStepBlock $lines 'displayName: Preflight API target and immutable ZIP before upload'
+foreach ($fragment in @(
+        'azureSubscription: sc-mtp-azure-demo-dev',
+        'Assert-AzureDemoStagingTarget',
+        '-Workload Api',
+        "-AppName '`$(AZDEMO_API_APP_NAME)'",
+        "-SlotName 'staging'",
+        "Assert-AzureDemoDeploymentArtifact.ps1 -ArtifactRoot '`$(Pipeline.Workspace)/azure-demo-immutable'",
+        "Assert-AzureDemoApplicationArtifact -ArtifactRoot '`$(Pipeline.Workspace)/azure-demo-immutable' -Workload Api -ExpectedSourceCommit '`$(Build.SourceVersion)'")) {
+    if (-not $apiUploadPreflightStep.Contains($fragment)) {
+        throw "The immediate API upload preflight is missing target, manifest, commit or workload validation: $fragment"
+    }
 }
 foreach ($fragment in @(
         "- download: current`n            artifact: azure-demo-immutable",
@@ -777,10 +803,16 @@ foreach ($fragment in @(
 $webArtifactValidationIndex = $cleanWebDeploymentScript.IndexOf('Assert-AzureDemoApplicationArtifact', [StringComparison]::Ordinal)
 $webDeployInvocationIndex = $cleanWebDeploymentScript.IndexOf("'webapp', 'deploy'", [StringComparison]::Ordinal)
 if ($webArtifactValidationIndex -lt 0 -or $webDeployInvocationIndex -le $webArtifactValidationIndex -or
-    -not $stagingDeploymentUtilitiesScript.Contains('Web ZIP must use one deployment-specific entry timestamp instead of the fixed deterministic timestamp.') -or
+    -not $stagingDeploymentUtilitiesScript.Contains('ZIP must use one package-creation entry timestamp bound to manifest createdAtUtc; legacy fixed timestamps are rejected.') -or
     -not $stagingDeploymentUtilitiesScript.Contains('AzureDemo.ApplicationArtifact.WebEntryTimestampInvalid') -or
+    -not $stagingDeploymentUtilitiesScript.Contains('AzureDemo.ApplicationArtifact.ApiEntryTimestampInvalid') -or
     -not $stagingDeploymentUtilitiesScript.Contains('AzureDemo.ApplicationArtifact.ZipHashMismatch')) {
-    throw 'Web ZIP timestamp validation must fail closed before the OneDeploy invocation.'
+    throw 'API and Web ZIP timestamp validation must retain structured failures before upload.'
+}
+$applicationHashValidationIndex = $stagingDeploymentUtilitiesScript.IndexOf('$actualHash = (Get-FileHash', [StringComparison]::Ordinal)
+$applicationTimestampValidationIndex = $stagingDeploymentUtilitiesScript.IndexOf('$manifestCreatedAt = ConvertTo-AzureDemoManifestUtcTimestamp', [StringComparison]::Ordinal)
+if ($applicationHashValidationIndex -lt 0 -or $applicationTimestampValidationIndex -le $applicationHashValidationIndex) {
+    throw 'Application preflight must verify the immutable ZIP hash before inspecting timestamps.'
 }
 foreach ($fragment in @(
         "return `$Path -ceq 'oryx-manifest.toml'",

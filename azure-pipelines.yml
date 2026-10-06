@@ -240,7 +240,7 @@ stages:
         ./scripts/build/Assert-AzureDemoDeploymentArtifact.ps1 -ArtifactRoot $packageDirectory -ManifestPath (Join-Path $packageDirectory 'deployment-artifact-manifest.json') -ExpectedSourceCommit '$(Build.SourceVersion)'
       displayName: Assemble and validate exact-commit deployment artifact manifest
     - pwsh: ./scripts/build/Invoke-AzureDemoWebDeploymentRegressionChain.ps1 -PackageDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ExpectedSourceCommit '$(Build.SourceVersion)'
-      displayName: Collect Linux web deployment and package regression chain
+      displayName: Collect Linux application deployment and package regressions
     - pwsh: ./scripts/build/Test-AzureDemoImmutableSeedArtifact.ps1 -PackageDirectory '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ExpectedSourceCommit '$(Build.SourceVersion)'
       displayName: Regress immutable seed packaging and fail-closed execution contract
     - pwsh: ./scripts/build/Assert-AzureDemoDeploymentArtifact.ps1 -ArtifactRoot '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages' -ManifestPath '$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/deployment-artifact-manifest.json' -ExpectedSourceCommit '$(Build.SourceVersion)'
@@ -528,6 +528,19 @@ stages:
               AZDEMO_MIGRATION_PRINCIPAL_NAME: $(AZDEMO_MIGRATION_PRINCIPAL_NAME)
               AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID: $(AZDEMO_MIGRATION_PRINCIPAL_OBJECT_ID)
               AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION: $(AZDEMO_MIGRATION_WIF_SERVICE_CONNECTION)
+          - task: AzureCLI@2
+            displayName: Preflight API target and immutable ZIP before upload
+            inputs:
+              azureSubscription: sc-mtp-azure-demo-dev
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                . ./scripts/deployment/AzureDemoStagingDeployment.ps1
+                $accountResult = Invoke-AzureDemoAzCommand -Operation 'API upload preflight account lookup' -Arguments @('account', 'show', '--query', '{id:id}', '--output', 'json', '--only-show-errors')
+                $apiSlotResult = Invoke-AzureDemoAzCommand -Operation 'API upload preflight slot lookup' -Arguments @('webapp', 'show', '--subscription', '$(AZDEMO_SUBSCRIPTION_ID)', '--resource-group', '$(AZDEMO_RESOURCE_GROUP_NAME)', '--name', '$(AZDEMO_API_APP_NAME)', '--slot', 'staging', '--query', '{id:id,name:name,resourceGroup:resourceGroup,type:type,defaultHostName:defaultHostName}', '--output', 'json', '--only-show-errors')
+                Assert-AzureDemoStagingTarget -SubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -ResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -Workload Api -AppName '$(AZDEMO_API_APP_NAME)' -SlotName 'staging' -Account (ConvertFrom-AzureDemoJson -Json $accountResult.Stdout -Operation 'API upload preflight account lookup') -Resource (ConvertFrom-AzureDemoJson -Json $apiSlotResult.Stdout -Operation 'API upload preflight slot lookup') | Out-Null
+                ./scripts/build/Assert-AzureDemoDeploymentArtifact.ps1 -ArtifactRoot '$(Pipeline.Workspace)/azure-demo-immutable' -ManifestPath '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -ExpectedSourceCommit '$(Build.SourceVersion)' | Out-Null
+                Assert-AzureDemoApplicationArtifact -ArtifactRoot '$(Pipeline.Workspace)/azure-demo-immutable' -Workload Api -ExpectedSourceCommit '$(Build.SourceVersion)' | Out-Null
           - task: AzureWebApp@1
             displayName: Deploy API ZIP to staging only
             inputs: { azureSubscription: sc-mtp-azure-demo-dev, appType: webAppLinux, appName: $(AZDEMO_API_APP_NAME), resourceGroupName: $(AZDEMO_RESOURCE_GROUP_NAME), deployToSlotOrASE: true, slotName: staging, package: '$(Pipeline.Workspace)/azure-demo-immutable/application/api.zip', deploymentMethod: zipDeploy }

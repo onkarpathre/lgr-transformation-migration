@@ -112,11 +112,9 @@ try {
                 $entryTimestamp.Minute,
                 $entryTimestamp.Second,
                 [TimeSpan]::Zero)
-            $manifestDifferenceMinutes = [Math]::Abs(
-                ($manifestCreatedAt - $entryTimestampUtcWallClock).TotalMinutes)
-            if (($name -ceq 'api.zip' -and $entryTimestamp.Year -ne 1980) -or
-                ($name -ceq 'web.zip' -and ($entryTimestamp.Year -lt 2020 -or $manifestDifferenceMinutes -gt 5))) {
-                throw "$name does not retain its required API-deterministic or web-deployment-specific timestamp contract."
+            $expectedEntryTimestamp = ConvertTo-AzureDemoZipEntryTimestamp -Timestamp $manifestCreatedAt
+            if ($entryTimestamp.Year -lt 2020 -or $entryTimestampUtcWallClock -ne $expectedEntryTimestamp) {
+                throw "$name does not retain the package-creation timestamp bound to manifest createdAtUtc."
             }
         }
         finally { $archive.Dispose() }
@@ -127,6 +125,14 @@ try {
         if ($expandedFiles.Count -eq 0) {
             throw "$name contains no files."
         }
+        $expandedTimestamps = @($expandedFiles | ForEach-Object {
+                $_.LastWriteTime.ToString('yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+            } | Sort-Object -Unique)
+        $expectedTimestampText = $expectedEntryTimestamp.ToString(
+            'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+        if ($expandedTimestamps.Count -ne 1 -or $expandedTimestamps[0] -cne $expectedTimestampText) {
+            throw "$name extraction did not preserve the serialized UTC wall-clock components."
+        }
 
         $repeatOne = Join-Path $regressionDirectory ("repeat-1-$name")
         $repeatTwo = Join-Path $regressionDirectory ("repeat-2-$name")
@@ -136,7 +142,36 @@ try {
         $repeatOneHash = (Get-FileHash -LiteralPath $repeatOne -Algorithm SHA256).Hash
         $repeatTwoHash = (Get-FileHash -LiteralPath $repeatTwo -Algorithm SHA256).Hash
         if ($repeatOneHash -ne $repeatTwoHash -or $repeatOneHash -ne (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash) {
-            throw "$name generation is not deterministic when source timestamps are excluded."
+            throw "$name generation is not reproducible for fixed payload bytes and one explicit entry timestamp."
+        }
+
+        $sameBucketZip = Join-Path $regressionDirectory ("same-time-bucket-$name")
+        $nextBucketZip = Join-Path $regressionDirectory ("next-time-bucket-$name")
+        New-AzureDemoDeterministicZip -SourceDirectory $expanded -DestinationPath $sameBucketZip `
+            -EntryTimestamp $expectedEntryTimestamp.AddMilliseconds(1900)
+        New-AzureDemoDeterministicZip -SourceDirectory $expanded -DestinationPath $nextBucketZip `
+            -EntryTimestamp $expectedEntryTimestamp.AddSeconds(2)
+        $sameBucketHash = (Get-FileHash -LiteralPath $sameBucketZip -Algorithm SHA256).Hash
+        $nextBucketHash = (Get-FileHash -LiteralPath $nextBucketZip -Algorithm SHA256).Hash
+        if ($sameBucketHash -cne $repeatOneHash) {
+            throw "$name did not retain the documented ZIP two-second timestamp bucket."
+        }
+        if ($nextBucketHash -ceq $repeatOneHash) {
+            throw "$name did not change bytes when the serialized entry timestamp changed."
+        }
+
+        $timezoneRejection = $null
+        try {
+            New-AzureDemoDeterministicZip -SourceDirectory $expanded `
+                -DestinationPath (Join-Path $regressionDirectory ("non-utc-$name")) `
+                -EntryTimestamp ([DateTimeOffset]::new(
+                    $expectedEntryTimestamp.DateTime,
+                    [TimeSpan]::FromHours(1)))
+        }
+        catch { $timezoneRejection = $_ }
+        if ($null -eq $timezoneRejection -or
+            $timezoneRejection.Exception.Message -cne 'ZIP entry timestamp must use a UTC offset.') {
+            throw "$name did not reject timezone-ambiguous package timestamp input."
         }
     }
 
@@ -169,4 +204,4 @@ foreach ($requiredPath in @(
     }
 }
 
-Write-Output "Azure demo package regression passed repository-boundary, ZIP timestamp, exact-file manifest, SHA-256 and immutable-generation checks for $($deployment.ArtifactCount) payload files."
+Write-Output "Azure demo package regression passed repository-boundary, API/web ZIP timestamp serialization, rounding/timezone, exact-file manifest, SHA-256, fixed-input reproducibility and immutable-artifact checks for $($deployment.ArtifactCount) payload files."

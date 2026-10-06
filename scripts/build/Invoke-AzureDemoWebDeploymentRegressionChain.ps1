@@ -22,6 +22,16 @@ $testCases = @(
         Arguments = @()
     },
     [pscustomobject]@{
+        Name = 'linux-api-deployment-timestamp'
+        Script = Join-Path $PSScriptRoot 'Test-AzureDemoLinuxApiDeploymentTimestamp.ps1'
+        Arguments = @()
+    },
+    [pscustomobject]@{
+        Name = 'package-timestamp-semantics'
+        Script = Join-Path $PSScriptRoot 'Test-AzureDemoPackageTimestampSemantics.ps1'
+        Arguments = @()
+    },
+    [pscustomobject]@{
         Name = 'clean-web-deployment'
         Script = Join-Path $PSScriptRoot 'Test-AzureDemoCleanWebDeployment.ps1'
         Arguments = @()
@@ -92,7 +102,7 @@ try {
                 StdoutLength = $stdout.Length
                 StderrLength = $stderr.Length
             })
-        Write-Output ("Web deployment regression result: name={0}; exitCode={1}; stdoutLength={2}; stderrLength={3}" -f `
+        Write-Output ("Application deployment regression result: name={0}; exitCode={1}; stdoutLength={2}; stderrLength={3}" -f `
                 $testCase.Name, $exitCode, $stdout.Length, $stderr.Length)
     }
 }
@@ -108,8 +118,8 @@ if (Test-Path -LiteralPath $temporaryDirectory) {
 $failures = @($results | Where-Object { $_.ExitCode -ne 0 })
 $summary = @($results | ForEach-Object { "$($_.Name)=$($_.ExitCode)" }) -join '; '
 if ($failures.Count -gt 0) {
-    Write-Error -ErrorAction Continue "Web deployment regression chain failed after all checks completed: $summary."
+    Write-Error -ErrorAction Continue "Application deployment regression chain failed after all checks completed: $summary."
     exit 1
 }
-Write-Output "Web deployment regression chain passed after all checks completed: $summary."
+Write-Output "Application deployment regression chain passed after all checks completed: $summary."
 exit 0

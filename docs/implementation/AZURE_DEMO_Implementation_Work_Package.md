@@ -1721,6 +1721,177 @@ handoff:
 
 READY_FOR_TEST
 
+## Bounded API deployment timestamp repair
+
+### Baseline, scope and traceability
+
+This bounded Developer repair started from the requested branch
+`fix/mtp-azure-demo-reconciliation` at exact HEAD
+`95b4099ffd220a9d6be692ae28b18e31ec8a6c92`. The tracked worktree and index
+were clean before editing. The change is limited to immutable application ZIP
+creation, API/Web timestamp preflight, the staging pipeline ordering contract,
+and synthetic deployment regressions. It does not change the API upload task,
+the Web clean-deployment mechanism, Web Oryx allowances, application behaviour,
+Azure resources, SQL, identity, protected approvals or release authority.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+The existing Product/PRB, independent TDA, Information Security and Test
+Services decisions for controlled implementation and local/isolated testing
+remain the applicable authority. Q-01 is unchanged for that bounded approved
+stack. Q-08, Azure Platform/Operations approval, independent Tester/Quality
+evidence and every protected deployment/release decision remain pending and
+separable because this repair performs no Azure-impacting action.
+
+### Observed evidence, cause and uncertainty
+
+Run `#20261006.14` reports a complete 61-file API path set with no missing or
+unexpected files, but different SHA-256 values for equal-length deployed and
+expected `LgrTransformationMigration.Api.dll` and
+`LgrTransformationMigration.Api.pdb`. Repository inspection independently
+confirmed that API package creation omitted `EntryTimestamp`, causing the ZIP
+utility's fixed `1980-01-01T00:00:00` default, while the repaired Web package
+already received a creation-specific timestamp. Those facts strongly support a
+metadata-aware stale-copy collision for equal path/length/timestamp files.
+
+`C:\Temp\mtp-api-deployment-evidence` was absent on this host. The supplied API
+ZIP SHA-256, its entry timestamps and the two supplied file hashes therefore
+were not independently verified and are not represented as local artifact
+evidence. The exact Azure API deployment-engine comparison algorithm and
+whether that algorithm alone caused the observed live bytes remain uncertain
+until a fresh authorised Linux CI artifact and staging deployment are observed.
+
+### Implementation
+
+- Application packaging now captures one UTC `applicationPackageTimestamp`,
+  writes that timestamp to both API and Web ZIP entries before either hash is
+  calculated, and writes the same instant to manifest `createdAtUtc`.
+- ZIP creation explicitly serializes timezone-free DOS wall-clock fields from
+  UTC components and truncates seconds to the format's two-second precision.
+  Non-UTC inputs fail closed. Fixed payload bytes plus one explicit timestamp
+  are reproducible; separately created packages intentionally need not have
+  equal bytes. Once produced and hashed, an artifact remains immutable.
+- API and Web preflight both retain hash-before-timestamp ordering, require one
+  uniform non-legacy timestamp exactly equal to the two-second-rounded manifest
+  timestamp, and retain structured failure identity. Web keeps
+  `WebEntryTimestampInvalid`; API adds `ApiEntryTimestampInvalid`.
+- The protected staging job adds an `AzureCLI@2` API preflight immediately
+  before the unchanged `AzureWebApp@1` API upload. It resolves and validates
+  the authenticated subscription and exact API staging slot, validates the
+  outer deployment manifest and source commit, then validates the selected API
+  ZIP, inner manifest, SHA-256 and timestamps. A post-deployment check is still
+  retained but is not used as a substitute for this pre-upload gate.
+- API deployed-content comparison is unchanged in production: every file set
+  is derived from the immutable ZIP and compared by exact path, length and
+  SHA-256. Missing, changed and unexpected files fail. There are no API DLL,
+  PDB or arbitrary-metadata exclusions. The existing bounded Web dependency
+  transformation and root `oryx-manifest.toml` handling are unchanged.
+- Synthetic API regressions use non-assembly byte fixtures named exactly as the
+  DLL and PDB, with equal filenames and lengths but different content. Portable
+  tests prove content reconciliation, and the Ubuntu-only test reproduces stale
+  `rsync` copying at equal legacy timestamps before proving both files transfer
+  after a different serialized package timestamp. ZIP entry and extracted
+  timestamps, same-time-bucket collision and non-UTC rejection are explicit.
+- The existing collecting regression chain now runs both Linux Web/API
+  timestamp tests plus portable timestamp semantics, clean deployment,
+  generated-caller boundary, deployed-content, package-generation and pipeline
+  structure checks in isolated child processes. It reports every exit code and
+  returns nonzero after collection if any child fails.
+
+### Local validation
+
+Runtime: Windows `10.0.26200`, Windows PowerShell `5.1.26100.9444`, .NET SDK
+`10.0.401`, Node.js `v24.18.0`. PowerShell 7, installed WSL/Linux, Docker,
+Podman and `rsync` were unavailable.
+
+| Check | Result |
+|---|---|
+| Branch/HEAD/tracked status | PASS before editing: exact requested branch and HEAD; clean tracked index/worktree. |
+| Evidence artifact verification | NOT RUN: supplied evidence directory absent; no independent ZIP/hash/timestamp claim. |
+| PowerShell parsing | PASS: all changed PowerShell files parse under Windows PowerShell 5.1. |
+| API/Web preflight regression | PASS, exit `0`: both valid; both fixed-1980 cases rejected with workload-specific identities; non-uniform API timestamps rejected; both wrong hashes rejected as `ZipHashMismatch`; exact target checks and exit-17 Web deployment failure retained. |
+| Generated-caller process boundary | PASS, exit `0`: assertion/native/missing/cleanup children each exit `1`; real regression child exits `0` with bounded structured diagnostics. |
+| Portable ZIP semantics | PASS, exit `0`: UTC wall-clock ZIP serialization/extraction, odd-second truncation to `2026-10-06T12:34:56`, same-bucket byte collision, next-bucket byte change and non-UTC rejection. |
+| Deployed-content regression | PASS, exit `0`: exact API/Web path-length-SHA256, equal-size DLL/PDB mismatch, API missing/unexpected, Web Oryx/dependency bounds and BUILD_ID checks. |
+| Existing artifact root/hash/prohibited-content check | PASS, exit `0`, against the retained prior application artifact only; it is not evidence for a newly packaged API timestamp. |
+| Pipeline structure | PASS, exit `0`: seven stages; shared API/Web package timestamp; hash-before-timestamp; API target/outer-manifest/commit/inner-manifest preflight ordered immediately before upload; collected Ubuntu checks pinned. |
+| Full package creation | PENDING CI: isolated .NET publish was reachable, but local Web dependencies were absent; the normal locked restore retry completed .NET restore with NU1900 vulnerability-source warnings and then failed `npm ci` because restricted access could not fetch `next-16.3.8.tgz`. No new package/hash is claimed. |
+| Package-generation regression on retained artifact | Expected FAIL, exit `1`: the old API ZIP retains the legacy timestamp and is correctly rejected. A newly created immutable package is required. |
+| Collected chain on this host | Expected overall exit `1` after all children: portable timestamp `0`, clean preflight `0`, process boundary `0`, deployed content `0`, structure `0`; Linux Web `1`, Linux API `1`, retained-old-package `1`. |
+| Linux PowerShell 7 / real `rsync` | `LINUX_VERIFICATION_PENDING`; both scripts are wired into the single unprotected `ubuntu-latest` Package-stage collection. Windows simulation is not Linux proof. |
+| Web build/CSP and full new-package regression | PENDING the same Ubuntu package job with restored npm dependencies and normal package creation. Existing Web timestamp/Oryx code paths were not relaxed. |
+| Live staging | NOT RUN: no Azure, deployment, migration, seed, smoke, swap or other protected action occurred. |
+
+### Developer hand-off
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_95b4099ffd220a9d6be692ae28b18e31ec8a6c92"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/build/AzureDemoPackageUtilities.ps1"
+    - "scripts/build/Invoke-AzureDemoWebDeploymentRegressionChain.ps1"
+    - "scripts/build/New-AzureDemoPackages.ps1"
+    - "scripts/build/Test-AzureDemoCleanWebDeployment.ps1"
+    - "scripts/build/Test-AzureDemoCleanWebDeploymentProcessBoundary.ps1"
+    - "scripts/build/Test-AzureDemoDeployedContentVerification.ps1"
+    - "scripts/build/Test-AzureDemoLinuxApiDeploymentTimestamp.ps1"
+    - "scripts/build/Test-AzureDemoPackageGeneration.ps1"
+    - "scripts/build/Test-AzureDemoPackageTimestampSemantics.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "scripts/deployment/AzureDemoStagingDeployment.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Portable Windows PowerShell 5.1 preflight, timestamp, process-boundary, content and structure regressions pass."
+    - "The collector ran every child and retained nonzero overall status for unavailable Linux and new-package prerequisites."
+  decisions:
+    - "Bind API and Web ZIP timestamps to one manifest creation instant before hashes are calculated."
+    - "Treat ZIP timestamps as two-second UTC wall-clock change metadata, not a uniqueness guarantee."
+    - "Place exact API target and immutable artifact preflight immediately before the unchanged upload task."
+    - "Retain exact all-file API verification and unchanged bounded Web Oryx handling."
+  assumptions:
+    - "Metadata-aware stale copying is strongly supported but the Azure deployment-engine algorithm remains unverified."
+  risks:
+    - "A fresh normal CI package and real Linux rsync evidence remain required."
+    - "Authorised staging must prove both API binary hashes and the complete package-derived file set after upload."
+  defects:
+    - "REPAIRED LOCALLY: application packaging previously assigned a deployment timestamp only to Web; API inherited fixed 1980 ZIP entry times."
+  blockers: []
+  approvals: []
+  requested_action: "Independent Tester must run the collected Ubuntu package/deployment regression chain against a newly produced exact-commit artifact, then perform the separately authorised staging-only upload and exact API content reconciliation before Quality review."
+```
+
+READY_FOR_TEST
+
 ## Linux executable discovery and collected web-deployment regression repair
 
 ### Baseline, scope and traceability
@@ -3544,5 +3715,19 @@ READY_FOR_TEST
 ## Current worktree terminal state - Linux executable discovery
 
 The latest bounded continuation is **Linux executable discovery and collected web-deployment regression repair** above, based on exact HEAD `50b823aad66cfa14126ba2a035cde6666b028682`. Its portable Windows PowerShell 5.1 regressions, synthetic current-commit package regression, failure-collection outer-status check, parsing and pipeline structural check pass as recorded. Real Linux PowerShell 7 with real `rsync` remains explicitly pending on the single unprotected `ubuntu-latest` collected task; no Linux pass is claimed locally. This hand-off supersedes older terminal markers in this cumulative document without changing any protected deployment, Azure, migration, seed, swap, release or human-approval gate.
+
+READY_FOR_TEST
+
+## Current worktree terminal state - bounded API deployment timestamp
+
+The latest bounded continuation is **Bounded API deployment timestamp repair**
+above, based on exact HEAD
+`95b4099ffd220a9d6be692ae28b18e31ec8a6c92`. Its portable Windows
+PowerShell 5.1 timestamp, preflight, process-boundary, deployed-content,
+artifact and pipeline-structure regressions pass. A fresh normal package,
+real Linux PowerShell 7/`rsync`, and authorised staging-only API reconciliation
+remain explicit CI/live checks. This hand-off supersedes older terminal markers
+in this cumulative document without authorising Azure, SQL, deployment, swap,
+release, merge or any human approval.
 
 READY_FOR_TEST
