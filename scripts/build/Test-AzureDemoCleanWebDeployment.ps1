@@ -16,8 +16,7 @@ $recordPath = Join-Path $temporaryDirectory 'az-records.jsonl'
 $originalPath = $env:PATH
 $originalRecordPath = $env:AZ_STUB_RECORD_PATH
 $originalMode = $env:AZ_STUB_MODE
-New-Item -ItemType Directory -Path $applicationRoot -Force | Out-Null
-New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
+$successMessage = $null
 
 function New-TextFile([string] $Root, [string] $RelativePath, [string] $Content) {
     $path = Join-Path $Root $RelativePath
@@ -26,6 +25,8 @@ function New-TextFile([string] $Root, [string] $RelativePath, [string] $Content)
 }
 
 try {
+    New-Item -ItemType Directory -Path $applicationRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
     New-TextFile $stageRoot 'server.js' 'server-entry'
     New-TextFile $stageRoot '.next/BUILD_ID' 'BUILD00000000001'
     New-TextFile $stageRoot '.next/server/app/page.js' 'page-entry'
@@ -82,7 +83,8 @@ exit 42
         $launcher = Join-Path $temporaryDirectory 'az'
         [IO.File]::WriteAllText($launcher, "#!/usr/bin/env pwsh`n$stubBody", [Text.UTF8Encoding]::new($false))
         & chmod '+x' $launcher
-        if ($LASTEXITCODE -ne 0) { throw 'Could not make Azure CLI fixture executable.' }
+        $chmodExitCode = $LASTEXITCODE
+        if ($chmodExitCode -ne 0) { throw "Could not make Azure CLI fixture executable (exit code $chmodExitCode)." }
     }
     $env:PATH = $temporaryDirectory + [IO.Path]::PathSeparator + $originalPath
     $env:AZ_STUB_RECORD_PATH = $recordPath
@@ -136,23 +138,34 @@ exit 42
         $call = @{} + $valid
         $call[$case.Key] = $case.Value
         $call.EvidencePath = Join-Path $temporaryDirectory "rejected-$($case.Key).json"
-        $accepted = $false
-        try { & $deploymentScript @call | Out-Null; $accepted = $true } catch { }
-        if ($accepted) { throw "Clean deployment accepted unexpected target field $($case.Key)." }
+        $rejection = $null
+        try { & $deploymentScript @call | Out-Null } catch { $rejection = $_ }
+        if ($null -eq $rejection) { throw "Clean deployment accepted unexpected target field $($case.Key)." }
+        if ($rejection.Exception.Message -cne 'Azure demo staging target guard rejected an unexpected subscription, resource group, application or slot.') {
+            throw "Clean deployment rejected unexpected target field $($case.Key) for the wrong reason: $($rejection.Exception.Message)"
+        }
     }
 
     $env:AZ_STUB_MODE = 'deploy-failure'
     $failureCall = @{} + $valid
     $failureCall.EvidencePath = Join-Path $temporaryDirectory 'deployment-failure.json'
-    $accepted = $false
-    try { & $deploymentScript @failureCall | Out-Null; $accepted = $true } catch { }
-    if ($accepted) { throw 'Clean deployment accepted a nonzero Azure CLI deployment exit.' }
-    $failureEvidence = Get-Content -LiteralPath $failureCall.EvidencePath -Raw | ConvertFrom-Json
-    if ($failureEvidence.status -cne 'FAIL' -or $failureEvidence.processExitCode -ne 17) {
+    $deploymentFailure = $null
+    try { & $deploymentScript @failureCall | Out-Null } catch { $deploymentFailure = $_ }
+    if ($null -eq $deploymentFailure) { throw 'Clean deployment accepted a nonzero Azure CLI deployment exit.' }
+    if ($deploymentFailure.Exception.Message -cne 'Clean synchronous Azure web staging ZIP deployment failed with Azure CLI exit code 17.') {
+        throw "Clean deployment rejected the exit-17 fixture for the wrong reason: $($deploymentFailure.Exception.Message)"
+    }
+    $failureEvidenceJson = Get-Content -LiteralPath $failureCall.EvidencePath -Raw
+    $failureEvidence = $failureEvidenceJson | ConvertFrom-Json
+    if ($failureEvidence.status -cne 'FAIL' -or $failureEvidence.processExitCode -ne 17 -or
+        $failureEvidence.failure -cne 'Clean synchronous Azure web staging ZIP deployment failed with Azure CLI exit code 17.') {
         throw "Clean deployment did not retain the immediate Azure CLI failure exit code: $($failureEvidence | ConvertTo-Json -Compress)."
     }
+    if ($failureEvidenceJson.IndexOf('synthetic deployment failure', [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        throw 'Clean deployment evidence disclosed native Azure CLI stderr.'
+    }
 
-    Write-Output "Clean web deployment regression passed exact artifact selection, target rejection, synchronous clean CLI options and nonzero exit evidence for $($negativeTargets.Count) invalid targets."
+    $successMessage = "Clean web deployment regression passed exact artifact selection, target rejection, synchronous clean CLI options and nonzero exit evidence for $($negativeTargets.Count) invalid targets."
 }
 finally {
     $env:PATH = $originalPath
@@ -160,3 +173,10 @@ finally {
     $env:AZ_STUB_MODE = $originalMode
     if (Test-Path -LiteralPath $temporaryDirectory) { Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force }
 }
+
+if (Test-Path -LiteralPath $temporaryDirectory) { throw 'Clean deployment regression cleanup left its temporary directory behind.' }
+if ($env:PATH -cne $originalPath -or $env:AZ_STUB_RECORD_PATH -cne $originalRecordPath -or $env:AZ_STUB_MODE -cne $originalMode) {
+    throw 'Clean deployment regression cleanup did not restore its process environment.'
+}
+Write-Output $successMessage
+exit 0
