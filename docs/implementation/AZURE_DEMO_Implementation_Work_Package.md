@@ -1721,6 +1721,158 @@ handoff:
 
 READY_FOR_TEST
 
+## Staging smoke orchestration execution and diagnostic repair
+
+### Baseline, role, scope and traceability
+
+This bounded Developer repair started on branch `fix/mtp-azure-demo-reconciliation` at the requested release commit `580e725e43c8b9bf835fe07714ad85d4507e294d`. Before editing, `HEAD` matched that commit and its configured upstream, the staged and unstaged indexes were empty, and there were no untracked files. Nothing was reset, stashed, staged, committed, pushed, deployed or changed in Azure. The work is confined to smoke orchestration, safe diagnostic/result handling, local fixture regression, failure-artifact publication conditions and supporting records. It does not change application behavior, tenant/identity controls, evidence acceptance requirements, release approvals, migrations, seed, slots or infrastructure.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14", "F-15"]
+  non_functional_requirements: ["NF-03", "NF-06", "NF-07", "NF-10", "NF-12", "NF-13"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+This regression repair is separable from Q-01 and Q-08: it selects no technology stack, changes no service commitment and does not supply or accept protected runtime evidence. The existing evidence-ingestion, operational-producer, real previous-release SMK-19 and human release decisions remain blocking.
+
+### Confirmed root causes and before-repair reproduction
+
+A controlled full-runner reproduction used the exact production orchestration and smoke functions with deterministic response objects at the `Invoke-WebRequest` boundary. It reproduced the reported shape exactly: 22 results, eight automated/hybrid checks recorded as generic `check-execution` failures (`SMK-01`, `02`, `03`, `08`, `10`, `11`, `12`, `20`), SMK-01 incorrectly reported the HTTPS base URI, and the final aggregate throw occurred only after all result files and the summary were written. This reproduction was Windows PowerShell 5.1 control-flow evidence, not Linux or live-endpoint evidence.
+
+Four independent defects were confirmed:
+
+1. `Write-SafeRequestDiagnostic` used `Write-Output` inside both checked-request wrappers. Its diagnostic text and the returned response object therefore became a two-item success-pipeline array. Strict-mode property access in SMK-01, 03, 08, 10, 11 and 12 then failed instead of evaluating the retained HTTP response.
+2. SMK-02 assigned the web-root result to `$home`. PowerShell variable names are case-insensitive, so this attempted to overwrite the read-only automatic `$HOME` variable and raised `VariableNotWritable` after the first request.
+3. SMK-10 left an empty `Where-Object` pipeline as null and then accessed `.Count` under strict mode. The CORS assertion therefore raised `PropertyNotFoundStrict` when the expected result was no CORS grant.
+4. SMK-20 parsed npm lockfile v3 into a `PSCustomObject`. The valid empty `packages[""]` key is not a valid object-property name for that conversion path, so JSON conversion raised before dependency assertions. PowerShell 7 `-AsHashtable` parsing is required for that document shape.
+
+The aggregate throw at the former line 293 was not a root cause. The old SMK-01 HTTPS diagnostic was produced by the generic catch from `$WebBaseUri`, not proof of the URI actually requested. No HTTP 503, DNS result or live application-health conclusion can be derived from that failed run.
+
+### Implemented repair
+
+- Diagnostic logging now uses the information stream, so it cannot alter HTTP return values. All internal calls use named parameters.
+- Diagnostics contain only check ID, phase, actual safe scheme/host/path, available status, bounded exception type/category, sanitized error identifier and repository script basename/line when available. Query strings, headers, cookies, tokens, bodies, raw messages and unrestricted objects remain excluded.
+- Each check accumulates its real HTTP diagnostics. A later assertion, evidence rejection or harness exception no longer replaces an observed HTTP status with an unavailable transport result.
+- Results now retain separate `failureCategories`: `application-response-failure`, `transport-failure`, `assertion-failure`, `harness-exception`, `missing-evidence` and `rejected-evidence`.
+- SMK-01 records the actual HTTP attempt and still permits only 301/302/307/308 to HTTPS on the exact host/default port/path with no userinfo, query or fragment. Redirect following remains disabled.
+- SMK-02 uses `$homeResponse`; SMK-10 materializes the no-grant collection; SMK-20 uses PowerShell 7 hashtable JSON parsing and checks dictionary shapes before reading exact versions.
+- Header retrieval now handles case-insensitive dictionary keys plus scalar and enumerable values without strict-mode property assumptions.
+- Both protected pipeline callers create their evidence directory before invocation. Both publication steps use `and(always(), attempt-marker)` so a smoke failure does not skip sanitized evidence publication; the smoke error is not caught or replaced.
+- `Test-AzureDemoSmokeOrchestration.ps1` drives the complete production runner through real loopback HTTP fixtures and verifies redirect, 2xx, 404, 503, abrupt close, assertion after valid 200 responses, missing/rejected evidence, continued collection, redaction and all 22 result files plus summary before the final failure. Fixtures are explicitly synthetic and cannot satisfy protected release evidence.
+
+### Per-check disposition supported by current evidence
+
+| Checks | Before-repair category | Confirmed disposition |
+|---|---|---|
+| SMK-01 | Harness exception hidden as unavailable transport; displayed scheme was wrong | Orchestration defect repaired; live redirect outcome remains unknown. The current caller still lacks mandatory protected lower-TLS evidence. |
+| SMK-02 | Harness exception | `$HOME` collision repaired; live health/home/deep-route outcomes remain unknown. |
+| SMK-03 | Harness exception | Success-stream contamination repaired; live root/asset outcomes remain unknown. |
+| SMK-08 | Harness exception | Success-stream contamination repaired; protected header/redaction evidence remains absent from the pipeline. |
+| SMK-10 | Harness exception | Null-count and contaminated-response paths repaired; live CORS/proxy outcome remains unknown. |
+| SMK-11 | Harness exception | Contaminated-response/header handling repaired; live web/API header outcome remains unknown. |
+| SMK-12 | Harness exception | Contaminated response is now retained separately; protected outage/alert evidence remains absent. |
+| SMK-20 | Harness exception | Lockfile empty-key parsing repaired for PowerShell 7; exact deployed-artifact/config evidence still requires its approved producer. |
+| SMK-04, 05, 06, 07, 09, 13-19, 21, 22 | No HTTP diagnostic in the reported excerpt | The exact pipeline caller supplies no `-ProtectedEvidenceDirectory`, so these 14 evidence-only checks deterministically remain `missing-evidence`; this is not inferred as a transport or application failure. |
+
+After repair, SMK-01, 08 and 12 also remain release-blocking as `missing-evidence` unless and until their independently approved protected records are supplied. Therefore at least 17 checks remain intentionally red under the current pipeline even if all five automation-only checks succeed.
+
+### Changed files
+
+- `azure-pipelines.yml`
+- `docs/implementation/AZURE_DEMO_Implementation_Work_Package.md`
+- `scripts/build/Test-AzureDemoSmokeHttp.ps1`
+- `scripts/build/Test-AzureDemoSmokeOrchestration.ps1`
+- `scripts/build/Test-AzurePipelineStructure.ps1`
+- `scripts/smoke/AzureDemoSmokeUtilities.ps1`
+- `scripts/smoke/Invoke-AzureDemoSmokeTests.ps1`
+- `scripts/smoke/README.md`
+- `tests/api.unit/AzureDemoDeploymentBoundaryTests.cs`
+
+`AzureDemoSmokeEvidenceContract.ps1` and `Resolve-AzureDemoSmokeTargets.ps1` were inspected but did not require source changes. Their fail-closed evidence and exact-target contracts remain in force.
+
+### Verification and remaining blockers
+
+Local Windows PowerShell parsing, evidence-contract, target-resolution, pipeline-structure, source-boundary and focused deployment-boundary tests pass. The after-repair complete runner uses real loopback HTTP fixtures, retains the real HTTP diagnostics, passes SMK-02/03/10/11 with deterministic successful responses, distinguishes abrupt-close transport and post-200 assertion failures, continues through SMK-22 and writes all records plus the summary before the expected aggregate failure. SMK-20 deliberately reports its PowerShell 7 runtime requirement under Windows PowerShell 5.1; 4xx/5xx response normalization and SMK-20 are deferred to the Linux run. This supplemental execution is not Linux proof.
+
+| Verification | Runtime | Exit/result |
+|---|---|---|
+| Parse seven changed/relevant PowerShell files | Windows PowerShell `5.1.26100.9444` | `0`; zero parser errors. Supplemental only. |
+| `Test-AzureDemoSmokeEvidence.ps1` | Windows PowerShell `5.1.26100.9444` | `0`; valid and retained fail-closed evidence cases passed. |
+| `Test-AzureDemoSmokeTargetResolution.ps1` | Windows PowerShell `5.1.26100.9444` | `0`; 12 invalid resolver cases rejected. |
+| `Test-AzurePipelineStructure.ps1` | Windows PowerShell `5.1.26100.9444` | `0`; seven ordered stages and both failure-publication conditions passed. |
+| `Test-AzureDemoSourceBoundaries.ps1` | Windows PowerShell `5.1.26100.9444` | `0`; 196 source/configuration files passed. |
+| `Test-AzureDemoSmokeOrchestration.ps1` supplemental subset | Windows PowerShell `5.1.26100.9444` | `0`; real loopback redirect, successful response, transport, assertion, evidence, continuation, redaction and publication fixtures passed. 4xx/5xx and SMK-20 were explicitly not claimed. |
+| Focused `AzureDemoDeploymentBoundaryTests` | .NET `10.0`, Windows | `0`; 13/13 passed. |
+| Full solution test | .NET `10.0`, Windows | `0`; unit 209/209 and integration 148/148 passed. NuGet vulnerability metadata remained unavailable and emitted `NU1900`; no dependency changed. |
+| Focused `dotnet format --verify-no-changes` | .NET `10.0`, Windows | `0`; workspace-load warning only. |
+| `git diff --check` | Git/Windows | `0`; line-ending notices only. |
+| `where.exe pwsh` | Windows host | `1`; no PowerShell 7 executable found. |
+| `Test-AzureDemoSmokeHttp.ps1` and complete `Test-AzureDemoSmokeOrchestration.ps1` | Required Linux PowerShell 7 | **NOT RUN / `LINUX_VERIFICATION_PENDING`**; both are wired once into `ubuntu-latest`. |
+
+PowerShell 7, WSL and Docker are unavailable on the authorized host. Consequently the new complete real-HTTP orchestration regression and the existing HTTP-helper regression remain `LINUX_VERIFICATION_PENDING`; Windows parsing, response-object substitution and mocks are not presented as Linux execution evidence. They are each wired exactly once into the `ubuntu-latest` validation job. No protected pipeline, staging endpoint or Azure operation was invoked.
+
+The protected evidence-ingestion decision described in `AZURE_DEMO_Smoke_Evidence_Coverage.md`, the named producer identities and permissions, the real prior deployment record/manifest for SMK-19, independent Tester review and all human gates remain unresolved. A rerun of the protected staging task is required to determine actual application/transport results for the repaired automation-only checks; diagnostics alone do not establish application health.
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_580e725e43c8b9bf835fe07714ad85d4507e294d"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14", "F-15"]
+    non_functional_requirements: ["NF-03", "NF-06", "NF-07", "NF-10", "NF-12", "NF-13"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+  artefacts:
+    - "scripts/smoke/Invoke-AzureDemoSmokeTests.ps1"
+    - "scripts/smoke/AzureDemoSmokeUtilities.ps1"
+    - "scripts/build/Test-AzureDemoSmokeOrchestration.ps1"
+    - "azure-pipelines.yml"
+  evidence:
+    - "Before-repair full-runner reproduction matched the eight reported generic execution failures."
+    - "After-repair controlled orchestration retains actual status/scheme, continues all 22 checks and publishes failure evidence."
+    - "Locally available focused contracts and deployment-boundary tests pass."
+  decisions:
+    - "Keep diagnostics off the success stream and preserve the original HTTP result through later phases."
+    - "Keep application, transport, assertion, harness and evidence failures distinct."
+    - "Retain every protected evidence and release block."
+  assumptions: []
+  risks:
+    - "Complete Linux PowerShell 7 fixture execution remains pending."
+    - "Live endpoint health remains unknown until the protected staging task is rerun."
+  defects:
+    - "REPAIRED LOCALLY: success-stream diagnostic contamination."
+    - "REPAIRED LOCALLY: SMK-02 read-only HOME variable collision."
+    - "REPAIRED LOCALLY: SMK-10 strict-mode null Count access."
+    - "REPAIRED LOCALLY: SMK-20 npm lockfile empty-key object conversion."
+  blockers:
+    - "Independent Linux/PowerShell 7 execution of both HTTP suites."
+    - "Approved protected evidence ingestion and producers for 17 protected/hybrid checks."
+    - "Real previous-release evidence and approval source for SMK-19."
+  approvals: []
+  requested_action: "Independent Tester must run the two PowerShell 7 HTTP suites in Linux validation, then rerun the protected staging smoke task and review the retained per-check evidence without waiving the existing protected-evidence blockers."
+```
+
+READY_FOR_TEST
+
 ## Azure CLI App Service slot-show command repair
 
 ### Baseline, scope and traceability

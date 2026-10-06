@@ -258,15 +258,28 @@ try {
     Assert-True (-not $transportFailure.Result.TransportSucceeded) "Abrupt connection close was accepted as an HTTP response. $transportDiagnostic"
     $diagnosticJson = $transportFailure.Result.Diagnostic | ConvertTo-Json -Compress
     Assert-True ($diagnosticJson.Contains('"checkId":"SMK-01"')) 'Redacted diagnostic omitted the check ID.'
+    Assert-True ($diagnosticJson.Contains('"executionPhase":"http-request"')) 'Redacted diagnostic omitted the execution phase.'
     Assert-True ($diagnosticJson.Contains('"scheme":"http"')) 'Redacted diagnostic omitted the scheme.'
     Assert-True ($diagnosticJson.Contains('"hostname":"127.0.0.1"')) 'Redacted diagnostic omitted the hostname.'
     Assert-True ($diagnosticJson.Contains('"path":"/fixture"')) 'Redacted diagnostic omitted the path.'
     Assert-True ($diagnosticJson.Contains('"exceptionCategory":')) 'Redacted diagnostic omitted the exception category.'
+    Assert-True ($diagnosticJson.Contains('"exceptionType":')) 'Redacted diagnostic omitted the exception type.'
+    Assert-True ($diagnosticJson.Contains('"errorIdentifier":')) 'Redacted diagnostic omitted the sanitized error identifier.'
     Assert-True (-not $diagnosticJson.Contains('must-not-appear')) 'Redacted diagnostic exposed the query string.'
     Assert-True (-not $diagnosticJson.Contains('token=')) 'Redacted diagnostic exposed a token-like query name.'
     Assert-True (-not $diagnosticJson.Contains('Authorization')) 'Redacted diagnostic exposed an authorization header name.'
     Assert-True (-not $diagnosticJson.Contains('Cookie')) 'Redacted diagnostic exposed a cookie header name.'
     Assert-True (-not $transportDiagnostic.Contains('must-not-appear')) 'Safe fixture diagnostic exposed a sensitive value.'
+
+    $arrayHeaders = [pscustomobject]@{ Headers = @{ 'Content-Type' = [string[]] @('application/json') } }
+    Assert-True ((Get-AzureDemoSmokeHeaderValue -Response $arrayHeaders -Name 'content-type') -ceq 'application/json') 'Case-insensitive array-valued headers were not normalized safely.'
+
+    $unsafeError = [System.Management.Automation.ErrorRecord]::new(
+        [InvalidOperationException]::new('token=must-not-appear'),
+        'unsafe identifier with spaces and token=must-not-appear',
+        [System.Management.Automation.ErrorCategory]::InvalidOperation,
+        $null)
+    Assert-True ((Get-AzureDemoSmokeSafeErrorIdentifier -ErrorObject $unsafeError) -ceq 'unavailable') 'An unsafe error identifier was not suppressed.'
 
     $cleanupFailureObserved = $false
     try {

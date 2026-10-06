@@ -88,6 +88,83 @@ function Get-AzureDemoSmokeSafeTypeName {
     return $InputObject.GetType().FullName
 }
 
+function Get-AzureDemoSmokeSafeErrorIdentifier {
+    [CmdletBinding()]
+    param(
+        [AllowNull()] [object] $ErrorObject,
+        [string] $Fallback = 'unavailable'
+    )
+
+    $errorRecord = if ($ErrorObject -is [System.Management.Automation.ErrorRecord]) {
+        [System.Management.Automation.ErrorRecord] $ErrorObject
+    }
+    elseif ($ErrorObject -is [Exception]) {
+        $property = $ErrorObject.PSObject.Properties['ErrorRecord']
+        if ($null -ne $property -and $property.Value -is [System.Management.Automation.ErrorRecord]) {
+            [System.Management.Automation.ErrorRecord] $property.Value
+        }
+        else { $null }
+    }
+    else { $null }
+
+    if ($null -ne $errorRecord) {
+        $candidate = [string] $errorRecord.FullyQualifiedErrorId
+        if ($candidate -cmatch '^[A-Za-z][A-Za-z0-9_.-]{0,127}(?:,[A-Za-z][A-Za-z0-9_.-]{0,127})?$') {
+            return $candidate
+        }
+
+        # Evidence validators use bounded, code-owned identifiers. Convert only
+        # that exact prefix; never surface an arbitrary exception message.
+        $message = if ($errorRecord.Exception -is [Exception]) { [string] $errorRecord.Exception.Message } else { '' }
+        if ($message -cmatch '^Smoke evidence rejected: ([A-Z][A-Z0-9_]{0,63})(?:[ .(]|$)') {
+            return "Evidence.$($Matches[1])"
+        }
+    }
+
+    return $Fallback
+}
+
+function Get-AzureDemoSmokeSafeInvocationLocation {
+    [CmdletBinding()]
+    param([AllowNull()] [object] $ErrorObject)
+
+    $errorRecord = if ($ErrorObject -is [System.Management.Automation.ErrorRecord]) {
+        [System.Management.Automation.ErrorRecord] $ErrorObject
+    }
+    elseif ($ErrorObject -is [Exception]) {
+        $property = $ErrorObject.PSObject.Properties['ErrorRecord']
+        if ($null -ne $property -and $property.Value -is [System.Management.Automation.ErrorRecord]) {
+            [System.Management.Automation.ErrorRecord] $property.Value
+        }
+        else { $null }
+    }
+    else { $null }
+
+    if ($null -eq $errorRecord -or $null -eq $errorRecord.InvocationInfo) {
+        return [pscustomobject]@{ script = $null; line = $null }
+    }
+
+    $scriptPath = [string] $errorRecord.InvocationInfo.ScriptName
+    $line = [int] $errorRecord.InvocationInfo.ScriptLineNumber
+    if ([string]::IsNullOrWhiteSpace($scriptPath) -or $line -le 0) {
+        return [pscustomobject]@{ script = $null; line = $null }
+    }
+
+    try {
+        $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+        $resolvedScript = [IO.Path]::GetFullPath($scriptPath)
+        $rootPrefix = $repositoryRoot.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        if (-not $resolvedScript.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            return [pscustomobject]@{ script = $null; line = $null }
+        }
+
+        return [pscustomobject]@{ script = [IO.Path]::GetFileName($resolvedScript); line = $line }
+    }
+    catch {
+        return [pscustomobject]@{ script = $null; line = $null }
+    }
+}
+
 function Get-AzureDemoSmokeErrorObjectClassification {
     [CmdletBinding()]
     param(
@@ -220,11 +297,38 @@ function Get-AzureDemoSmokeHeaderValue {
     $headersProperty = $Response.PSObject.Properties['Headers']
     if ($null -eq $headersProperty -or $null -eq $headersProperty.Value) { return $null }
     $headers = $headersProperty.Value
-    if ($headers -is [Collections.IDictionary]) { return [string] $headers[$Name] }
+    $value = $null
+    if ($headers -is [Collections.Specialized.NameValueCollection]) {
+        $value = $headers.Get($Name)
+    }
+    elseif ($headers -is [Collections.IDictionary]) {
+        foreach ($key in $headers.Keys) {
+            if ([string]::Equals([string] $key, $Name, [StringComparison]::OrdinalIgnoreCase)) {
+                $value = $headers[$key]
+                break
+            }
+        }
+    }
+    else {
+        $tryGetValues = $headers.PSObject.Methods['TryGetValues']
+        if ($null -ne $tryGetValues) {
+            $values = $null
+            if ($headers.TryGetValues($Name, [ref] $values)) { $value = $values }
+        }
+        if ($null -eq $value) {
+            $property = $headers.PSObject.Properties[$Name]
+            if ($null -ne $property) { $value = $property.Value }
+        }
+    }
 
-    $property = $headers.PSObject.Properties[$Name]
-    if ($null -ne $property) { return [string] $property.Value }
-    return $null
+    if ($null -eq $value) { return $null }
+    if ($value -is [string]) { return $value }
+    if ($value -is [Collections.IEnumerable]) {
+        $items = @($value | ForEach-Object { [string] $_ })
+        if ($items.Count -eq 0) { return $null }
+        return [string]::Join(', ', $items)
+    }
+    return [string] $value
 }
 
 function Resolve-AzureDemoSmokeHttpResult {
@@ -291,6 +395,17 @@ function Resolve-AzureDemoSmokeHttpResult {
     else {
         [Exception] $requestFailure.Exception
     }
+    $safeErrorObject = if ($null -ne $requestFailure -and $null -ne $requestFailure.ErrorRecord) {
+        $requestFailure.ErrorRecord
+    }
+    elseif ($null -ne $requestException) {
+        $requestException
+    }
+    else {
+        $null
+    }
+    $safeLocation = Get-AzureDemoSmokeSafeInvocationLocation -ErrorObject $safeErrorObject
+    $safeErrorIdentifier = Get-AzureDemoSmokeSafeErrorIdentifier -ErrorObject $safeErrorObject
     $errorObjectTypes = if ($errorClassifications.Count -eq 0) {
         'none'
     }
@@ -318,6 +433,7 @@ function Resolve-AzureDemoSmokeHttpResult {
             RawContentLength = $responseInfo.RawContentLength
             Diagnostic = [pscustomobject][ordered]@{
                 checkId = $CheckId
+                executionPhase = 'http-request'
                 scheme = $Uri.Scheme
                 hostname = $Uri.DnsSafeHost
                 path = $Uri.AbsolutePath
@@ -327,7 +443,10 @@ function Resolve-AzureDemoSmokeHttpResult {
                 errorVariableType = Get-AzureDemoSmokeSafeTypeName -InputObject $CapturedErrors
                 errorObjects = $errorObjectTypes
                 exceptionType = if ($null -eq $requestException) { 'none' } else { Get-AzureDemoSmokeSafeTypeName -InputObject $requestException }
+                errorIdentifier = $safeErrorIdentifier
                 exceptionCategory = if ($hasOnlyExpectedRedirectErrors) { 'redirect-response' } else { 'none' }
+                script = $safeLocation.script
+                line = $safeLocation.line
             }
         }
     }
@@ -347,6 +466,7 @@ function Resolve-AzureDemoSmokeHttpResult {
             RawContentLength = 0L
             Diagnostic = [pscustomobject][ordered]@{
                 checkId = $CheckId
+                executionPhase = 'http-request'
                 scheme = $Uri.Scheme
                 hostname = $Uri.DnsSafeHost
                 path = $Uri.AbsolutePath
@@ -356,7 +476,10 @@ function Resolve-AzureDemoSmokeHttpResult {
                 errorVariableType = Get-AzureDemoSmokeSafeTypeName -InputObject $CapturedErrors
                 errorObjects = $errorObjectTypes
                 exceptionType = Get-AzureDemoSmokeSafeTypeName -InputObject $requestException
+                errorIdentifier = $safeErrorIdentifier
                 exceptionCategory = 'redirect-response'
+                script = $safeLocation.script
+                line = $safeLocation.line
             }
         }
     }
@@ -389,6 +512,7 @@ function Resolve-AzureDemoSmokeHttpResult {
         RawContentLength = 0L
         Diagnostic = [pscustomobject][ordered]@{
             checkId = $CheckId
+            executionPhase = 'http-request'
             scheme = $Uri.Scheme
             hostname = $Uri.DnsSafeHost
             path = $Uri.AbsolutePath
@@ -398,7 +522,10 @@ function Resolve-AzureDemoSmokeHttpResult {
             errorVariableType = Get-AzureDemoSmokeSafeTypeName -InputObject $CapturedErrors
             errorObjects = $errorObjectTypes
             exceptionType = if ($null -eq $requestException) { 'none' } else { Get-AzureDemoSmokeSafeTypeName -InputObject $requestException }
+            errorIdentifier = $safeErrorIdentifier
             exceptionCategory = $failureCategory
+            script = $safeLocation.script
+            line = $safeLocation.line
         }
     }
 }

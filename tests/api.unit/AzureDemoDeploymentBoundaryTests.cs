@@ -72,12 +72,15 @@ public sealed class AzureDemoDeploymentBoundaryTests
         Assert.Equal(2, pipeline.Split("$rows = @(& az @Arguments 2> $stderrPath)", StringSplitOptions.None).Length - 1);
         Assert.DoesNotContain("& az @Arguments 2>&1", pipeline, StringComparison.Ordinal);
         Assert.Contains("Test-AzureDemoPipelineSmokeTargetCommands.ps1", pipeline, StringComparison.Ordinal);
+        Assert.Contains("Test-AzureDemoSmokeOrchestration.ps1", pipeline, StringComparison.Ordinal);
         Assert.Contains("-WebBaseUri 'https://$(AZDEMO_WEB_STAGING_HOST)'", pipeline, StringComparison.Ordinal);
         Assert.Contains("-TargetSlotName staging", pipeline, StringComparison.Ordinal);
         Assert.Contains("-WebBaseUri 'https://$(AZDEMO_WEB_PRODUCTION_HOST)'", pipeline, StringComparison.Ordinal);
         Assert.Contains("-TargetSlotName production", pipeline, StringComparison.Ordinal);
-        Assert.Contains("condition: eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true')", pipeline, StringComparison.Ordinal);
-        Assert.Contains("condition: eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true')", pipeline, StringComparison.Ordinal);
+        Assert.Contains("condition: and(always(), eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true'))", pipeline, StringComparison.Ordinal);
+        Assert.Contains("condition: and(always(), eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true'))", pipeline, StringComparison.Ordinal);
+        Assert.True(pipeline.Split("New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null", StringSplitOptions.None).Length - 1 >= 2);
+        Assert.Equal(2, pipeline.Split("Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory $evidenceDirectory", StringSplitOptions.None).Length - 1);
         Assert.Contains("AZDEMO_SQL_BOOTSTRAP_EVIDENCE_DIRECTORY", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("AZDEMO_SMOKE_PREREQUISITE_EVIDENCE", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("-PrerequisiteEvidenceDirectory", pipeline, StringComparison.Ordinal);

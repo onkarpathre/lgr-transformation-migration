@@ -105,6 +105,7 @@ $requiredFragments = @(
     'Test-AzureDemoSmokeTargetResolution.ps1',
     'Test-AzureDemoPipelineSmokeTargetCommands.ps1',
     'Test-AzureDemoSmokeHttp.ps1',
+    'Test-AzureDemoSmokeOrchestration.ps1',
     'Test-AzureDemoSmokeEvidence.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
@@ -854,9 +855,10 @@ $migrateAndDeploy = $text.Substring($text.IndexOf('- stage: MigrateAndDeploySlot
 if ([regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeTargetResolution\.ps1\s*$').Count -ne 1 -or
     [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoPipelineSmokeTargetCommands\.ps1\s*$').Count -ne 1 -or
     [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeHttp\.ps1\s*$').Count -ne 1 -or
+    [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeOrchestration\.ps1\s*$').Count -ne 1 -or
     [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeEvidence\.ps1\s*$').Count -ne 1 -or
     -not $text.Substring($text.IndexOf('- stage: Validate', [StringComparison]::Ordinal), $text.IndexOf('- stage: Package', [StringComparison]::Ordinal) - $text.IndexOf('- stage: Validate', [StringComparison]::Ordinal)).Contains('pool: { vmImage: ubuntu-latest }')) {
-    throw 'Smoke target fixtures, actual pipeline CLI callers, real PowerShell 7 HTTP and evidence-provenance regressions must each run once in Linux validation.'
+    throw 'Smoke target fixtures, actual pipeline CLI callers, real PowerShell 7 HTTP/orchestration and evidence-provenance regressions must each run once in Linux validation.'
 }
 if ([regex]::Matches($text, '(?m)^\s+value:\s+633398e2-6c00-4bb7-a576-2db0d210ee77\s*$').Count -ne 1 -or
     -not $text.Contains('- name: AZDEMO_SUBSCRIPTION_ID')) {
@@ -936,9 +938,13 @@ foreach ($fragment in @(
         "-InfrastructureDeploymentId '`$(AZDEMO_INFRASTRUCTURE_DEPLOYMENT_ID)'",
         "-PipelineDefinition '`$(Build.DefinitionName)'",
         "-PipelineRunId '`$(Build.BuildId)'",
-        "condition: eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true')",
-        "condition: eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true')")) {
+        "condition: and(always(), eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true'))",
+        "condition: and(always(), eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true'))")) {
     if (-not $text.Contains($fragment)) { throw "Smoke execution or safe failure-evidence publication is missing: $fragment" }
+}
+if ([regex]::Matches($text, '(?m)^\s+New-Item -ItemType Directory -Path \$evidenceDirectory -Force \| Out-Null\s*$').Count -lt 2 -or
+    [regex]::Matches($text, '(?m)^\s+\./scripts/smoke/Invoke-AzureDemoSmokeTests\.ps1 -EvidenceDirectory \$evidenceDirectory ').Count -ne 2) {
+    throw 'Both protected smoke callers must create their evidence directory before execution and pass that exact directory to the runner.'
 }
 if ($text.Contains('AZDEMO_SMOKE_PREREQUISITE_EVIDENCE') -or $text.Contains("-PrerequisiteEvidenceDirectory") -or
     $swap.Contains('sql-bootstrap.json') -or $swap.Contains('DownloadSecureFile@1')) {

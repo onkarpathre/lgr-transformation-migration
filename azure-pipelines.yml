@@ -126,6 +126,8 @@ stages:
       displayName: Azure demo pipeline smoke-target CLI regression
     - pwsh: ./scripts/build/Test-AzureDemoSmokeHttp.ps1
       displayName: PowerShell 7 local HTTP smoke redirect and redaction regression
+    - pwsh: ./scripts/build/Test-AzureDemoSmokeOrchestration.ps1
+      displayName: PowerShell 7 complete smoke orchestration regression
     - pwsh: ./scripts/build/Test-AzureDemoSmokeEvidence.ps1
       displayName: Smoke evidence provenance and substitution regression
     - pwsh: ./scripts/build/Test-AzureAppServiceNativeRuntimes.ps1
@@ -553,12 +555,14 @@ stages:
                 Write-Host "##vso[task.setvariable variable=AZDEMO_WEB_STAGING_HOST]$($targets.WebStagingHost)"
                 Write-Host "##vso[task.setvariable variable=AZDEMO_API_STAGING_HOST]$($targets.ApiStagingHost)"
           - pwsh: |
+              $evidenceDirectory = '$(Pipeline.Workspace)/smoke-evidence'
+              New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
               Write-Host '##vso[task.setvariable variable=AZDEMO_STAGING_SMOKE_ATTEMPTED]true'
-              ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/smoke-evidence' -WebBaseUri 'https://$(AZDEMO_WEB_STAGING_HOST)' -VerifiedWebHost '$(AZDEMO_WEB_STAGING_HOST)' -VerifiedApiHost '$(AZDEMO_API_STAGING_HOST)' -TargetSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -TargetResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -TargetWebAppName '$(AZDEMO_WEB_APP_NAME)' -TargetApiAppName '$(AZDEMO_API_APP_NAME)' -TargetSlotName staging -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -InfrastructureDeploymentId '$(AZDEMO_INFRASTRUCTURE_DEPLOYMENT_ID)' -PipelineDefinition '$(Build.DefinitionName)' -PipelineRunId '$(Build.BuildId)' -Execute
+              ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory $evidenceDirectory -WebBaseUri 'https://$(AZDEMO_WEB_STAGING_HOST)' -VerifiedWebHost '$(AZDEMO_WEB_STAGING_HOST)' -VerifiedApiHost '$(AZDEMO_API_STAGING_HOST)' -TargetSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -TargetResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -TargetWebAppName '$(AZDEMO_WEB_APP_NAME)' -TargetApiAppName '$(AZDEMO_API_APP_NAME)' -TargetSlotName staging -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -InfrastructureDeploymentId '$(AZDEMO_INFRASTRUCTURE_DEPLOYMENT_ID)' -PipelineDefinition '$(Build.DefinitionName)' -PipelineRunId '$(Build.BuildId)' -Execute
             displayName: Run staging smoke checks
           - publish: $(Pipeline.Workspace)/smoke-evidence
             artifact: staging-smoke-evidence
-            condition: eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true')
+            condition: and(always(), eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true'))
           - pwsh: |
               $evidenceDirectory = Join-Path '$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'
               if (Test-Path -LiteralPath $evidenceDirectory -PathType Container) {
@@ -652,12 +656,14 @@ stages:
                 az webapp deployment slot swap --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name '$(AZDEMO_WEB_APP_NAME)' --slot staging --target-slot production
                 if ($LASTEXITCODE) { throw 'Restricted demo web slot swap failed.' }
           - pwsh: |
+              $evidenceDirectory = '$(Pipeline.Workspace)/post-swap-smoke-evidence'
+              New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
               Write-Host '##vso[task.setvariable variable=AZDEMO_PRODUCTION_SMOKE_ATTEMPTED]true'
-              ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory '$(Pipeline.Workspace)/post-swap-smoke-evidence' -WebBaseUri 'https://$(AZDEMO_WEB_PRODUCTION_HOST)' -VerifiedWebHost '$(AZDEMO_WEB_PRODUCTION_HOST)' -VerifiedApiHost '$(AZDEMO_API_PRODUCTION_HOST)' -TargetSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -TargetResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -TargetWebAppName '$(AZDEMO_WEB_APP_NAME)' -TargetApiAppName '$(AZDEMO_API_APP_NAME)' -TargetSlotName production -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -InfrastructureDeploymentId '/subscriptions/$(AZDEMO_SUBSCRIPTION_ID)/resourceGroups/$(AZDEMO_RESOURCE_GROUP_NAME)/providers/Microsoft.Resources/deployments/mtp-azure-demo-$(Build.BuildId)' -PipelineDefinition '$(Build.DefinitionName)' -PipelineRunId '$(Build.BuildId)' -Execute
+              ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory $evidenceDirectory -WebBaseUri 'https://$(AZDEMO_WEB_PRODUCTION_HOST)' -VerifiedWebHost '$(AZDEMO_WEB_PRODUCTION_HOST)' -VerifiedApiHost '$(AZDEMO_API_PRODUCTION_HOST)' -TargetSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -TargetResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -TargetWebAppName '$(AZDEMO_WEB_APP_NAME)' -TargetApiAppName '$(AZDEMO_API_APP_NAME)' -TargetSlotName production -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -InfrastructureDeploymentId '/subscriptions/$(AZDEMO_SUBSCRIPTION_ID)/resourceGroups/$(AZDEMO_RESOURCE_GROUP_NAME)/providers/Microsoft.Resources/deployments/mtp-azure-demo-$(Build.BuildId)' -PipelineDefinition '$(Build.DefinitionName)' -PipelineRunId '$(Build.BuildId)' -Execute
             displayName: Run production smoke checks after swap
           - publish: $(Pipeline.Workspace)/post-swap-smoke-evidence
             artifact: post-swap-smoke-evidence
-            condition: eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true')
+            condition: and(always(), eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true'))
 
 - stage: Rollback
   displayName: Human-authorised application slot swap-back
