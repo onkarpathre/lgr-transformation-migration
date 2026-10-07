@@ -1721,6 +1721,94 @@ handoff:
 
 READY_FOR_TEST
 
+## PowerShell 7 readiness-evidence timestamp preservation repair
+
+### Baseline, scope and traceability
+
+This bounded Developer repair started from branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `92d6c149346367e84b57bfc2f2b5bfc5be4b6fe5` with a clean index and worktree. It is limited to the Linux validation failure in `Test-AzureDemoPostDeploymentReadiness.ps1`; it does not change the readiness evidence writer, HTTP behavior, target allowlist, redaction schema, pipeline deployment sequence or protected environment. Nothing was committed, pushed, deployed, migrated, seeded or swapped.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+This local regression repair is separable from the remaining Q-01 and Q-08 production decisions. It reuses the approved smoke-evidence JSON contract, performs only synthetic local validation and neither changes nor exercises a protected environment. All connected-CI, staging, protected-evidence and human release gates remain in force.
+
+### Failure analysis and repair
+
+The timeout writer retained the expected raw JSON token `"2026-10-07T20:17:02.0000000+00:00"` under the exact `timeUtc` property. The failing test reader then used plain `ConvertFrom-Json`; on the failing PowerShell 7 path that timestamp was materialised as `System.DateTime`. The assertion cast that value back to a culture-formatted string and compared it with `^2026-10-07T20:17:02(?:\.0{7})?\+00:00$`, so the failure did not mean the property was missing or the stored token was malformed.
+
+The readiness regression now reads JSON through `ConvertFrom-AzureDemoSmokeEvidenceJson`, which selects `ConvertFrom-Json -DateKind String` when the runtime supports it and retains the established Windows PowerShell 5.1 fallback. It requires the parsed property to remain a `System.String`, validates the original value with the shared strict UTC syntax validator, and compares that original string with the exact writer value. It never reconstructs a converted date with `ToString('O')`. A non-zero-offset timestamp fixture must fail closed.
+
+### Changed files and verification
+
+- `scripts/build/Test-AzureDemoPostDeploymentReadiness.ps1`: preserves JSON timestamp strings, validates strict UTC syntax and exact value, and covers immediate success, recovery, persistent 503, timeout, malformed timestamp and temporary-evidence cleanup.
+- `docs/implementation/AZURE_DEMO_Implementation_Work_Package.md`: records this implementation and independent Linux verification requirement.
+
+| Check | Result |
+|---|---|
+| Focused readiness regression | PASS on Windows PowerShell 5.1: success, recovery, persistent 503, deadline timeout, strict malformed-timestamp rejection, target substitution, four-field redaction and cleanup. |
+| Safe timestamp observation | PASS: raw token `"2026-10-07T20:17:02.0000000+00:00"`, property `timeUtc`, preserved runtime type `System.String`; the Windows PowerShell 5.1 default type is also `System.String`. |
+| Smoke evidence contract | PASS on Windows PowerShell 5.1, including the existing string-preserving JSON parser and full UTC timestamp matrix. |
+| Supplemental smoke orchestration | PASS on Windows PowerShell 5.1; the script explicitly retains its separate Linux HTTP/SMK-20 requirement. |
+| Source-boundary scan | PASS for 212 source/configuration files. |
+| Pipeline structure | PASS for seven ordered stages; the readiness task remains on `ubuntu-latest` and the production entry point retains 120-second overall, five-second poll and ten-second request limits. |
+| PowerShell parsing and diff whitespace | PASS for the readiness test, writer, production entry point and shared evidence contract; `git diff --check` exits `0`. |
+| PowerShell 7 production-entry execution | `LINUX_VERIFICATION_PENDING`: no local `pwsh`, WSL, Docker or Podman runtime is available; a temporary isolated PowerShell tool download was blocked by network policy and left no repository artefact. The exact `ubuntu-latest` task must prove default `System.DateTime` versus preserved `System.String` and pass all focused cases. |
+| External/protected actions | NOT RUN: no Azure, Azure DevOps, SQL, Entra, deployment, migration, seed, smoke, swap, release or approval action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_92d6c149346367e84b57bfc2f2b5bfc5be4b6fe5"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "scripts/build/Test-AzureDemoPostDeploymentReadiness.ps1"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Windows PowerShell 5.1 focused readiness, smoke-evidence, orchestration, source-boundary, pipeline-structure, parsing and diff checks pass."
+    - "The original JSON timestamp string is checked before any temporal parsing and a non-UTC offset fails closed."
+  decisions:
+    - "Use the established feature-detected ConvertFrom-Json -DateKind String contract for readiness evidence."
+    - "Validate strict UTC syntax and the exact original string; never reformat an automatically materialised date."
+    - "Leave the production writer, redaction schema and fixed 120-second readiness deadline unchanged."
+  assumptions: []
+  risks:
+    - "The exact ubuntu-latest PowerShell 7 production-entry task remains mandatory before independent acceptance."
+  defects:
+    - "REPAIRED LOCALLY: plain ConvertFrom-Json materialised timeUtc as System.DateTime on PowerShell 7 and invalidated a string-form assertion despite correct raw JSON."
+  blockers: []
+  approvals: []
+  requested_action: "Independent Tester must run scripts/build/Test-AzureDemoPostDeploymentReadiness.ps1 and the pipeline structural regression on ubuntu-latest PowerShell 7, confirm defaultType=System.DateTime and preservedType=System.String, and retain the same exact commit/worktree evidence before quality review."
+```
+
+READY_FOR_TEST
+
 ## Bounded post-deployment staging readiness gate
 
 ### Baseline, authority and traceability
@@ -3853,5 +3941,11 @@ READY_FOR_TEST
 ## Current worktree terminal state - post-deployment readiness stabilization
 
 The latest bounded continuation is **Bounded post-deployment staging readiness gate** above, based on exact HEAD `854e8bb3b7b0cfc9b21183d1af0f50ccb973e6f6`. Its focused readiness, exact-target, pipeline-caller, protected-evidence-contract, supplemental orchestration, source-boundary, parsing, pipeline-structure and diff checks pass locally as recorded. Real Linux PowerShell 7 request execution and an authorised protected staging run remain pending. No Azure action or application readiness-budget change occurred. The missing approved protected-evidence delivery for 17 checks and the distinct prior-release/rehearsal evidence required by SMK-19 remain release blockers; there is no first-release waiver.
+
+READY_FOR_TEST
+
+## Current worktree terminal state - readiness JSON timestamp preservation
+
+The latest bounded continuation is **PowerShell 7 readiness-evidence timestamp preservation repair** above, based on exact HEAD `92d6c149346367e84b57bfc2f2b5bfc5be4b6fe5`. Its Windows PowerShell 5.1 focused readiness, smoke-evidence, supplemental orchestration, source-boundary, parsing, pipeline-structure and diff checks pass as recorded. The exact `ubuntu-latest` PowerShell 7 task remains required to confirm default `System.DateTime` versus preserved `System.String`; no Linux pass is claimed locally. No Azure, deployment, migration, seed, swap, protected evidence, release or human-approval action occurred.
 
 READY_FOR_TEST
