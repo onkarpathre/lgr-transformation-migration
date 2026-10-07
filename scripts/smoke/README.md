@@ -16,7 +16,7 @@ The protected test procedures are:
 
 - SMK-01: verify HTTP redirect and reject TLS below the approved minimum.
 - SMK-02: request `/health` and a direct deep route.
-- SMK-03: request a hashed Next JS/CSS asset and verify MIME/cache/non-empty content.
+- SMK-03: select a genuine same-origin Next script or stylesheet reference, bind it to the immutable web package, and verify no-follow HTTP 200, exact JS/CSS MIME, public immutable cache policy and non-empty content.
 - SMK-04: prove the API public hostname is unreachable or denied without metadata from outside the authorised private network. A request from the Sweden managed pool is not this proof.
 - SMK-05: from the Sweden managed pool, resolve API, SQL, Key Vault and Blob privately from each authorised path and deny other paths. This is not proof of public API denial.
 - SMK-06: in a real assigned-user browser session, complete workforce-user authorization code with PKCE; prove tenant/audience/scope, assignment and token-storage rules. Static source tests are not this proof.

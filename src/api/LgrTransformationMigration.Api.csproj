@@ -24,4 +24,8 @@
     <Content Update="appsettings.Testing.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="LgrTransformationMigration.Api.UnitTests" />
+  </ItemGroup>
+
 </Project>

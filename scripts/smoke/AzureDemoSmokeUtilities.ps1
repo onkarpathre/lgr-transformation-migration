@@ -530,6 +530,152 @@ function Resolve-AzureDemoSmokeHttpResult {
     }
 }
 
+function Get-AzureDemoHtmlAttributeValue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $Tag,
+        [Parameter(Mandatory)] [ValidateSet('src', 'href', 'rel')] [string] $Name
+    )
+
+    $pattern = '(?:^|\s)' + [regex]::Escape($Name) + '\s*=\s*(?:"([^"]*)"|''([^'']*)'')'
+    $match = [regex]::Match($Tag, $pattern, [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $match.Success) { return $null }
+    if ($match.Groups[1].Success) { return $match.Groups[1].Value }
+    return $match.Groups[2].Value
+}
+
+function Test-AzureDemoStaticAssetPath {
+    [CmdletBinding()]
+    param([AllowNull()] [string] $Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path.Length -gt 2048 -or
+        $Path.Contains('%') -or $Path.Contains('\') -or $Path.Contains('?') -or $Path.Contains('#') -or
+        $Path.Contains('//') -or $Path.Contains('/./') -or $Path.Contains('/../')) {
+        return $false
+    }
+
+    return $Path -cmatch '^/_next/static/(?:[A-Za-z0-9._\-\[\]]+/)*[A-Za-z0-9._\-\[\]]+\.(?:js|css)$'
+}
+
+function Get-AzureDemoStaticAssetPathFromHtml {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [string] $Html)
+
+    $tags = [regex]::Matches(
+        $Html,
+        '(?is)<(?:script|link)\b[^>]*>',
+        [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+    foreach ($tagMatch in $tags) {
+        $tag = $tagMatch.Value
+        $candidate = $null
+        if ($tag -match '(?is)^<script\b') {
+            $candidate = Get-AzureDemoHtmlAttributeValue -Tag $tag -Name src
+        }
+        elseif ($tag -match '(?is)^<link\b') {
+            $rel = Get-AzureDemoHtmlAttributeValue -Tag $tag -Name rel
+            $relTokens = @(([string] $rel) -split '\s+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            if (@($relTokens | Where-Object { $_ -ieq 'stylesheet' }).Count -eq 1) {
+                $candidate = Get-AzureDemoHtmlAttributeValue -Tag $tag -Name href
+            }
+        }
+
+        if (Test-AzureDemoStaticAssetPath -Path $candidate) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
+function Assert-AzureDemoStaticAssetPackageBinding {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $AssetPath,
+        [Parameter(Mandatory)] [string] $ArtifactManifest,
+        [Parameter(Mandatory)] [string] $ExpectedCommit
+    )
+
+    if (-not (Test-AzureDemoStaticAssetPath -Path $AssetPath) -or
+        $ExpectedCommit -cnotmatch '^[0-9a-f]{40}$') {
+        throw 'Static asset package binding rejected an invalid asset path or source commit.'
+    }
+
+    $manifestPath = (Resolve-Path -LiteralPath $ArtifactManifest -ErrorAction Stop).ProviderPath
+    if ([IO.Path]::GetFileName($manifestPath) -cne 'deployment-artifact-manifest.json') {
+        throw 'Static asset package binding requires the existing deployment artifact manifest.'
+    }
+    try { $deploymentManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw 'Static asset package binding requires a valid deployment artifact manifest.' }
+    if ($deploymentManifest.schemaVersion -cne '1' -or $deploymentManifest.sourceCommit -cne $ExpectedCommit) {
+        throw 'Static asset package binding requires the exact source-commit deployment manifest.'
+    }
+
+    $webArtifacts = @($deploymentManifest.artifacts | Where-Object { [string] $_.path -ceq 'application/web.zip' })
+    if ($webArtifacts.Count -ne 1 -or [string] $webArtifacts[0].sha256 -cnotmatch '^[0-9a-f]{64}$') {
+        throw 'Static asset package binding requires one valid application/web.zip contract entry.'
+    }
+
+    $artifactRoot = [IO.Path]::GetDirectoryName($manifestPath)
+    $webZipPath = [IO.Path]::GetFullPath((Join-Path $artifactRoot 'application/web.zip'))
+    $rootPrefix = [IO.Path]::GetFullPath($artifactRoot).TrimEnd([char[]] @('\', '/')) + [IO.Path]::DirectorySeparatorChar
+    $comparison = if ([IO.Path]::DirectorySeparatorChar -eq '\') { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    if (-not $webZipPath.StartsWith($rootPrefix, $comparison) -or
+        -not (Test-Path -LiteralPath $webZipPath -PathType Leaf)) {
+        throw 'Static asset package binding could not resolve the immutable web package.'
+    }
+    $webZipHash = (Get-FileHash -LiteralPath $webZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($webZipHash -cne [string] $webArtifacts[0].sha256) {
+        throw 'Static asset package binding rejected a web package hash mismatch.'
+    }
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead($webZipPath)
+    try {
+        $entryName = '.next' + $AssetPath.Substring('/_next'.Length)
+        $entries = @($archive.Entries | Where-Object { $_.FullName -ceq $entryName })
+        if ($entries.Count -ne 1 -or $entries[0].Length -le 0) {
+            throw 'Static asset path is not an exact non-empty member of the immutable web package.'
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
+
+    return $true
+}
+
+function Test-AzureDemoStaticAssetResponse {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $AssetPath,
+        [Parameter(Mandatory)] [object] $Response
+    )
+
+    if (-not (Test-AzureDemoStaticAssetPath -Path $AssetPath) -or
+        -not $Response.TransportSucceeded -or $Response.StatusCode -ne 200 -or
+        $Response.RawContentLength -le 0) {
+        return $false
+    }
+
+    $contentType = [string] (Get-AzureDemoSmokeHeaderValue -Response $Response -Name 'Content-Type')
+    $mediaType = @($contentType.Split(';'))[0].Trim().ToLowerInvariant()
+    $contentTypePassed = if ($AssetPath.EndsWith('.css', [StringComparison]::Ordinal)) {
+        $mediaType -ceq 'text/css'
+    }
+    else {
+        $mediaType -in @('application/javascript', 'application/x-javascript', 'text/javascript')
+    }
+
+    $cacheControl = [string] (Get-AzureDemoSmokeHeaderValue -Response $Response -Name 'Cache-Control')
+    $cacheDirectives = @($cacheControl -split ',' | ForEach-Object { $_.Trim().ToLowerInvariant() })
+    $cachePassed = $cacheDirectives -ccontains 'public' -and $cacheDirectives -ccontains 'immutable' -and
+        $cacheDirectives -cnotcontains 'private' -and $cacheDirectives -cnotcontains 'no-store' -and
+        $cacheDirectives -cnotcontains 'no-cache'
+
+    return $contentTypePassed -and $cachePassed
+}
+
 function Invoke-AzureDemoSmokeHttpRequest {
     [CmdletBinding()]
     param(

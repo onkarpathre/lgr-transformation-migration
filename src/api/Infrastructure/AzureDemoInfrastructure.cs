@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Azure.Core;
 using Azure.Identity;
@@ -394,8 +395,22 @@ public sealed class KeyVaultProjectMembershipProvider(
             {
                 cached = null;
                 cacheExpiresAt = default;
-                logger.LogError(exception,
-                    "The AzureDemo membership authority is unavailable; project access remains fail-closed.");
+                if (AzureDemoDependencyDiagnostics.IsTimeout(exception))
+                {
+                    AzureDemoDependencyDiagnostics.LogTimeout(
+                        logger,
+                        "memberships",
+                        exception,
+                        "dependency-timeout");
+                }
+                else
+                {
+                    AzureDemoDependencyDiagnostics.LogException(
+                        logger,
+                        "memberships",
+                        exception,
+                        AzureDemoDependencyDiagnostics.ClassifyMembershipException(exception));
+                }
                 return null;
             }
         }
@@ -421,6 +436,11 @@ public sealed class KeyVaultProjectMembershipProvider(
             await response.Content.ReadAsStreamAsync(cancellationToken),
             cancellationToken: cancellationToken)
             ?? throw new InvalidOperationException("The membership secret response was empty.");
+        if (string.IsNullOrWhiteSpace(envelope.Value))
+        {
+            throw new InvalidOperationException("The membership secret value was empty.");
+        }
+
         var document = JsonSerializer.Deserialize<MembershipDocument>(envelope.Value,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? throw new InvalidOperationException("The membership document was empty.");
@@ -466,6 +486,7 @@ public sealed class KeyVaultProjectMembershipProvider(
 
     private sealed class KeyVaultSecretEnvelope
     {
+        [JsonPropertyName("value")]
         public string Value { get; set; } = string.Empty;
     }
 

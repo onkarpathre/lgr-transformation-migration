@@ -1,7 +1,7 @@
 [
   { "id": "SMK-01", "mode": "automated+platform-evidence", "title": "HTTPS redirect and minimum TLS" },
   { "id": "SMK-02", "mode": "automated", "title": "Web health and deep route" },
-  { "id": "SMK-03", "mode": "automated", "title": "Hashed Next static asset" },
+  { "id": "SMK-03", "mode": "automated", "title": "Package-bound Next static asset" },
   { "id": "SMK-04", "mode": "automated/evidence", "title": "Private API denial" },
   { "id": "SMK-05", "mode": "protected-evidence", "title": "Private DNS and dependency access" },
   { "id": "SMK-06", "mode": "protected-evidence", "title": "Assigned-user PKCE sign-in" },

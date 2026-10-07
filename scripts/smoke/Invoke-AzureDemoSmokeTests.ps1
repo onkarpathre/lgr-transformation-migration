@@ -298,20 +298,18 @@ foreach ($check in $catalog) {
                     Add-Result -Id $check.id -Passed $false -Summary 'Web root did not return a usable 200 response.' -FailureCategories @($category)
                     break
                 }
-                $match = [regex]::Match($root.Content, '/_next/static/[^"'']*[a-f0-9]{8,}[^"'']*\.(?:js|css)', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
-                if (-not $match.Success) {
-                    Add-Result -Id $check.id -Passed $false -Summary 'No hashed Next static asset was found.' -FailureCategories @('assertion-failure')
+                $assetPath = Get-AzureDemoStaticAssetPathFromHtml -Html $root.Content
+                if ([string]::IsNullOrWhiteSpace($assetPath)) {
+                    Add-Result -Id $check.id -Passed $false -Summary 'No valid script or stylesheet Next static asset reference was found.' -FailureCategories @('assertion-failure')
                     break
                 }
-                $assetUri = [uri]::new($WebBaseUri, $match.Value)
+                Assert-AzureDemoStaticAssetPackageBinding -AssetPath $assetPath -ArtifactManifest $manifestPath -ExpectedCommit $ExpectedCommit | Out-Null
+                $assetUri = [uri]::new($WebBaseUri, $assetPath)
                 $asset = Invoke-CheckedWebRequest -CheckId $check.id -Uri $assetUri
                 $executionPhase = 'response-assertion'
-                $contentType = Get-AzureDemoSmokeHeaderValue -Response $asset -Name 'Content-Type'
-                $cacheControl = Get-AzureDemoSmokeHeaderValue -Response $asset -Name 'Cache-Control'
-                $contentTypePassed = $contentType -match '^(?:text/css|application/(?:javascript|x-javascript)|text/javascript)(?:;|$)'
-                $passed = $asset.TransportSucceeded -and $asset.StatusCode -eq 200 -and $asset.RawContentLength -gt 0 -and $contentTypePassed -and $cacheControl -match '(?i)\bpublic\b' -and $cacheControl -match '(?i)\bimmutable\b'
+                $passed = Test-AzureDemoStaticAssetResponse -AssetPath $assetPath -Response $asset
                 $category = Get-HttpCheckFailureCategory -Responses @($asset) -AssertionPassed $passed -ExpectedStatusCodes @(200)
-                Add-Result -Id $check.id -Passed $passed -Summary 'Hashed static asset must return non-empty content with the correct JS/CSS MIME type and immutable public cache policy.' -FailureCategories @($category)
+                Add-Result -Id $check.id -Passed $passed -Summary 'A package-bound script or stylesheet asset must return non-empty content with its correct MIME type and immutable public cache policy.' -FailureCategories @($category)
             }
             'SMK-04' {
                 if ($null -eq $ApiPublicUri) {

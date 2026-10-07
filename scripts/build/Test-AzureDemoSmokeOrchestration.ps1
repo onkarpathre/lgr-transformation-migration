@@ -2,7 +2,7 @@
 param(
     [switch] $InternalFixture,
     [int] $FixturePort,
-    [ValidateSet('success', 'client-error', 'server-error', 'transport', 'assertion')] [string] $FixtureScenario = 'success',
+    [ValidateSet('success', 'client-error', 'server-error', 'transport', 'assertion', 'asset-redirect', 'asset-mime')] [string] $FixtureScenario = 'success',
     [string] $ReadyFile,
     [int] $RequestCount = 16
 )
@@ -45,7 +45,7 @@ if ($InternalFixture) {
                     $headers.Location = 'https://app-mtp-web-dev-uks-001-staging.azurewebsites.net' + $path
                 }
                 elseif ($path -eq '/') {
-                    $body = '<html><h1>Sign in required</h1><p>Restricted synthetic non-production management demo</p><script src="/_next/static/chunks/app-12345678.js"></script></html>'
+                    $body = '<!doctype html><html><head><link rel="stylesheet" href="/_next/static/chunks/15n2y_9g75mxk.css" data-precedence="next"/><link rel="preload" as="script" href="/_next/static/chunks/310vm2bl3xxpt.js"/><script nonce="synthetic" src="/_next/static/chunks/0cz1d0mv5g_q7.js" async></script></head><body><h1>Sign in required</h1><p>Restricted synthetic non-production management demo</p></body></html>'
                     $headers['Content-Type'] = 'text/html; charset=utf-8'
                     $headers['Strict-Transport-Security'] = 'max-age=31536000'
                     $headers['Content-Security-Policy'] = "default-src 'self'; frame-ancestors 'none'"
@@ -66,8 +66,17 @@ if ($InternalFixture) {
                 }
                 elseif ($path -like '/_next/static/*') {
                     $body = 'asset'
-                    $headers['Content-Type'] = 'application/javascript'
+                    $headers['Content-Type'] = if ($path.EndsWith('.css', [StringComparison]::Ordinal)) { 'text/css' } else { 'application/javascript' }
                     $headers['Cache-Control'] = 'public, immutable'
+                    if ($FixtureScenario -eq 'asset-redirect') {
+                        $status = 302
+                        $reason = 'Redirect'
+                        $body = ''
+                        $headers.Location = 'https://external.example/asset.js'
+                    }
+                    elseif ($FixtureScenario -eq 'asset-mime') {
+                        $headers['Content-Type'] = 'text/plain'
+                    }
                 }
                 elseif ($path -eq '/health/live') {
                     $headers['Content-Security-Policy'] = "default-src 'none'; frame-ancestors 'none'"
@@ -98,6 +107,7 @@ if (-not $isPowerShell7) {
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
 $runner = Join-Path $repo 'scripts\smoke\Invoke-AzureDemoSmokeTests.ps1'
+. (Join-Path $repo 'scripts\smoke\AzureDemoSmokeUtilities.ps1')
 $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("azdemo-smoke-orchestration-{0}" -f [Guid]::NewGuid().ToString('N'))
 $utf8NoBom = [Text.UTF8Encoding]::new($false)
 New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
@@ -117,6 +127,46 @@ function Get-Result([object[]] $Results, [string] $Id) {
     return $matches[0]
 }
 
+function Assert-Rejected([scriptblock] $Action, [string] $Description) {
+    $rejected = $false
+    try { & $Action | Out-Null } catch { $rejected = $true }
+    Assert-True $rejected "Expected rejection for $Description."
+}
+
+function New-StaticAssetPackageFixture([string] $ScenarioRoot, [string] $SourceCommit) {
+    $applicationDirectory = Join-Path $ScenarioRoot 'application'
+    New-Item -ItemType Directory -Path $applicationDirectory -Force | Out-Null
+    $webZip = Join-Path $applicationDirectory 'web.zip'
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::Open($webZip, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($entryFixture in @(
+                @{ Name = '.next/static/chunks/0cz1d0mv5g_q7.js'; Content = 'synthetic-javascript' },
+                @{ Name = '.next/static/chunks/15n2y_9g75mxk.css'; Content = 'synthetic-css' })) {
+            $entry = $archive.CreateEntry($entryFixture.Name, [IO.Compression.CompressionLevel]::Optimal)
+            $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
+            try { $writer.Write($entryFixture.Content) } finally { $writer.Dispose() }
+        }
+    }
+    finally { $archive.Dispose() }
+
+    $manifestPath = Join-Path $ScenarioRoot 'deployment-artifact-manifest.json'
+    $manifest = [ordered]@{
+        schemaVersion = '1'
+        sourceCommit = $SourceCommit
+        createdAtUtc = '2026-10-07T00:00:00.0000000+00:00'
+        artifacts = @(
+            [ordered]@{
+                path = 'application/web.zip'
+                sha256 = (Get-FileHash -LiteralPath $webZip -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+        )
+    }
+    [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 5), $utf8NoBom)
+    return $manifestPath
+}
+
 function Invoke-OrchestrationScenario([string] $Scenario, [bool] $RejectedEvidence) {
     $scenarioRoot = Join-Path $temporaryDirectory ("{0}-{1}" -f $Scenario, [Guid]::NewGuid().ToString('N'))
     $evidenceDirectory = Join-Path $scenarioRoot 'results'
@@ -126,9 +176,8 @@ function Invoke-OrchestrationScenario([string] $Scenario, [bool] $RejectedEviden
         New-Item -ItemType Directory -Path $protectedDirectory -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $protectedDirectory 'SMK-01.json'), '{}', $utf8NoBom)
     }
-    $manifestPath = Join-Path $scenarioRoot 'deployment-artifact-manifest.json'
     $sourceCommit = '1111111111111111111111111111111111111111'
-    [IO.File]::WriteAllText($manifestPath, '{"schemaVersion":"1","sourceCommit":"1111111111111111111111111111111111111111","artifacts":[]}', $utf8NoBom)
+    $manifestPath = New-StaticAssetPackageFixture -ScenarioRoot $scenarioRoot -SourceCommit $sourceCommit
 
     $port = Get-FreeLoopbackPort
     $readyFile = Join-Path $scenarioRoot 'fixture.ready'
@@ -225,6 +274,46 @@ function Invoke-OrchestrationScenario([string] $Scenario, [bool] $RejectedEviden
 }
 
 try {
+    $realisticScriptHtml = '<html><script src="https://external.example/evil.js"></script><script nonce="abc" async src="/_next/static/chunks/0cz1d0mv5g_q7.js"></script></html>'
+    Assert-True ((Get-AzureDemoStaticAssetPathFromHtml -Html $realisticScriptHtml) -ceq '/_next/static/chunks/0cz1d0mv5g_q7.js') 'Realistic Next script src discovery failed.'
+    $realisticStylesheetHtml = '<html><link href="/_next/static/chunks/15n2y_9g75mxk.css" crossorigin rel="preload stylesheet"></html>'
+    Assert-True ((Get-AzureDemoStaticAssetPathFromHtml -Html $realisticStylesheetHtml) -ceq '/_next/static/chunks/15n2y_9g75mxk.css') 'Realistic Next stylesheet href discovery failed.'
+    foreach ($invalidHtml in @(
+            '<script src="https://external.example/_next/static/chunks/a.js"></script>',
+            '<script src="//external.example/_next/static/chunks/a.js"></script>',
+            '<script src="/_next/static/../server.js"></script>',
+            '<script src="/_next/static/%2e%2e/server.js"></script>',
+            '<script src=/_next/static/chunks/a.js></script>',
+            '<script data-src="/_next/static/chunks/a.js"></script>',
+            '<link rel="preload" href="/_next/static/chunks/a.css">',
+            '<div src="/_next/static/chunks/a.js"></div>')) {
+        Assert-True ([string]::IsNullOrWhiteSpace((Get-AzureDemoStaticAssetPathFromHtml -Html $invalidHtml))) "Unsafe or malformed HTML asset reference was selected: $invalidHtml"
+    }
+
+    $responseFixture = [pscustomobject]@{
+        TransportSucceeded = $true
+        StatusCode = 200
+        RawContentLength = 5
+        Headers = @{ 'Content-Type' = 'application/javascript; charset=utf-8'; 'Cache-Control' = 'public, max-age=31536000, immutable' }
+    }
+    Assert-True (Test-AzureDemoStaticAssetResponse -AssetPath '/_next/static/chunks/0cz1d0mv5g_q7.js' -Response $responseFixture) 'Valid JavaScript asset response was rejected.'
+    $responseFixture.Headers['Content-Type'] = 'text/css; charset=utf-8'
+    Assert-True (Test-AzureDemoStaticAssetResponse -AssetPath '/_next/static/chunks/15n2y_9g75mxk.css' -Response $responseFixture) 'Valid stylesheet asset response was rejected.'
+    $responseFixture.Headers['Content-Type'] = 'application/javascript'
+    Assert-True (-not (Test-AzureDemoStaticAssetResponse -AssetPath '/_next/static/chunks/15n2y_9g75mxk.css' -Response $responseFixture)) 'Stylesheet accepted a JavaScript MIME type.'
+    $responseFixture.RawContentLength = 0
+    Assert-True (-not (Test-AzureDemoStaticAssetResponse -AssetPath '/_next/static/chunks/0cz1d0mv5g_q7.js' -Response $responseFixture)) 'Empty static content was accepted.'
+    $responseFixture.RawContentLength = 5
+    $responseFixture.Headers['Content-Type'] = 'application/javascript'
+    $responseFixture.Headers['Cache-Control'] = 'public, immutable, no-store'
+    Assert-True (-not (Test-AzureDemoStaticAssetResponse -AssetPath '/_next/static/chunks/0cz1d0mv5g_q7.js' -Response $responseFixture)) 'Contradictory no-store static caching was accepted.'
+
+    $bindingRoot = Join-Path $temporaryDirectory 'binding'
+    New-Item -ItemType Directory -Path $bindingRoot -Force | Out-Null
+    $bindingManifest = New-StaticAssetPackageFixture -ScenarioRoot $bindingRoot -SourceCommit ('2' * 40)
+    Assert-True (Assert-AzureDemoStaticAssetPackageBinding -AssetPath '/_next/static/chunks/0cz1d0mv5g_q7.js' -ArtifactManifest $bindingManifest -ExpectedCommit ('2' * 40)) 'Packaged static asset binding failed.'
+    Assert-Rejected { Assert-AzureDemoStaticAssetPackageBinding -AssetPath '/_next/static/chunks/not-in-package.js' -ArtifactManifest $bindingManifest -ExpectedCommit ('2' * 40) } 'a valid but unbound asset path'
+
     $success = Invoke-OrchestrationScenario -Scenario 'success' -RejectedEvidence $false
     $successfulAutomatedChecks = @('SMK-03', 'SMK-10', 'SMK-11')
     if ($isPowerShell7) { $successfulAutomatedChecks += @('SMK-02', 'SMK-20') }
@@ -267,6 +356,16 @@ try {
     Assert-True ($headerResult.failureCategories -ccontains 'assertion-failure') 'A valid HTTP 200 with a missing required header was not classified as an assertion failure.'
     Assert-True (@($headerResult.diagnostics | Where-Object { $_.httpStatus -eq 200 }).Count -eq 2) 'Assertion failure did not preserve both HTTP 200 results.'
 
+    $assetRedirect = Invoke-OrchestrationScenario -Scenario 'asset-redirect' -RejectedEvidence $false
+    $assetRedirectResult = Get-Result $assetRedirect.Results 'SMK-03'
+    Assert-True ($assetRedirectResult.status -ceq 'FAIL') 'SMK-03 followed or accepted a redirecting static asset.'
+    Assert-True ($assetRedirectResult.failureCategories -ccontains 'application-response-failure') 'Redirecting static asset was not classified as an application response failure.'
+    Assert-True (@($assetRedirectResult.diagnostics | Where-Object { $_.httpStatus -eq 302 }).Count -eq 1) 'SMK-03 did not retain the no-follow redirect response.'
+
+    $assetMime = Invoke-OrchestrationScenario -Scenario 'asset-mime' -RejectedEvidence $false
+    $assetMimeResult = Get-Result $assetMime.Results 'SMK-03'
+    Assert-True ($assetMimeResult.status -ceq 'FAIL' -and $assetMimeResult.failureCategories -ccontains 'assertion-failure') 'SMK-03 accepted an incorrect static asset MIME type.'
+
     $rejected = Invoke-OrchestrationScenario -Scenario 'success' -RejectedEvidence $true
     Assert-True ((Get-Result $rejected.Results 'SMK-01').failureCategories -ccontains 'rejected-evidence') 'Rejected evidence was not distinguished from missing evidence.'
 
@@ -276,7 +375,7 @@ try {
     }
 
     $statusCoverage = if ($isPowerShell7) { '4xx, 5xx, ' } else { '' }
-    Write-Output "PowerShell $($PSVersionTable.PSVersion) smoke orchestration regression passed redirect, successful response, ${statusCoverage}transport, assertion, evidence, continuation, redaction and publication fixtures."
+    Write-Output "PowerShell $($PSVersionTable.PSVersion) smoke orchestration regression passed 2 realistic static discovery positives, 8 unsafe/malformed discovery rejections, 5 static response assertions, 2 package-binding assertions, and redirect, successful response, ${statusCoverage}transport, assertion, evidence, continuation, redaction and publication fixtures."
 }
 finally {
     if (Test-Path -LiteralPath $temporaryDirectory) { Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force }

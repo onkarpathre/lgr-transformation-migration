@@ -1,6 +1,8 @@
 using LgrTransformationMigration.Api.Services.Discovery;
 using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
+using System.Net;
+using System.Text.Json;
 
 namespace LgrTransformationMigration.Api.Infrastructure;
 
@@ -23,23 +25,228 @@ public static class HealthEndpoints
         AppDbContext database,
         IProjectMembershipReadiness memberships,
         IImportStorageReadiness storage,
+        ILogger<ReadinessHealthDiagnostics> logger,
+        HttpContext context,
         CancellationToken requestAborted)
     {
+        var ready = await EvaluateReadinessAsync(
+            async cancellationToken =>
+            {
+                await database.Database.ExecuteSqlRawAsync("SELECT 1", cancellationToken);
+                return true;
+            },
+            memberships.IsReadyAsync,
+            storage.IsReadyAsync,
+            logger,
+            context.TraceIdentifier,
+            requestAborted,
+            TimeSpan.FromSeconds(5));
+
+        return ready
+            ? Results.Json(new { status = "Healthy" })
+            : Results.Json(new { status = "Unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    internal static async Task<bool> EvaluateReadinessAsync(
+        Func<CancellationToken, Task<bool>> sql,
+        Func<CancellationToken, ValueTask<bool>> memberships,
+        Func<CancellationToken, ValueTask<bool>> storage,
+        ILogger logger,
+        string correlationId,
+        CancellationToken requestAborted,
+        TimeSpan budget)
+    {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
-        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        timeout.CancelAfter(budget);
+
+        var sqlResult = await ProbeAsync(
+            "sql",
+            async cancellationToken => await sql(cancellationToken),
+            logger,
+            correlationId,
+            timeout,
+            requestAborted);
+        if (sqlResult is ReadinessProbeOutcome.Exception or ReadinessProbeOutcome.Timeout)
+        {
+            return false;
+        }
+
+        var membershipResult = await ProbeAsync(
+            "memberships",
+            async cancellationToken => await memberships(cancellationToken),
+            logger,
+            correlationId,
+            timeout,
+            requestAborted);
+        if (membershipResult is ReadinessProbeOutcome.Exception or ReadinessProbeOutcome.Timeout)
+        {
+            return false;
+        }
+
+        var storageResult = await ProbeAsync(
+            "storage",
+            async cancellationToken => await storage(cancellationToken),
+            logger,
+            correlationId,
+            timeout,
+            requestAborted);
+
+        return sqlResult == ReadinessProbeOutcome.Ready
+            && membershipResult == ReadinessProbeOutcome.Ready
+            && storageResult == ReadinessProbeOutcome.Ready;
+    }
+
+    private static async Task<ReadinessProbeOutcome> ProbeAsync(
+        string dependency,
+        Func<CancellationToken, Task<bool>> probe,
+        ILogger logger,
+        string correlationId,
+        CancellationTokenSource timeout,
+        CancellationToken requestAborted)
+    {
         try
         {
-            await database.Database.ExecuteSqlRawAsync("SELECT 1", timeout.Token);
-            var membershipReady = await memberships.IsReadyAsync(timeout.Token);
-            var storageReady = await storage.IsReadyAsync(timeout.Token);
-            return membershipReady && storageReady
-                ? Results.Json(new { status = "Healthy" })
-                : Results.Json(new { status = "Unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            if (await probe(timeout.Token))
+            {
+                return ReadinessProbeOutcome.Ready;
+            }
+
+            AzureDemoDependencyDiagnostics.LogFalse(logger, dependency, correlationId: correlationId);
+            return ReadinessProbeOutcome.False;
         }
-        catch (Exception) when (!requestAborted.IsCancellationRequested)
+        catch (OperationCanceledException exception) when (
+            timeout.IsCancellationRequested && !requestAborted.IsCancellationRequested)
         {
-            return Results.Json(new { status = "Unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            AzureDemoDependencyDiagnostics.LogTimeout(
+                logger,
+                dependency,
+                exception,
+                "shared-budget-timeout",
+                correlationId);
+            return ReadinessProbeOutcome.Timeout;
         }
+        catch (Exception exception) when (
+            AzureDemoDependencyDiagnostics.IsTimeout(exception) && !requestAborted.IsCancellationRequested)
+        {
+            AzureDemoDependencyDiagnostics.LogTimeout(
+                logger,
+                dependency,
+                exception,
+                "dependency-timeout",
+                correlationId);
+            return ReadinessProbeOutcome.Timeout;
+        }
+        catch (Exception exception) when (!requestAborted.IsCancellationRequested)
+        {
+            AzureDemoDependencyDiagnostics.LogException(
+                logger,
+                dependency,
+                exception,
+                "dependency-exception",
+                correlationId);
+            return ReadinessProbeOutcome.Exception;
+        }
+    }
+
+    private enum ReadinessProbeOutcome
+    {
+        Ready,
+        False,
+        Exception,
+        Timeout
+    }
+}
+
+internal sealed class ReadinessHealthDiagnostics;
+
+internal static class AzureDemoDependencyDiagnostics
+{
+    private static readonly EventId FalseEvent = new(7101, "ReadinessDependencyFalse");
+    private static readonly EventId ExceptionEvent = new(7102, "ReadinessDependencyException");
+    private static readonly EventId TimeoutEvent = new(7103, "ReadinessDependencyTimeout");
+
+    public static void LogFalse(
+        ILogger logger,
+        string dependency,
+        HttpStatusCode? httpStatus = null,
+        string? correlationId = null) =>
+        logger.LogWarning(
+            FalseEvent,
+            "AzureDemo dependency readiness failed. Dependency={Dependency}; Outcome={Outcome}; Category={Category}; ExceptionType={ExceptionType}; HttpStatus={HttpStatus}; CorrelationId={CorrelationId}.",
+            dependency,
+            "false",
+            httpStatus.HasValue ? "http-status" : "false-result",
+            "none",
+            httpStatus.HasValue ? ((int)httpStatus.Value).ToString() : "none",
+            SafeCorrelationId(correlationId));
+
+    public static void LogException(
+        ILogger logger,
+        string dependency,
+        Exception exception,
+        string category,
+        string? correlationId = null)
+    {
+        var status = FindHttpStatus(exception);
+        logger.LogError(
+            ExceptionEvent,
+            "AzureDemo dependency readiness failed. Dependency={Dependency}; Outcome={Outcome}; Category={Category}; ExceptionType={ExceptionType}; HttpStatus={HttpStatus}; CorrelationId={CorrelationId}.",
+            dependency,
+            "exception",
+            category,
+            exception.GetType().FullName ?? exception.GetType().Name,
+            status.HasValue ? ((int)status.Value).ToString() : "none",
+            SafeCorrelationId(correlationId));
+    }
+
+    public static void LogTimeout(
+        ILogger logger,
+        string dependency,
+        Exception exception,
+        string category,
+        string? correlationId = null) =>
+        logger.LogError(
+            TimeoutEvent,
+            "AzureDemo dependency readiness failed. Dependency={Dependency}; Outcome={Outcome}; Category={Category}; ExceptionType={ExceptionType}; HttpStatus={HttpStatus}; CorrelationId={CorrelationId}.",
+            dependency,
+            "timeout",
+            category,
+            exception.GetType().FullName ?? exception.GetType().Name,
+            "none",
+            SafeCorrelationId(correlationId));
+
+    public static string ClassifyMembershipException(Exception exception) =>
+        FindHttpStatus(exception).HasValue
+            ? "http-status"
+            : exception is JsonException or InvalidOperationException
+                ? "invalid-response"
+                : "dependency-exception";
+
+    public static bool IsTimeout(Exception exception) =>
+        exception is TimeoutException or OperationCanceledException;
+
+    private static HttpStatusCode? FindHttpStatus(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is HttpRequestException { StatusCode: { } statusCode })
+            {
+                return statusCode;
+            }
+        }
+
+        return null;
+    }
+
+    private static string SafeCorrelationId(string? correlationId)
+    {
+        if (!string.IsNullOrWhiteSpace(correlationId))
+        {
+            return correlationId;
+        }
+
+        var traceId = Activity.Current?.TraceId.ToHexString();
+        return string.IsNullOrWhiteSpace(traceId) ? "unavailable" : traceId;
     }
 }
 

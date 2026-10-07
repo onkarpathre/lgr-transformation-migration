@@ -107,7 +107,8 @@ public sealed class AzureBlobImportFileStorage(
     ICurrentCustomerContext customerContext,
     IHttpClientFactory httpClientFactory,
     IAzureAccessTokenProvider tokenProvider,
-    TimeProvider timeProvider) : IImportFileStorage, IImportStorageReadiness
+    TimeProvider timeProvider,
+    ILogger<AzureBlobImportFileStorage> logger) : IImportFileStorage, IImportStorageReadiness
 {
     private const string StorageScope = "https://storage.azure.com/.default";
     private const string ApiVersion = "2023-11-03";
@@ -217,10 +218,32 @@ public sealed class AzureBlobImportFileStorage(
         {
             using var request = await CreateRequestAsync(HttpMethod.Get, ContainerUri("restype=container&comp=list&maxresults=1"), cancellationToken);
             using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            return response.IsSuccessStatusCode;
+            if (response.IsSuccessStatusCode)
+            {
+                return true;
+            }
+
+            AzureDemoDependencyDiagnostics.LogFalse(logger, "storage", response.StatusCode);
+            return false;
         }
-        catch when (!cancellationToken.IsCancellationRequested)
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
+            if (AzureDemoDependencyDiagnostics.IsTimeout(exception))
+            {
+                AzureDemoDependencyDiagnostics.LogTimeout(
+                    logger,
+                    "storage",
+                    exception,
+                    "dependency-timeout");
+            }
+            else
+            {
+                AzureDemoDependencyDiagnostics.LogException(
+                    logger,
+                    "storage",
+                    exception,
+                    "dependency-exception");
+            }
             return false;
         }
     }
