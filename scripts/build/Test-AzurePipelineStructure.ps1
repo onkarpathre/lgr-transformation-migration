@@ -20,6 +20,8 @@ $seedResetScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invok
 $cleanWebDeploymentScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\Invoke-AzureDemoCleanWebSlotDeployment.ps1') -Raw
 $slotContentVerificationScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\Invoke-AzureDemoSlotContentVerification.ps1') -Raw
 $stagingDeploymentUtilitiesScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\AzureDemoStagingDeployment.ps1') -Raw
+$postDeploymentReadinessScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\smoke\AzureDemoPostDeploymentReadiness.ps1') -Raw
+$postDeploymentReadinessEntryScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\smoke\Invoke-AzureDemoPostDeploymentReadiness.ps1') -Raw
 $applicationPackageScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-AzureDemoPackages.ps1') -Raw
 $webDeploymentRegressionChainScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Invoke-AzureDemoWebDeploymentRegressionChain.ps1') -Raw
 $appServiceBicep = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\appservice.bicep') -Raw
@@ -110,6 +112,8 @@ $requiredFragments = @(
     'Resolve-AzureDemoSmokeTargets.ps1',
     'Test-AzureDemoSmokeTargetResolution.ps1',
     'Test-AzureDemoPipelineSmokeTargetCommands.ps1',
+    'Test-AzureDemoPostDeploymentReadiness.ps1',
+    'Invoke-AzureDemoPostDeploymentReadiness.ps1',
     'Test-AzureDemoSmokeHttp.ps1',
     'Test-AzureDemoSmokeOrchestration.ps1',
     'Test-AzureDemoSmokeEvidence.ps1',
@@ -1046,11 +1050,12 @@ $migrateAndDeploy = $text.Substring($text.IndexOf('- stage: MigrateAndDeploySlot
     $text.IndexOf('- stage: ReleaseApproval', [StringComparison]::Ordinal) - $text.IndexOf('- stage: MigrateAndDeploySlots', [StringComparison]::Ordinal))
 if ([regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeTargetResolution\.ps1\s*$').Count -ne 1 -or
     [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoPipelineSmokeTargetCommands\.ps1\s*$').Count -ne 1 -or
+    [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoPostDeploymentReadiness\.ps1\s*$').Count -ne 1 -or
     [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeHttp\.ps1\s*$').Count -ne 1 -or
     [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeOrchestration\.ps1\s*$').Count -ne 1 -or
     [regex]::Matches($text, '(?m)^\s*- pwsh: ./scripts/build/Test-AzureDemoSmokeEvidence\.ps1\s*$').Count -ne 1 -or
     -not $text.Substring($text.IndexOf('- stage: Validate', [StringComparison]::Ordinal), $text.IndexOf('- stage: Package', [StringComparison]::Ordinal) - $text.IndexOf('- stage: Validate', [StringComparison]::Ordinal)).Contains('pool: { vmImage: ubuntu-latest }')) {
-    throw 'Smoke target fixtures, actual pipeline CLI callers, real PowerShell 7 HTTP/orchestration and evidence-provenance regressions must each run once in Linux validation.'
+    throw 'Smoke target, bounded readiness, actual pipeline CLI, real PowerShell 7 HTTP/orchestration and evidence-provenance regressions must each run once in Linux validation.'
 }
 if ([regex]::Matches($text, '(?m)^\s+value:\s+633398e2-6c00-4bb7-a576-2db0d210ee77\s*$').Count -ne 1 -or
     -not $text.Contains('- name: AZDEMO_SUBSCRIPTION_ID')) {
@@ -1131,6 +1136,7 @@ foreach ($fragment in @(
         "-PipelineDefinition '`$(Build.DefinitionName)'",
         "-PipelineRunId '`$(Build.BuildId)'",
         "condition: and(always(), eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true'))",
+        "condition: and(always(), eq(variables['AZDEMO_STAGING_READINESS_ATTEMPTED'], 'true'))",
         "condition: and(always(), eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true'))")) {
     if (-not $text.Contains($fragment)) { throw "Smoke execution or safe failure-evidence publication is missing: $fragment" }
 }
@@ -1147,9 +1153,42 @@ if ($text.Contains('-ProtectedEvidenceDirectory')) {
 }
 $stagingApiDeploymentIndex = $migrateAndDeploy.IndexOf('displayName: Deploy API ZIP to staging only', [StringComparison]::Ordinal)
 $stagingWebDeploymentIndex = $migrateAndDeploy.IndexOf('displayName: Deploy web ZIP to staging only', [StringComparison]::Ordinal)
+$stagingTargetResolutionIndex = $migrateAndDeploy.IndexOf('Resolve-AzureDemoSmokeTargets.ps1', [StringComparison]::Ordinal)
+$stagingReadinessIndex = $migrateAndDeploy.IndexOf('Invoke-AzureDemoPostDeploymentReadiness.ps1', [StringComparison]::Ordinal)
 $stagingSmokeIndex = $migrateAndDeploy.IndexOf('Invoke-AzureDemoSmokeTests.ps1', [StringComparison]::Ordinal)
-if ($stagingApiDeploymentIndex -lt 0 -or $stagingWebDeploymentIndex -le $stagingApiDeploymentIndex -or $stagingSmokeIndex -le $stagingWebDeploymentIndex) {
-    throw 'Staging API/web deployment must finish before staging runtime smoke execution.'
+if ($stagingApiDeploymentIndex -lt 0 -or $stagingWebDeploymentIndex -le $stagingApiDeploymentIndex -or
+    $stagingTargetResolutionIndex -le $stagingWebDeploymentIndex -or $stagingReadinessIndex -le $stagingTargetResolutionIndex -or
+    $stagingSmokeIndex -le $stagingReadinessIndex) {
+    throw 'Staging deployment and exact-target resolution must finish before bounded readiness, which must pass before staging smoke.'
+}
+if ([regex]::Matches($migrateAndDeploy, 'Invoke-AzureDemoPostDeploymentReadiness\.ps1').Count -ne 1 -or
+    -not $migrateAndDeploy.Contains("-ApiReadyUri 'https://`$(AZDEMO_API_STAGING_HOST)/health/ready'") -or
+    -not $migrateAndDeploy.Contains("-WebReadyUri 'https://`$(AZDEMO_WEB_STAGING_HOST)/health'") -or
+    -not $migrateAndDeploy.Contains('staging-readiness-evidence-$(Build.BuildId)-$(System.JobAttempt)') -or
+    -not $migrateAndDeploy.Contains('artifact: staging-readiness-evidence')) {
+    throw 'The bounded readiness caller must use and retain the exact Azure-resolved API and web staging targets once.'
+}
+foreach ($fragment in @(
+        '$requiredConsecutiveSuccesses = 2',
+        '$overallDeadlineSeconds = 120',
+        '$pollIntervalSeconds = 5',
+        '$requestTimeoutSeconds = 10',
+        '-TimeoutSec $TimeoutSeconds')) {
+    if (-not $postDeploymentReadinessEntryScript.Contains($fragment)) {
+        throw "The post-deployment readiness entry point changed its fixed stabilization contract: $fragment"
+    }
+}
+foreach ($fragment in @(
+        'Assert-AzureDemoSmokeUriTarget -Uri $ApiReadyUri -VerifiedHost $VerifiedApiHost -ExpectedScheme https',
+        'Assert-AzureDemoSmokeUriTarget -Uri $WebReadyUri -VerifiedHost $VerifiedWebHost -ExpectedScheme https',
+        '$ApiReadyUri.AbsolutePath -cne ''/health/ready''',
+        '$WebReadyUri.AbsolutePath -cne ''/health''',
+        "Phase = 'api-readiness'",
+        "Phase = 'web-readiness'",
+        "throw 'Post-deployment readiness did not stabilize within the fixed overall deadline.'")) {
+    if (-not $postDeploymentReadinessScript.Contains($fragment)) {
+        throw "The post-deployment readiness gate changed its exact-target, phase or fail-closed contract: $fragment"
+    }
 }
 if ($migrateAndDeploy.IndexOf('Invoke-AzureDemoSmokeTests.ps1', [StringComparison]::Ordinal) -gt $text.IndexOf('- stage: ReleaseApproval', [StringComparison]::Ordinal) -or
     $migrateAndDeploy.IndexOf('Invoke-AzureDemoSmokeTests.ps1', [StringComparison]::Ordinal) -lt 0) {

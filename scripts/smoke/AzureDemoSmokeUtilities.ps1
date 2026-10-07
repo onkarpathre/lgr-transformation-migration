@@ -682,7 +682,8 @@ function Invoke-AzureDemoSmokeHttpRequest {
         [Parameter(Mandatory)] [string] $CheckId,
         [Parameter(Mandatory)] [uri] $Uri,
         [string] $Method = 'GET',
-        [hashtable] $Headers = @{}
+        [hashtable] $Headers = @{},
+        [ValidateRange(1, 300)] [int] $TimeoutSec = 30
     )
 
     $pipelineOutput = @()
@@ -692,7 +693,7 @@ function Invoke-AzureDemoSmokeHttpRequest {
         # PowerShell 7 writes a redirect response to the success pipeline and then
         # emits MaximumRedirectExceeded when MaximumRedirection is zero. Do not
         # promote that expected error before the response can be captured.
-        $pipelineOutput = @(Invoke-WebRequest -Uri $Uri -Method $Method -Headers $Headers -MaximumRedirection 0 -SkipHttpErrorCheck -TimeoutSec 30 -ErrorAction SilentlyContinue -ErrorVariable requestErrors)
+        $pipelineOutput = @(Invoke-WebRequest -Uri $Uri -Method $Method -Headers $Headers -MaximumRedirection 0 -SkipHttpErrorCheck -TimeoutSec $TimeoutSec -ErrorAction SilentlyContinue -ErrorVariable requestErrors)
     }
     catch {
         $terminatingError = $_

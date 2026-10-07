@@ -1721,6 +1721,124 @@ handoff:
 
 READY_FOR_TEST
 
+## Bounded post-deployment staging readiness gate
+
+### Baseline, authority and traceability
+
+This bounded Developer repair started from branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `854e8bb3b7b0cfc9b21183d1af0f50ccb973e6f6`, the commit used by Azure DevOps run 77. The worktree and index were clean. Run 77 recorded a transient web `/health` 503 while the correlated API readiness request exhausted its existing shared five-second dependency budget at storage; later probes recovered to HTTP 200. The repair adds orchestration around the existing health contracts. It does not change the API readiness implementation or budget, suppress a 503, weaken smoke assertions, or change any Azure resource.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-11"]
+  functional_requirements: ["F-13", "F-14"]
+  non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+  risks: ["R-09", "R-11"]
+  assumptions: ["A-11", "A-12", "A-18"]
+  dependencies: ["D-04", "D-11"]
+  issues: ["I-06", "I-08"]
+  open_questions: ["Q-01", "Q-08"]
+  approvals: []
+```
+
+The approved AZURE-DEMO-001 package closes Q-01 only for its controlled implementation scope. This pipeline-only retry gate retains the approved PowerShell, exact-target and health architecture and is separable from Q-08 production service acceptance. It does not authorise deployment, release, protected evidence ingestion or a slot swap.
+
+### Implemented gate
+
+After both staging deployments, exact deployed-content verification and the existing Azure CLI resource/hostname resolver, the pipeline now runs one bounded readiness task before staging smoke. The task validates the fixed approved subscription, resource group, web/API applications and `staging` slot, then applies the existing exact URI target contract to:
+
+- API staging `https://<Azure-resolved-api-slot-host>/health/ready`; and
+- web staging `https://<Azure-resolved-web-slot-host>/health`.
+
+The production entry point fixes the policy at two complete consecutive healthy rounds, a 120-second overall deadline, a five-second poll interval and a ten-second per-request cap reduced to the remaining deadline. Both endpoints must return HTTP 200 in each round. A 503, transport failure, malformed result or incomplete round resets the sequence; non-stabilisation fails the task and therefore prevents staging smoke, ReleaseApproval and swap. The existing smoke task still retains and aggregates its own failures after this gate passes.
+
+Each request carries a generated W3C trace correlation. The readiness artifact is overwritten after each completed probe and contains only an array of exact four-field records: `timeUtc`, numeric HTTP `status` or `unavailable`, `phase` (`api-readiness` or `web-readiness`) and lowercase correlation ID. Pipeline information output uses the same four fields. Request/response bodies, headers, hostnames, paths, query strings and exception messages are neither recorded nor emitted. Failed attempted-gate evidence is published with `always()` without changing the task's nonzero result.
+
+### Protected evidence finding retained
+
+The 17 protected/hybrid checks remain `SMK-01`, `SMK-04` through `SMK-09`, `SMK-12` through `SMK-19`, `SMK-21` and `SMK-22`. Genuine input must be an approved same-run protected bundle passed explicitly as `-ProtectedEvidenceDirectory`. It must contain one `SMK-xx.json` per required check plus all sanitized assertion attachments beneath the same root. Each record must satisfy the exact protected-runtime schema and bind to the current lowercase source commit, deployment-manifest SHA-256, infrastructure deployment ID, pipeline definition/run, Azure-resolved subscription/resource/app/slot/hosts, required producer location/identity, real UTC interval and correlation ID. Every exact assertion must be `PASS` and reference a contained attachment whose SHA-256 matches. Non-SMK-19 records require `previousRelease: null`.
+
+The current pipeline still intentionally supplies no `-ProtectedEvidenceDirectory`, and its structural contract forbids adding one until TDA, Test Services, Information Security, Azure DevOps/repository ownership and Azure Platform/Operations approve the producer, immutable same-run delivery, retention/tamper metadata and independent review design. `sql-bootstrap.json`, source tests, local fixtures and bare `status: PASS` JSON do not satisfy the contract. Missing evidence therefore remains `FAIL`.
+
+SMK-19 has no first-release waiver. It additionally requires the protected rehearsal assertions and a real distinct previous release: a different 40-character source commit, different deployment-manifest artifact SHA-256, the contained previous manifest file whose computed hash equals both recorded manifest hashes and whose `sourceCommit` matches, plus non-empty protected deployment-evidence and rehearsal-approval references. The current candidate, a branch/ref, fabricated manifest, or future post-swap result cannot act as the previous release. If no earlier compatible deployed release exists, SMK-19 cannot truthfully pass: release remains blocked until a separately authorised prior-release/rehearsal path exists or the owning authorities approve a formal first-release contract change.
+
+### Changed files and verification
+
+- `azure-pipelines.yml`: runs the focused Linux regression and inserts the fail-closed readiness gate and always-published sanitized evidence before staging smoke.
+- `scripts/smoke/AzureDemoPostDeploymentReadiness.ps1`: exact target validation, bounded consecutive-round state machine and four-field evidence writer.
+- `scripts/smoke/Invoke-AzureDemoPostDeploymentReadiness.ps1`: PowerShell 7 production entry point with fixed timing policy and correlation propagation.
+- `scripts/smoke/AzureDemoSmokeUtilities.ps1`: adds an optional bounded request timeout while retaining the existing 30-second default for smoke callers.
+- `scripts/build/Test-AzureDemoPostDeploymentReadiness.ps1`: focused recovery, persistent 503, timeout, target-substitution and redaction regressions.
+- `scripts/build/Test-AzurePipelineStructure.ps1`: pins one Linux regression, exact staging targets, timing policy, evidence publication and deploy/resolve/readiness/smoke order.
+- `scripts/smoke/README.md`: documents the bounded gate and its safe evidence.
+- `docs/implementation/AZURE_DEMO_Implementation_Work_Package.md`: records this hand-off and unchanged protected-evidence blockers.
+
+| Check | Result |
+|---|---|
+| Focused readiness regression | PASS on Windows PowerShell 5.1: transient 503 recovery required two full healthy rounds; persistent 503 and timeout failed at their fixed deadlines; production-host substitution made zero requests; evidence/output retained only the four safe fields. |
+| Pipeline structure | PASS on Windows PowerShell 5.1: seven stages, one Linux regression, exact staging health paths, fixed policy, always-published readiness evidence and readiness-before-smoke order. |
+| Exact target regression | PASS: generated-host, resource identity, staging/production, unsafe URI and catalogue-order cases, including 12 invalid resolver cases. |
+| Actual pipeline target-caller regression | PASS: both callers, exact production/slot Azure CLI arguments, separated stderr, bounded diagnostics and nonzero fail-closed behavior. |
+| Protected evidence contract | PASS as a local contract test only: valid protected-runtime/previous-release fixtures plus all retained missing, malformed, substitution, provenance, attachment and fixture rejections. No protected check is claimed passed. |
+| Supplemental smoke orchestration | PASS on Windows PowerShell 5.1 for redirect, success, transport, assertion, missing/rejected evidence, continuation, redaction and publication fixtures. PowerShell 7-only 4xx/5xx normalization and SMK-20 remain pending. |
+| Source/security boundary | PASS: 212 source/configuration files. |
+| PowerShell parsing and diff whitespace | PASS for all changed scripts; `git diff --check` exited `0` with existing line-ending notices only. |
+| Linux PowerShell 7 readiness/HTTP execution | `LINUX_VERIFICATION_PENDING`: `pwsh`, Docker and a usable WSL installation are unavailable locally. The unprotected `ubuntu-latest` Validate job must run the new regression and the preserved PowerShell 7 smoke HTTP/orchestration suites. |
+| Protected staging execution | NOT RUN: no Azure CLI, endpoint, Azure DevOps, SQL, Entra, deployment, migration, seed, smoke, swap, rollback or approval action occurred. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_854e8bb3b7b0cfc9b21183d1af0f50ccb973e6f6"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-11"]
+    functional_requirements: ["F-13", "F-14"]
+    non_functional_requirements: ["NF-03", "NF-07", "NF-10", "NF-12"]
+    risks: ["R-09", "R-11"]
+    assumptions: ["A-11", "A-12", "A-18"]
+    dependencies: ["D-04", "D-11"]
+    issues: ["I-06", "I-08"]
+    open_questions: ["Q-01", "Q-08"]
+    approvals: []
+  artefacts:
+    - "azure-pipelines.yml"
+    - "scripts/smoke/AzureDemoPostDeploymentReadiness.ps1"
+    - "scripts/smoke/Invoke-AzureDemoPostDeploymentReadiness.ps1"
+    - "scripts/smoke/AzureDemoSmokeUtilities.ps1"
+    - "scripts/build/Test-AzureDemoPostDeploymentReadiness.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "scripts/smoke/README.md"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Focused readiness, exact-target, pipeline-caller, evidence-contract, supplemental orchestration, source-boundary, parsing, structure and diff checks pass locally."
+    - "No genuine protected SMK evidence was supplied or claimed."
+  decisions:
+    - "Require two complete consecutive API/web HTTP 200 rounds within one fixed 120-second deadline."
+    - "Use existing Azure-resolved exact-target validation and retain only four safe probe fields."
+    - "Keep missing protected evidence and the no-first-release-waiver SMK-19 contract release-blocking."
+  assumptions: []
+  risks:
+    - "Real Linux PowerShell 7 request behavior and the connected exact staging endpoints remain unexecuted."
+    - "The protected evidence producer/ingestion amendment and real prior-release SMK-19 evidence remain absent."
+  defects:
+    - "REPAIRED LOCALLY: staging smoke could begin during transient post-deployment readiness instability."
+  blockers:
+    - "Independent Linux PowerShell 7 execution of the new and existing HTTP regressions."
+    - "Approved protected evidence ingestion and genuine evidence for all 17 protected/hybrid checks."
+    - "A real distinct prior deployed release and protected rehearsal for SMK-19, or an approved first-release contract change."
+  approvals: []
+  requested_action: "Independent Tester must run the new readiness and preserved smoke suites on Linux PowerShell 7, then review a protected staging attempt's sanitized readiness artifact. Release remains blocked until the approved genuine protected-evidence bundle and SMK-19 prior-release rehearsal evidence exist."
+```
+
+READY_FOR_TEST
+
 ## Bounded API deployment timestamp repair
 
 ### Baseline, scope and traceability
@@ -3729,5 +3847,11 @@ real Linux PowerShell 7/`rsync`, and authorised staging-only API reconciliation
 remain explicit CI/live checks. This hand-off supersedes older terminal markers
 in this cumulative document without authorising Azure, SQL, deployment, swap,
 release, merge or any human approval.
+
+READY_FOR_TEST
+
+## Current worktree terminal state - post-deployment readiness stabilization
+
+The latest bounded continuation is **Bounded post-deployment staging readiness gate** above, based on exact HEAD `854e8bb3b7b0cfc9b21183d1af0f50ccb973e6f6`. Its focused readiness, exact-target, pipeline-caller, protected-evidence-contract, supplemental orchestration, source-boundary, parsing, pipeline-structure and diff checks pass locally as recorded. Real Linux PowerShell 7 request execution and an authorised protected staging run remain pending. No Azure action or application readiness-budget change occurred. The missing approved protected-evidence delivery for 17 checks and the distinct prior-release/rehearsal evidence required by SMK-19 remain release blockers; there is no first-release waiver.
 
 READY_FOR_TEST

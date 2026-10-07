@@ -124,6 +124,8 @@ stages:
       displayName: Azure demo smoke exact-target regression
     - pwsh: ./scripts/build/Test-AzureDemoPipelineSmokeTargetCommands.ps1
       displayName: Azure demo pipeline smoke-target CLI regression
+    - pwsh: ./scripts/build/Test-AzureDemoPostDeploymentReadiness.ps1
+      displayName: Azure demo bounded post-deployment readiness regression
     - pwsh: ./scripts/build/Test-AzureDemoSmokeHttp.ps1
       displayName: PowerShell 7 local HTTP smoke redirect and redaction regression
     - pwsh: ./scripts/build/Test-AzureDemoSmokeOrchestration.ps1
@@ -608,6 +610,15 @@ stages:
                 $targets = ./scripts/smoke/Resolve-AzureDemoSmokeTargets.ps1 -ExpectedSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -ExpectedTenantId '$(AZDEMO_ENTRA_TENANT_ID)' -ExpectedResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -ExpectedWebAppName '$(AZDEMO_WEB_APP_NAME)' -ExpectedApiAppName '$(AZDEMO_API_APP_NAME)' -ExpectedSlotName staging -AccountJson $account.Json -AccountCommandExitCode $account.ExitCode -WebProductionJson $webProduction.Json -WebProductionCommandExitCode $webProduction.ExitCode -WebSlotJson $webSlot.Json -WebSlotCommandExitCode $webSlot.ExitCode -ApiProductionJson $apiProduction.Json -ApiProductionCommandExitCode $apiProduction.ExitCode -ApiSlotJson $apiSlot.Json -ApiSlotCommandExitCode $apiSlot.ExitCode
                 Write-Host "##vso[task.setvariable variable=AZDEMO_WEB_STAGING_HOST]$($targets.WebStagingHost)"
                 Write-Host "##vso[task.setvariable variable=AZDEMO_API_STAGING_HOST]$($targets.ApiStagingHost)"
+          - pwsh: |
+              $evidenceDirectory = '$(Pipeline.Workspace)/staging-readiness-evidence-$(Build.BuildId)-$(System.JobAttempt)'
+              New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+              Write-Host '##vso[task.setvariable variable=AZDEMO_STAGING_READINESS_ATTEMPTED]true'
+              ./scripts/smoke/Invoke-AzureDemoPostDeploymentReadiness.ps1 -ApiReadyUri 'https://$(AZDEMO_API_STAGING_HOST)/health/ready' -WebReadyUri 'https://$(AZDEMO_WEB_STAGING_HOST)/health' -VerifiedApiHost '$(AZDEMO_API_STAGING_HOST)' -VerifiedWebHost '$(AZDEMO_WEB_STAGING_HOST)' -TargetSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -TargetResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -TargetApiAppName '$(AZDEMO_API_APP_NAME)' -TargetWebAppName '$(AZDEMO_WEB_APP_NAME)' -TargetSlotName staging -EvidencePath (Join-Path $evidenceDirectory 'staging-readiness-gate.json')
+            displayName: Require stable exact-target staging readiness
+          - publish: $(Pipeline.Workspace)/staging-readiness-evidence-$(Build.BuildId)-$(System.JobAttempt)
+            artifact: staging-readiness-evidence
+            condition: and(always(), eq(variables['AZDEMO_STAGING_READINESS_ATTEMPTED'], 'true'))
           - pwsh: |
               $evidenceDirectory = '$(Pipeline.Workspace)/smoke-evidence'
               New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
