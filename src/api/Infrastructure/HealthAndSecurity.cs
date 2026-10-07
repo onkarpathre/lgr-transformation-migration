@@ -1,6 +1,8 @@
 using LgrTransformationMigration.Api.Services.Discovery;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 
@@ -161,6 +163,8 @@ internal sealed class ReadinessHealthDiagnostics;
 
 internal static class AzureDemoDependencyDiagnostics
 {
+    private const int MaxExceptionTraversalDepth = 8;
+    private const int MaxSqlErrorDiagnostics = 8;
     private static readonly EventId FalseEvent = new(7101, "ReadinessDependencyFalse");
     private static readonly EventId ExceptionEvent = new(7102, "ReadinessDependencyException");
     private static readonly EventId TimeoutEvent = new(7103, "ReadinessDependencyTimeout");
@@ -188,6 +192,27 @@ internal static class AzureDemoDependencyDiagnostics
         string? correlationId = null)
     {
         var status = FindHttpStatus(exception);
+        var sqlException = FindSqlException(exception);
+        if (sqlException is not null)
+        {
+            logger.LogError(
+                ExceptionEvent,
+                "AzureDemo dependency readiness failed. Dependency={Dependency}; Outcome={Outcome}; Category={Category}; ExceptionType={ExceptionType}; HttpStatus={HttpStatus}; CorrelationId={CorrelationId}; SqlNumber={SqlNumber}; SqlState={SqlState}; SqlClass={SqlClass}; SqlErrorCount={SqlErrorCount}; SqlErrorsTruncated={SqlErrorsTruncated}; SqlErrors={SqlErrors}.",
+                dependency,
+                "exception",
+                category,
+                exception.GetType().FullName ?? exception.GetType().Name,
+                status.HasValue ? ((int)status.Value).ToString() : "none",
+                SafeCorrelationId(correlationId),
+                sqlException.Number,
+                sqlException.State,
+                sqlException.Class,
+                sqlException.Errors.Count,
+                sqlException.Errors.Count > MaxSqlErrorDiagnostics,
+                FormatSqlErrors(sqlException.Errors));
+            return;
+        }
+
         logger.LogError(
             ExceptionEvent,
             "AzureDemo dependency readiness failed. Dependency={Dependency}; Outcome={Outcome}; Category={Category}; ExceptionType={ExceptionType}; HttpStatus={HttpStatus}; CorrelationId={CorrelationId}.",
@@ -227,7 +252,10 @@ internal static class AzureDemoDependencyDiagnostics
 
     private static HttpStatusCode? FindHttpStatus(Exception exception)
     {
-        for (Exception? current = exception; current is not null; current = current.InnerException)
+        var current = exception;
+        for (var depth = 0;
+             current is not null && depth < MaxExceptionTraversalDepth;
+             depth++, current = current.InnerException)
         {
             if (current is HttpRequestException { StatusCode: { } statusCode })
             {
@@ -236,6 +264,37 @@ internal static class AzureDemoDependencyDiagnostics
         }
 
         return null;
+    }
+
+    private static SqlException? FindSqlException(Exception exception)
+    {
+        var current = exception;
+        for (var depth = 0;
+             current is not null && depth < MaxExceptionTraversalDepth;
+             depth++, current = current.InnerException)
+        {
+            if (current is SqlException sqlException)
+            {
+                return sqlException;
+            }
+        }
+
+        return null;
+    }
+
+    private static string FormatSqlErrors(SqlErrorCollection errors)
+    {
+        var count = Math.Min(errors.Count, MaxSqlErrorDiagnostics);
+        var diagnostics = new string[count];
+        for (var index = 0; index < count; index++)
+        {
+            var error = errors[index];
+            diagnostics[index] = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Number={error.Number},State={error.State},Class={error.Class}");
+        }
+
+        return string.Join('|', diagnostics);
     }
 
     private static string SafeCorrelationId(string? correlationId)

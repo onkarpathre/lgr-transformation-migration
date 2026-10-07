@@ -45,6 +45,10 @@ public sealed class ReadinessHealthApiTests
         Assert.DoesNotContain("memberships", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("storage", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("secret", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SqlNumber", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("SqlState", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("SqlClass", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("SqlError", body, StringComparison.Ordinal);
     }
 
     private static WebApplicationFactory<Program> Configure(

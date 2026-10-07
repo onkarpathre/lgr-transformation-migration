@@ -1,7 +1,9 @@
 using System.Net;
+using System.Reflection;
 using System.Text;
 using LgrTransformationMigration.Api.Infrastructure;
 using LgrTransformationMigration.Api.Services.Discovery;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -220,10 +222,126 @@ public sealed class AzureDemoInfrastructureTests
         Assert.Equal(typeof(HttpRequestException).FullName, entry.Value("ExceptionType"));
         Assert.Equal("502", entry.Value("HttpStatus"));
         Assert.DoesNotContain(sensitiveMessage, entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("SqlNumber", entry.State.Keys);
+        Assert.DoesNotContain("SqlErrors", entry.State.Keys);
         if (failedDependency is "sql" or "memberships")
         {
             Assert.DoesNotContain("storage", calls);
         }
+    }
+
+    [Fact]
+    public async Task Readiness_sql_exception_logs_bounded_numeric_diagnostics_without_sensitive_data()
+    {
+        const string sensitiveMessage =
+            "Server=tcp:synthetic-sensitive-server;Database=synthetic-sensitive-database;" +
+            "User ID=synthetic-sensitive-user;Password=synthetic-sensitive-password;" +
+            "SELECT synthetic-sensitive-column FROM synthetic-sensitive-table;token=synthetic-sensitive-token";
+        var errors = Enumerable.Range(0, 10)
+            .Select(index => new SqlErrorValues(50001 + index, (byte)(index + 1), (byte)(11 + index)))
+            .ToArray();
+        var exception = CreateSqlException(errors, sensitiveMessage);
+        var logger = new RecordingLogger<ReadinessHealthDiagnostics>();
+        var calls = new List<string>();
+
+        Assert.False(await HealthEndpoints.EvaluateReadinessAsync(
+            _ =>
+            {
+                calls.Add("sql");
+                return Task.FromException<bool>(exception);
+            },
+            _ =>
+            {
+                calls.Add("memberships");
+                return ValueTask.FromResult(true);
+            },
+            _ =>
+            {
+                calls.Add("storage");
+                return ValueTask.FromResult(true);
+            },
+            logger,
+            "synthetic-correlation",
+            CancellationToken.None,
+            TimeSpan.FromSeconds(5)));
+
+        Assert.Equal(["sql"], calls);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal("ReadinessDependencyException", entry.EventId.Name);
+        Assert.Equal("sql", entry.Value("Dependency"));
+        Assert.Equal("exception", entry.Value("Outcome"));
+        Assert.Equal("dependency-exception", entry.Value("Category"));
+        Assert.Equal(typeof(SqlException).FullName, entry.Value("ExceptionType"));
+        Assert.Equal("synthetic-correlation", entry.Value("CorrelationId"));
+        Assert.Equal(50001, entry.State["SqlNumber"]);
+        Assert.Equal((byte)1, entry.State["SqlState"]);
+        Assert.Equal((byte)11, entry.State["SqlClass"]);
+        Assert.Equal(10, entry.State["SqlErrorCount"]);
+        Assert.Equal(true, entry.State["SqlErrorsTruncated"]);
+        Assert.Equal(
+            string.Join('|', errors.Take(8).Select(FormatSqlError)),
+            entry.Value("SqlErrors"));
+        Assert.Contains("SqlNumber=50001", entry.Message, StringComparison.Ordinal);
+        Assert.Contains("SqlErrorsTruncated=True", entry.Message, StringComparison.Ordinal);
+        AssertRedacted(logger, sensitiveMessage);
+        Assert.DoesNotContain("50009", entry.Value("SqlErrors"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Readiness_finds_wrapped_sql_exception_with_bounded_traversal()
+    {
+        const string sensitiveMessage = "synthetic-wrapped-sql-message;Password=synthetic-wrapped-secret";
+        var sqlException = CreateSqlException([new SqlErrorValues(4060, 2, 11)], sensitiveMessage);
+        var exception = new InvalidOperationException("synthetic-wrapper-secret", sqlException);
+        var logger = new RecordingLogger<ReadinessHealthDiagnostics>();
+
+        Assert.False(await HealthEndpoints.EvaluateReadinessAsync(
+            _ => Task.FromException<bool>(exception),
+            _ => ValueTask.FromResult(true),
+            _ => ValueTask.FromResult(true),
+            logger,
+            "synthetic-correlation",
+            CancellationToken.None,
+            TimeSpan.FromSeconds(5)));
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(typeof(InvalidOperationException).FullName, entry.Value("ExceptionType"));
+        Assert.Equal(4060, entry.State["SqlNumber"]);
+        Assert.Equal((byte)2, entry.State["SqlState"]);
+        Assert.Equal((byte)11, entry.State["SqlClass"]);
+        Assert.Equal(1, entry.State["SqlErrorCount"]);
+        Assert.Equal(false, entry.State["SqlErrorsTruncated"]);
+        Assert.Equal("Number=4060,State=2,Class=11", entry.Value("SqlErrors"));
+        AssertRedacted(logger, sensitiveMessage, "synthetic-wrapper-secret");
+    }
+
+    [Fact]
+    public async Task Readiness_sql_exception_unwrapping_stops_at_the_bounded_depth()
+    {
+        const string sensitiveMessage = "synthetic-deep-sql-message;Password=synthetic-deep-secret";
+        Exception exception = CreateSqlException(
+            [new SqlErrorValues(18456, 1, 14)],
+            sensitiveMessage);
+        for (var index = 0; index < 8; index++)
+        {
+            exception = new InvalidOperationException($"synthetic-wrapper-{index}-secret", exception);
+        }
+
+        var logger = new RecordingLogger<ReadinessHealthDiagnostics>();
+        Assert.False(await HealthEndpoints.EvaluateReadinessAsync(
+            _ => Task.FromException<bool>(exception),
+            _ => ValueTask.FromResult(true),
+            _ => ValueTask.FromResult(true),
+            logger,
+            "synthetic-correlation",
+            CancellationToken.None,
+            TimeSpan.FromSeconds(5)));
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(typeof(InvalidOperationException).FullName, entry.Value("ExceptionType"));
+        Assert.DoesNotContain("SqlNumber", entry.State.Keys);
+        Assert.DoesNotContain("SqlErrors", entry.State.Keys);
+        AssertRedacted(logger, sensitiveMessage, "synthetic-deep-secret", "synthetic-wrapper-");
     }
 
     [Fact]
@@ -310,13 +428,14 @@ public sealed class AzureDemoInfrastructureTests
             Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
         }));
 
-    private static void AssertRedacted<T>(RecordingLogger<T> logger)
+    private static void AssertRedacted<T>(RecordingLogger<T> logger, params string[] additionalForbidden)
     {
         Assert.All(logger.Entries, entry => Assert.Null(entry.Exception));
-        var diagnostic = string.Join(
+        var rendered = string.Join(Environment.NewLine, logger.Entries.Select(entry => entry.Message));
+        var structured = string.Join(
             Environment.NewLine,
             logger.Entries.Select(entry =>
-                entry.Message + Environment.NewLine + string.Join('|', entry.State.Select(pair => $"{pair.Key}={pair.Value}"))));
+                string.Join('|', entry.State.Select(pair => $"{pair.Key}={pair.Value}"))));
         foreach (var forbidden in new[]
                  {
                      "synthetic-token-that-must-not-be-logged",
@@ -328,11 +447,128 @@ public sealed class AzureDemoInfrastructureTests
                      "stmtpdevuks001.blob.core.windows.net",
                      "membership-response-secret",
                      "blob-response-secret"
-                 })
+                 }.Concat(additionalForbidden))
         {
-            Assert.DoesNotContain(forbidden, diagnostic, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(forbidden, rendered, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(forbidden, structured, StringComparison.OrdinalIgnoreCase);
         }
     }
+
+    private static SqlException CreateSqlException(
+        IReadOnlyList<SqlErrorValues> errors,
+        string sensitiveMessage)
+    {
+        var collection = (SqlErrorCollection?)Activator.CreateInstance(
+            typeof(SqlErrorCollection),
+            nonPublic: true)
+            ?? throw new InvalidOperationException("Could not create the test SQL error collection.");
+        var addError = typeof(SqlErrorCollection).GetMethod(
+            "Add",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: [typeof(SqlError)],
+            modifiers: null)
+            ?? throw new InvalidOperationException("Could not find the test SQL error collection add method.");
+        var errorConstructor = typeof(SqlError)
+            .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Where(constructor =>
+            {
+                var parameters = constructor.GetParameters();
+                return parameters.Length >= 7
+                    && parameters[0].ParameterType == typeof(int)
+                    && parameters[1].ParameterType == typeof(byte)
+                    && parameters[2].ParameterType == typeof(byte);
+            })
+            .OrderBy(constructor => constructor.GetParameters().Length)
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException("Could not find the test SQL error constructor.");
+
+        foreach (var error in errors)
+        {
+            var arguments = CreateSqlErrorArguments(errorConstructor, error, sensitiveMessage);
+            var sqlError = (SqlError?)errorConstructor.Invoke(arguments)
+                ?? throw new InvalidOperationException("Could not create the test SQL error.");
+            addError.Invoke(collection, [sqlError]);
+        }
+
+        var exceptionFactory = typeof(SqlException)
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Where(method =>
+            {
+                var parameters = method.GetParameters();
+                return method.Name == "CreateException"
+                    && parameters.Length >= 2
+                    && parameters[0].ParameterType == typeof(SqlErrorCollection);
+            })
+            .OrderBy(method => method.GetParameters().Length)
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException("Could not find the test SQL exception factory.");
+        var factoryArguments = exceptionFactory.GetParameters()
+            .Select(parameter => CreateSqlExceptionFactoryArgument(parameter, collection, sensitiveMessage))
+            .ToArray();
+
+        return (SqlException?)exceptionFactory.Invoke(null, factoryArguments)
+            ?? throw new InvalidOperationException("Could not create the test SQL exception.");
+    }
+
+    private static object?[] CreateSqlErrorArguments(
+        ConstructorInfo constructor,
+        SqlErrorValues error,
+        string sensitiveMessage) =>
+        constructor.GetParameters()
+            .Select(parameter => parameter.Name switch
+            {
+                "infoNumber" => error.Number,
+                "errorState" => error.State,
+                "errorClass" => error.Class,
+                "server" => "synthetic-sensitive-sql-server",
+                "errorMessage" => sensitiveMessage,
+                "procedure" => "synthetic-sensitive-procedure",
+                "lineNumber" => 42,
+                "win32ErrorCode" => 0u,
+                "exception" => new InvalidOperationException(sensitiveMessage),
+                _ when parameter.HasDefaultValue => parameter.DefaultValue,
+                _ => throw new InvalidOperationException(
+                    $"Unsupported test SQL error constructor parameter: {parameter.Name}.")
+            })
+            .ToArray();
+
+    private static object? CreateSqlExceptionFactoryArgument(
+        ParameterInfo parameter,
+        SqlErrorCollection collection,
+        string sensitiveMessage)
+    {
+        if (parameter.ParameterType == typeof(SqlErrorCollection))
+        {
+            return collection;
+        }
+
+        if (parameter.ParameterType == typeof(string))
+        {
+            return "synthetic-client-version";
+        }
+
+        if (parameter.ParameterType == typeof(Guid))
+        {
+            return Guid.Empty;
+        }
+
+        if (typeof(Exception).IsAssignableFrom(parameter.ParameterType))
+        {
+            return new InvalidOperationException(sensitiveMessage);
+        }
+
+        if (parameter.HasDefaultValue)
+        {
+            return parameter.DefaultValue;
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported test SQL exception factory parameter: {parameter.Name}.");
+    }
+
+    private static string FormatSqlError(SqlErrorValues error) =>
+        $"Number={error.Number},State={error.State},Class={error.Class}";
 
     private static InternalPrincipal Principal() => new(
         PrincipalId,
@@ -389,6 +625,8 @@ public sealed class AzureDemoInfrastructureTests
         Uri? Uri,
         string? AuthorizationScheme,
         string? AuthorizationParameter);
+
+    private readonly record struct SqlErrorValues(int Number, byte State, byte Class);
 
     private sealed class StubCustomerContext : ICurrentCustomerContext
     {
