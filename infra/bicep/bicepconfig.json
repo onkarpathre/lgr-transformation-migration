@@ -1,0 +1,6 @@
+{
+  // The approved fail-closed template assertions require Bicep's Assertions feature in CLI 0.47.16.
+  "experimentalFeaturesEnabled": {
+    "assertions": true
+  }
+}

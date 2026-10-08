@@ -422,7 +422,7 @@ public interface IProjectMembershipProvider
 
 public sealed class LocalTestIdentityProvider(
     IOptions<LgrAuthenticationOptions> options,
-    TimeProvider timeProvider) : ILocalTestIdentityProvider, IProjectMembershipProvider
+    TimeProvider timeProvider) : ILocalTestIdentityProvider, IProjectMembershipProvider, IProjectMembershipReadiness
 {
     private static readonly Guid SyntheticTenantId = Guid.Parse("99999999-9999-9999-9999-999999999999");
     private static readonly Guid SyntheticClientId = Guid.Parse("88888888-8888-8888-8888-888888888888");
@@ -481,15 +481,24 @@ public sealed class LocalTestIdentityProvider(
             membership.Roles.ToHashSet(StringComparer.Ordinal),
             membership.Version));
     }
+
+    public ValueTask<bool> IsReadyAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(true);
+    }
 }
 
-public sealed class UnavailableProjectMembershipProvider : IProjectMembershipProvider
+public sealed class UnavailableProjectMembershipProvider : IProjectMembershipProvider, IProjectMembershipReadiness
 {
     public ValueTask<MembershipResolution> ResolveAsync(
         InternalPrincipal principal,
         Guid projectId,
         CancellationToken cancellationToken) =>
         ValueTask.FromResult(new MembershipResolution(MembershipResolutionStatus.Unavailable));
+
+    public ValueTask<bool> IsReadyAsync(CancellationToken cancellationToken) =>
+        ValueTask.FromResult(false);
 }
 
 public interface IEntraAccessTokenValidator
