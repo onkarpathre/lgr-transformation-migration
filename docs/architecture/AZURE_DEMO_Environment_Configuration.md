@@ -142,6 +142,7 @@ Deployment slots have independent TLS/private-endpoint configuration. Do not ass
 | `NEXT_PUBLIC_ENTRA_TENANT_ID` | Approved workforce tenant GUID | No | Build-time | Public identifier. |
 | `NEXT_PUBLIC_ENTRA_CLIENT_ID` | Azure-demo SPA client GUID | No | Build-time | Public identifier. |
 | `NEXT_PUBLIC_API_SCOPE` | `api://<api-client-id>/lgr.access` | No | Build-time | Exact delegated scope. |
+| `AZDEMO_API_CLIENT_ID` | Approved Azure-demo API client GUID | No | Build-only | Authoritative validator input; it is not browser-public and is not an App Service runtime setting. |
 | `NEXT_PUBLIC_DEMO_LABEL` | `Restricted synthetic non-production demo` | No | Build-time | Must be visible in the UI. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Bicep resource value | No credential, but protect config | Yes | Use only with configured telemetry SDK/agent; no web Key Vault access. |
 | `OTEL_SERVICE_NAME` | `lgrtm-web-azdemo` / slot-specific suffix | No | Yes | Distinguishes slots. |
@@ -149,6 +150,12 @@ Deployment slots have independent TLS/private-endpoint configuration. Do not ass
 | `WEBSITE_SWAP_WARMUP_PING_PATH` | `/health` | No | Yes | Must return 200 only when API path is ready. |
 | `WEBSITE_SWAP_WARMUP_PING_STATUSES` | `200` | No | Yes | Fail swap warm-up otherwise. |
 | `SCM_DO_BUILD_DURING_DEPLOYMENT` | `false` | No | No | CI supplies a ready-to-run standalone ZIP; no Oryx/platform build. |
+
+The AzureDemo production build is fail closed. Both the frontend validation build and `New-AzureDemoPackages.ps1` must receive all four authentication values above as process environment variables. The pipeline derives `NEXT_PUBLIC_API_SCOPE` as `api://$(AZDEMO_API_CLIENT_ID)/lgr.access` and separately maps the same `AZDEMO_API_CLIENT_ID` into the validator; it does not use an independent scope fallback. `npm run build:azure-demo` validates in the same process environment immediately before `next build`. Application packaging runs the same validator before it creates output, compiles the API or invokes the existing web build.
+
+The guard rejects missing, empty and whitespace-only settings; any leading, trailing or embedded ECMAScript whitespace; unresolved Azure Pipelines `$(...)`, `${{ ... }}` or `$[ ... ]` expressions; malformed or obvious repeated-digit placeholder GUIDs, including the all-zero GUID; and any scope other than exactly `api://<validated-api-client-id>/lgr.access`. GUID hexadecimal case is accepted and compared case-insensitively. The `api://` syntax and `/lgr.access` suffix are case-sensitive. The guard does not trim, rewrite, default or otherwise repair a value. This means every accepted public value is unchanged when Next.js embeds it, consistent with the application's existing reads.
+
+Ordinary local development remains on `npm run dev` or `npm run build` and does not require live Azure access. The strict command is only `npm run build:azure-demo` and the AzureDemo package entry point; there is no bypass switch. Passing the guard proves only that the four build inputs are syntactically consistent. It does **not** prove that the Entra application registration exists, that `lgr.access` is enabled, that the SPA is pre-authorized, that consent has been granted, or that a live login/token exchange succeeds. Those remain independent protected-environment checks.
 
 Forbidden web settings and build variables:
 

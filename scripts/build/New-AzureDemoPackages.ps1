@@ -11,6 +11,21 @@ $utilities = Join-Path $PSScriptRoot 'AzureDemoPackageUtilities.ps1'
 $repo = (Resolve-Path (Join-Path (Join-Path $PSScriptRoot '..') '..')).ProviderPath
 $output = Assert-AzureDemoRepositoryOutputPath -RepositoryPath $repo -OutputPath $OutputDirectory
 $npmCommand = if ([IO.Path]::DirectorySeparatorChar -eq '\') { 'npm.cmd' } else { 'npm' }
+$authValidator = Join-Path $repo 'src\web\scripts\validate-azure-demo-auth-config.mjs'
+
+$priorErrorActionPreference = $ErrorActionPreference
+try {
+    $ErrorActionPreference = 'Continue'
+    $authValidationOutput = @(& node $authValidator 2>&1)
+    $authValidationExitCode = $LASTEXITCODE
+}
+finally {
+    $ErrorActionPreference = $priorErrorActionPreference
+}
+if ($authValidationExitCode) {
+    throw (($authValidationOutput | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine)
+}
+$authValidationOutput | Write-Output
 
 $nodeMajor = [int]((node --version).TrimStart('v').Split('.')[0])
 if ($nodeMajor -ne 24) { throw 'Azure demo web packaging requires Node.js 24.' }

@@ -1721,6 +1721,112 @@ handoff:
 
 READY_FOR_TEST
 
+## AzureDemo authentication-configuration build guard
+
+### Baseline, authority and traceability
+
+This focused Developer repair started on branch `fix/mtp-azure-demo-reconciliation` at exact HEAD `730a2d8893fc9322d06eaf8c20913df3d9190d54`. The staged index and tracked/untracked working tree were clean. The approved `AZURE-DEMO-001` / `AZURE-DEMO-ARCH-001` package authorizes controlled implementation and local/isolated testing; Azure Platform/Operations, protected deployment, live Entra verification and release approval remain separate gates. No reset, stash, commit, push, Azure action, variable-group change, Entra permission change, package publication or deployment occurred.
+
+```yaml
+traceability:
+  product_version: "0.1"
+  phase: "Phase 1 - MVP"
+  capabilities: ["C-01"]
+  functional_requirements: ["F-01", "F-02", "F-15"]
+  non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-10", "NF-11", "NF-12"]
+  risks: ["R-02", "R-09", "R-11"]
+  assumptions: ["A-01", "A-02", "A-03", "A-18"]
+  dependencies: ["D-03", "D-04", "D-10", "D-11", "D-13"]
+  issues: ["I-02", "I-06", "I-08"]
+  open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+  approvals:
+    - "Product/PRB, Independent TDA, Information Security and Test Services approvals bound to AZURE-DEMO-001 package commit b8800e1eda014eef1421a1af5427aaea41393496 on 2026-09-29; controlled implementation and local/isolated testing only."
+```
+
+The change is separable from the remaining gates because it adds a fail-closed syntactic build precondition to the already approved internal AzureDemo authentication design. It does not change PKCE, state verification, tenant restrictions, token storage/expiry, API authorization, redirects, Entra registrations or any Azure resource.
+
+### Confirmed defect and pre-fix evidence
+
+`EntraAuth.tsx` trims `NEXT_PUBLIC_ENTRA_TENANT_ID`, `NEXT_PUBLIC_ENTRA_CLIENT_ID` and `NEXT_PUBLIC_API_SCOPE` and previously considered any three non-empty strings configured. With synthetic nonzero tenant/SPA identifiers and the literal `$(AZDEMO_API_SCOPE)`, the exact pre-fix predicate returned `PREFX_AUTH_CONFIGURED=true` and process exit `0`. A pre-fix `npm run build` attempt could not reach Next.js because the local ignored `node_modules` directory had no `next` executable; it exited `1`. No successful pre-fix production bundle is claimed.
+
+### Implemented contract
+
+- `src/web/scripts/validate-azure-demo-auth-config.mjs` is the single reusable validator. It requires the three `NEXT_PUBLIC_*` values plus authoritative `AZDEMO_API_CLIENT_ID`; rejects missing/blank values, ECMAScript whitespace, unresolved Azure Pipelines expressions, malformed and repeated-digit placeholder GUIDs, and any scope other than one exact `api://<API-client-id>/lgr.access`; compares GUID hexadecimal case-insensitively without changing any value; and emits setting-specific redacted failures.
+- `npm run build:azure-demo` runs that validator immediately before `next build` in the same inherited process environment. Ordinary `npm run dev` and `npm run build` remain unchanged.
+- `New-AzureDemoPackages.ps1` invokes the same validator before output creation, API compilation or the existing production web build, and does not mutate any validated setting before `next build`.
+- Both pipeline build tasks now map `AZDEMO_API_CLIENT_ID` explicitly and derive `NEXT_PUBLIC_API_SCOPE` from that same variable as `api://$(AZDEMO_API_CLIENT_ID)/lgr.access`. No environment-specific fallback is hard-coded.
+- The portable Node regression covers the configuration matrix, redaction, exact npm entry ordering and downstream nonzero propagation. The PowerShell regression invokes the actual package entry with invalid configuration, proves no package output is created, and uses isolated command shims to prove valid configuration reaches the existing API and web build paths while native failure remains nonzero and no `web.zip` is published.
+- `AZURE_DEMO_Environment_Configuration.md` documents required inputs, whitespace/case rules, local-development compatibility and the boundary between syntactic consistency and live Entra verification.
+
+### Local verification and remaining evidence
+
+| Check | Result |
+|---|---|
+| Focused Node authentication regression | PASS, exit `0`: 9/9 cases, including the literal unresolved scope, every required missing/blank value, other expression forms, GUID/placeholders, scope variants, whitespace/case, redaction, actual npm entry ordering and downstream exit `29`. |
+| Actual PowerShell package-entry regression | PASS, exit `0`: invalid scope exits nonzero before output creation; valid inputs reach isolated API and web build shims; web build failure remains nonzero and no ZIP is published. |
+| Pipeline structural regression | PASS, exit `0`: both exact task blocks contain all four mappings; focused tests precede the guarded validation build; the package guard precedes output/API/web compilation; no post-validation authentication mutation is allowed. |
+| Source-boundary scan | PASS, exit `0`: 215 source/configuration files. |
+| JavaScript and PowerShell parsing | PASS, exit `0`: both `.mjs` files pass `node --check`; all three changed PowerShell scripts parse under Windows PowerShell 5.1. |
+| Diff whitespace | PASS, exit `0`. |
+| Post-fix literal unresolved scope | PASS as rejection, exit `1`: `npm run build:azure-demo` names `NEXT_PUBLIC_API_SCOPE` and the unresolved Azure Pipelines macro before attempting `next`. |
+| Valid guard to real local Next entry | GUARD PASS / BUILD UNAVAILABLE, exit `1`: validation succeeds, then the missing local `next` executable prevents compilation. |
+| Locked frontend restore | UNAVAILABLE, exit `1`: `npm ci --ignore-scripts --offline --cache ../../.npm-cache` reports `ENOTCACHED` for `next@16.3.8`; the previously empty ignored `node_modules` remains empty. |
+| Frontend lint, component tests and fresh production build | UNAVAILABLE, each exit `1`: `eslint`, `vitest` and `next` are not installed. No stale application package was used as evidence and no fresh `web.zip` was produced. |
+| Linux PowerShell/Node execution | PENDING CI: local `pwsh`, Docker and Podman are absent; the `wsl.exe` launcher reports that WSL is not installed. The new fail-closed regression is wired into the existing `ubuntu-latest` Validate job. |
+| Live Entra registration/scope/consent/login | NOT RUN and not claimed. The enabled `lgr.access` scope, SPA pre-authorization, consent and token exchange still require independent protected-environment verification. |
+
+```yaml
+handoff:
+  from_agent: "developer"
+  to_agent: "tester"
+  state: "READY_FOR_TEST"
+  work_item: "AZURE-DEMO-001"
+  branch: "fix/mtp-azure-demo-reconciliation"
+  commit: "UNCOMMITTED_WORKTREE_FROM_730a2d8893fc9322d06eaf8c20913df3d9190d54"
+  traceability:
+    product_version: "0.1"
+    phase: "Phase 1 - MVP"
+    capabilities: ["C-01"]
+    functional_requirements: ["F-01", "F-02", "F-15"]
+    non_functional_requirements: ["NF-01", "NF-02", "NF-03", "NF-10", "NF-11", "NF-12"]
+    risks: ["R-02", "R-09", "R-11"]
+    assumptions: ["A-01", "A-02", "A-03", "A-18"]
+    dependencies: ["D-03", "D-04", "D-10", "D-11", "D-13"]
+    issues: ["I-02", "I-06", "I-08"]
+    open_questions: ["Q-01", "Q-06", "Q-08", "Q-09"]
+    approvals:
+      - "Existing controlled implementation/local-test approvals recorded in AZURE-DEMO-001; no new release or protected-environment approval."
+  artefacts:
+    - "azure-pipelines.yml"
+    - "src/web/package.json"
+    - "src/web/scripts/validate-azure-demo-auth-config.mjs"
+    - "src/web/scripts/validate-azure-demo-auth-config.test.mjs"
+    - "scripts/build/New-AzureDemoPackages.ps1"
+    - "scripts/build/Test-AzureDemoAuthenticationConfiguration.ps1"
+    - "scripts/build/Test-AzurePipelineStructure.ps1"
+    - "docs/architecture/AZURE_DEMO_Environment_Configuration.md"
+    - "docs/implementation/AZURE_DEMO_Implementation_Work_Package.md"
+  evidence:
+    - "Focused Node, actual package-entry, pipeline structure, source-boundary, parser and diff checks pass locally."
+    - "The exact unresolved scope now fails before Next.js; valid input reaches the existing build command."
+  decisions:
+    - "Use AZDEMO_API_CLIENT_ID as the one explicit comparison authority and derive the pipeline scope from it."
+    - "Reject all whitespace and placeholder repair; accept GUID hexadecimal case only."
+    - "Keep ordinary local development unguarded and make AzureDemo production entry points unskippably strict."
+  assumptions: []
+  risks:
+    - "Fresh dependency-backed Next.js compilation and application package generation have not run locally."
+    - "Linux PowerShell 7 process behavior awaits the wired ubuntu-latest validation job."
+    - "Syntactic validation does not establish live Entra scope, consent or login correctness."
+  defects:
+    - "REPAIRED LOCALLY: unresolved Azure Pipelines authentication expressions could be embedded in the browser bundle."
+  blockers: []
+  approvals: []
+  requested_action: "Independent Tester must run the new focused and package-entry regressions plus lint, component tests and a fresh guarded production/package build on ubuntu-latest, then verify the live Entra scope/consent/login through the separately authorized protected process."
+```
+
+READY_FOR_TEST
+
 ## PowerShell 7 readiness-evidence timestamp preservation repair
 
 ### Baseline, scope and traceability
@@ -3947,5 +4053,11 @@ READY_FOR_TEST
 ## Current worktree terminal state - readiness JSON timestamp preservation
 
 The latest bounded continuation is **PowerShell 7 readiness-evidence timestamp preservation repair** above, based on exact HEAD `92d6c149346367e84b57bfc2f2b5bfc5be4b6fe5`. Its Windows PowerShell 5.1 focused readiness, smoke-evidence, supplemental orchestration, source-boundary, parsing, pipeline-structure and diff checks pass as recorded. The exact `ubuntu-latest` PowerShell 7 task remains required to confirm default `System.DateTime` versus preserved `System.String`; no Linux pass is claimed locally. No Azure, deployment, migration, seed, swap, protected evidence, release or human-approval action occurred.
+
+READY_FOR_TEST
+
+## Current worktree terminal state - authentication configuration build guard
+
+The latest bounded continuation is **AzureDemo authentication-configuration build guard** above, based on exact HEAD `730a2d8893fc9322d06eaf8c20913df3d9190d54`. Its focused Node, actual PowerShell package-entry, pipeline structure, source-boundary, parser and diff checks pass locally as recorded. A dependency-backed fresh Next.js build/package, real Linux PowerShell 7 execution and independent live Entra scope/consent/login verification remain explicit CI/protected checks. No Azure, Entra, variable-group, deployment, package-publication, release or human-approval action occurred. This hand-off supersedes older terminal markers in this cumulative document.
 
 READY_FOR_TEST

@@ -103,9 +103,10 @@ stages:
     - pwsh: |
         npm ci --ignore-scripts
         npm audit --audit-level=moderate
+        npm run test:auth-config
         npm run lint
         npm run test:component -- --reporter=junit --outputFile=../../TestResults/vitest-junit.xml
-        npm run build
+        npm run build:azure-demo
         $tree = npm ls --all --json | ConvertFrom-Json
         $tree | ConvertTo-Json -Depth 100 | Set-Content ../../TestResults/npm-dependency-tree.json
       workingDirectory: src/web
@@ -113,13 +114,16 @@ stages:
       env:
         NEXT_PUBLIC_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)
         NEXT_PUBLIC_ENTRA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
-        NEXT_PUBLIC_API_SCOPE: $(AZDEMO_API_SCOPE)
+        NEXT_PUBLIC_API_SCOPE: api://$(AZDEMO_API_CLIENT_ID)/lgr.access
+        AZDEMO_API_CLIENT_ID: $(AZDEMO_API_CLIENT_ID)
         NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production management demo
     - pwsh: |
         node -e "const l=require('./src/web/package-lock.json'); const e={vitest:'4.1.11','@vitest/mocker':'4.1.11','brace-expansion-1':'1.1.21','brace-expansion-5':'5.0.12'}; const a={vitest:l.packages['node_modules/vitest'].version,'@vitest/mocker':l.packages['node_modules/@vitest/mocker'].version,'brace-expansion-1':l.packages['node_modules/brace-expansion'].version,'brace-expansion-5':l.packages['node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion'].version}; for(const [k,v] of Object.entries(e)) if(a[k]!==v) throw new Error(k+' is '+a[k]+' not '+v);"
       displayName: Enforce approved frontend remediation versions
     - pwsh: ./scripts/build/Test-AzureDemoSourceBoundaries.ps1
       displayName: Secret, LocalTest, header and prohibited-capability boundaries
+    - pwsh: ./scripts/build/Test-AzureDemoAuthenticationConfiguration.ps1
+      displayName: Azure demo authentication build-guard regression
     - pwsh: ./scripts/build/Test-AzureDemoSmokeTargetResolution.ps1
       displayName: Azure demo smoke exact-target regression
     - pwsh: ./scripts/build/Test-AzureDemoPipelineSmokeTargetCommands.ps1
@@ -224,7 +228,8 @@ stages:
       env:
         NEXT_PUBLIC_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)
         NEXT_PUBLIC_ENTRA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)
-        NEXT_PUBLIC_API_SCOPE: $(AZDEMO_API_SCOPE)
+        NEXT_PUBLIC_API_SCOPE: api://$(AZDEMO_API_CLIENT_ID)/lgr.access
+        AZDEMO_API_CLIENT_ID: $(AZDEMO_API_CLIENT_ID)
         NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production management demo
     - pwsh: ./scripts/build/Test-EfMigrationArtifactParsing.ps1
       displayName: Regress fail-closed EF migration-list JSON parsing

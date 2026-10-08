@@ -24,6 +24,9 @@ $deployedContentVerificationRegression = Get-Content -LiteralPath (Join-Path $re
 $postDeploymentReadinessScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\smoke\AzureDemoPostDeploymentReadiness.ps1') -Raw
 $postDeploymentReadinessEntryScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\smoke\Invoke-AzureDemoPostDeploymentReadiness.ps1') -Raw
 $applicationPackageScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-AzureDemoPackages.ps1') -Raw
+$authenticationConfigurationRegressionScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Test-AzureDemoAuthenticationConfiguration.ps1') -Raw
+$authenticationConfigurationValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'src\web\scripts\validate-azure-demo-auth-config.mjs') -Raw
+$webPackage = Get-Content -LiteralPath (Join-Path $repo 'src\web\package.json') -Raw | ConvertFrom-Json
 $webDeploymentRegressionChainScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Invoke-AzureDemoWebDeploymentRegressionChain.ps1') -Raw
 $appServiceBicep = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\appservice.bicep') -Raw
 $approvedMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev-v2'
@@ -119,6 +122,7 @@ $requiredFragments = @(
     'Test-AzureDemoSmokeOrchestration.ps1',
     'Test-AzureDemoSmokeEvidence.ps1',
     'Test-AzureDemoAppliedApiHostConfiguration.ps1',
+    'Test-AzureDemoAuthenticationConfiguration.ps1',
     'Invoke-AzureDemoWebDeploymentRegressionChain.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
@@ -681,6 +685,74 @@ $deployParameter = [regex]::Match($text, '(?ms)- name: deployAzureDemo\s+type: b
 $rollbackParameter = [regex]::Match($text, '(?ms)- name: rollbackAzureDemo\s+type: boolean\s+default: false')
 if (-not $deployParameter.Success -or -not $rollbackParameter.Success) {
     throw 'Azure deployment and rollback parameters must both default to false.'
+}
+
+$expectedAzureDemoBuildCommand = 'node scripts/validate-azure-demo-auth-config.mjs && next build'
+if ([string] $webPackage.scripts.'build:azure-demo' -cne $expectedAzureDemoBuildCommand) {
+    throw 'The AzureDemo frontend build must validate authentication in the same environment immediately before next build.'
+}
+$frontendBuildStep = Get-YamlStepBlock $lines 'npm run build:azure-demo'
+$packageBuildStep = Get-YamlStepBlock $lines 'New-AzureDemoPackages\.ps1 -OutputDirectory'
+$authenticationRegressionStep = Get-YamlStepBlock $lines 'Test-AzureDemoAuthenticationConfiguration\.ps1'
+$requiredAuthenticationEnvironment = @(
+    'NEXT_PUBLIC_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)',
+    'NEXT_PUBLIC_ENTRA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)',
+    'NEXT_PUBLIC_API_SCOPE: api://$(AZDEMO_API_CLIENT_ID)/lgr.access',
+    'AZDEMO_API_CLIENT_ID: $(AZDEMO_API_CLIENT_ID)'
+)
+foreach ($step in @($frontendBuildStep, $packageBuildStep)) {
+    foreach ($mapping in $requiredAuthenticationEnvironment) {
+        if (-not $step.Contains($mapping)) {
+            throw "An AzureDemo application build caller is missing its authentication environment mapping: $mapping"
+        }
+    }
+}
+if (-not $frontendBuildStep.Contains('workingDirectory: src/web') -or
+    $frontendBuildStep.IndexOf('npm run test:auth-config', [StringComparison]::Ordinal) -lt 0 -or
+    $frontendBuildStep.IndexOf('npm run test:auth-config', [StringComparison]::Ordinal) -gt
+    $frontendBuildStep.IndexOf('npm run build:azure-demo', [StringComparison]::Ordinal)) {
+    throw 'The frontend validation task must run the focused authentication regression before its guarded production build.'
+}
+if (-not $packageBuildStep.Contains("New-AzureDemoPackages.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application' -SkipTests")) {
+    throw 'The package task no longer uses the guarded application package entry point.'
+}
+if (-not $validateStage.Contains('Test-AzureDemoAuthenticationConfiguration.ps1') -or
+    $authenticationRegressionStep.Contains('continueOnError:')) {
+    throw 'The actual package-entry authentication regression must run fail closed in Linux validation.'
+}
+foreach ($validatorFragment in @(
+        'NEXT_PUBLIC_ENTRA_TENANT_ID',
+        'NEXT_PUBLIC_ENTRA_CLIENT_ID',
+        'NEXT_PUBLIC_API_SCOPE',
+        'AZDEMO_API_CLIENT_ID',
+        'api://<AZDEMO_API_CLIENT_ID>/lgr.access',
+        'unresolved ${expression.name}')) {
+    if (-not $authenticationConfigurationValidatorScript.Contains($validatorFragment)) {
+        throw "The reusable authentication validator is missing its fail-closed contract: $validatorFragment"
+    }
+}
+foreach ($regressionFragment in @(
+        '& $powerShellPath @nativeArguments',
+        'if ($exitCode -eq 0)',
+        'if (Test-Path -LiteralPath $outputDirectory)',
+        'unresolved\s+Azure\s+Pipelines\s+macro')) {
+    if (-not $authenticationConfigurationRegressionScript.Contains($regressionFragment)) {
+        throw "The package-entry authentication regression is missing its process-boundary contract: $regressionFragment"
+    }
+}
+$packageGuardIndex = $applicationPackageScript.IndexOf('& node $authValidator', [StringComparison]::Ordinal)
+$packageOutputIndex = $applicationPackageScript.IndexOf('New-Item -ItemType Directory -Path $output -Force', [StringComparison]::Ordinal)
+$packageApiCompilationIndex = $applicationPackageScript.IndexOf('dotnet publish src/api/LgrTransformationMigration.Api.csproj', [StringComparison]::Ordinal)
+$packageWebCompilationIndex = $applicationPackageScript.IndexOf('& $npmCommand run build', [StringComparison]::Ordinal)
+if ($packageGuardIndex -lt 0 -or $packageOutputIndex -le $packageGuardIndex -or
+    $packageApiCompilationIndex -le $packageOutputIndex -or $packageWebCompilationIndex -le $packageApiCompilationIndex) {
+    throw 'Application packaging must validate authentication before output creation, API compilation, and its existing web build.'
+}
+$validatedPackageSegment = $applicationPackageScript.Substring(
+    $packageGuardIndex,
+    $packageWebCompilationIndex - $packageGuardIndex)
+if ($validatedPackageSegment -match '(?im)\$env:(?:NEXT_PUBLIC_ENTRA_TENANT_ID|NEXT_PUBLIC_ENTRA_CLIENT_ID|NEXT_PUBLIC_API_SCOPE|AZDEMO_API_CLIENT_ID)\s*=') {
+    throw 'Application packaging changes an authentication setting after validation and before next build.'
 }
 
 Assert-SqlBootstrapEvidenceDelivery $lines

@@ -8,9 +8,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:azure-demo": "node scripts/validate-azure-demo-auth-config.mjs && next build",
     "start": "node server.js",
     "lint": "eslint .",
-    "test:component": "vitest run"
+    "test:component": "vitest run",
+    "test:auth-config": "node --test scripts/validate-azure-demo-auth-config.test.mjs"
   },
   "dependencies": {
     "next": "16.3.8",
