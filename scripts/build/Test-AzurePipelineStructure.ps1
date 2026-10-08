@@ -20,6 +20,7 @@ $seedResetScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\data\Invok
 $cleanWebDeploymentScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\Invoke-AzureDemoCleanWebSlotDeployment.ps1') -Raw
 $slotContentVerificationScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\Invoke-AzureDemoSlotContentVerification.ps1') -Raw
 $stagingDeploymentUtilitiesScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\deployment\AzureDemoStagingDeployment.ps1') -Raw
+$deployedContentVerificationRegression = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Test-AzureDemoDeployedContentVerification.ps1') -Raw
 $postDeploymentReadinessScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\smoke\AzureDemoPostDeploymentReadiness.ps1') -Raw
 $postDeploymentReadinessEntryScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\smoke\Invoke-AzureDemoPostDeploymentReadiness.ps1') -Raw
 $applicationPackageScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-AzureDemoPackages.ps1') -Raw
@@ -824,6 +825,46 @@ foreach ($fragment in @(
         'bounded-platform-generated-metadata')) {
     if (-not $stagingDeploymentUtilitiesScript.Contains($fragment)) {
         throw "Deployed-content verification is missing its bounded platform-metadata contract: $fragment"
+    }
+}
+$dependencyArchiveClassifierStart = $stagingDeploymentUtilitiesScript.IndexOf('function Test-AzureDemoDependencyArchivePath', [StringComparison]::Ordinal)
+$dependencyPathClassifierStart = $stagingDeploymentUtilitiesScript.IndexOf('function Test-AzureDemoDependencyPath', [StringComparison]::Ordinal)
+if ($dependencyArchiveClassifierStart -lt 0 -or $dependencyPathClassifierStart -le $dependencyArchiveClassifierStart) {
+    throw 'Deployed-content verification is missing its bounded dependency-archive classifier.'
+}
+$dependencyArchiveClassifier = $stagingDeploymentUtilitiesScript.Substring(
+    $dependencyArchiveClassifierStart,
+    $dependencyPathClassifierStart - $dependencyArchiveClassifierStart)
+foreach ($fragment in @(
+        "'node_modules.tar.gz'",
+        "'node_modules.tgz'",
+        "'node_modules.tar.zst'",
+        "'node_modules.zip'",
+        '[string]::Equals($Path, $archivePath, [StringComparison]::Ordinal)')) {
+    if (-not $dependencyArchiveClassifier.Contains($fragment)) {
+        throw "Dependency archive classification is missing an exact supported contract: $fragment"
+    }
+}
+if ($dependencyArchiveClassifier -match '(?i)(?:\*\.zst|node_modules\*|-[a-z]*like\b|-[a-z]*match\b)') {
+    throw 'Dependency archive classification must not introduce wildcard or regex exclusions.'
+}
+foreach ($fragment in @(
+        'deployed-empty-dependency-archive:',
+        "mode = 'non-empty-dependency-archives'",
+        "status = if (`$deployedDependencyArchives.Count -gt 0) { 'not-performed' } else { 'not-applicable' }",
+        'do not validate dependency archive format/frame integrity, unpacked dependency bytes, successful platform extraction or live runtime health.')) {
+    if (-not $stagingDeploymentUtilitiesScript.Contains($fragment)) {
+        throw "Dependency transformation evidence is missing its payload or integrity limitation contract: $fragment"
+    }
+}
+foreach ($fragment in @(
+        "Resolve-ValidatedFixtureExecutable -Name 'zstd'",
+        "@('--quiet', '--test', `$zstdPath)",
+        "-DependencyRepresentation 'node_modules.tar.zst' -DependencyArchivePath `$zstandardFixture.Path",
+        'Invoke-ProductionVerifierProcess',
+        "zstandardStatus = 'LINUX_CI_PENDING'")) {
+    if (-not $deployedContentVerificationRegression.Contains($fragment)) {
+        throw "The Linux deployed-content regression is missing real Zstandard or process-boundary coverage: $fragment"
     }
 }
 if ($cleanWebDeploymentScript -match '(?i)\b(?:ssh|rm\s+-rf|list-publishing-(?:credentials|profiles))\b' -or

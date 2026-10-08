@@ -345,10 +345,18 @@ function Get-AzureDemoInventoryFingerprint {
     return Get-AzureDemoTextSha256 $text
 }
 
+function Test-AzureDemoDependencyArchivePath {
+    param([Parameter(Mandatory)] [string] $Path)
+    foreach ($archivePath in @('node_modules.tar.gz', 'node_modules.tgz', 'node_modules.tar.zst', 'node_modules.zip')) {
+        if ([string]::Equals($Path, $archivePath, [StringComparison]::Ordinal)) { return $true }
+    }
+    return $false
+}
+
 function Test-AzureDemoDependencyPath {
     param([Parameter(Mandatory)] [string] $Path)
     return $Path.StartsWith('node_modules/', [StringComparison]::Ordinal) -or
-        $Path -in @('node_modules.tar.gz', 'node_modules.tgz', 'node_modules.zip')
+        (Test-AzureDemoDependencyArchivePath -Path $Path)
 }
 
 function Test-AzureDemoPlatformMetadataPath {
@@ -435,6 +443,8 @@ function Compare-AzureDemoDeployedZip {
             } } else { $deployed })
     $expectedDependencies = @(if ($Workload -ceq 'Web') { $expected | Where-Object { Test-AzureDemoDependencyPath $_.Path } })
     $deployedDependencies = @(if ($Workload -ceq 'Web') { $deployed | Where-Object { Test-AzureDemoDependencyPath $_.Path } })
+    $expectedDependencyArchives = @(if ($Workload -ceq 'Web') { $expectedDependencies | Where-Object { Test-AzureDemoDependencyArchivePath $_.Path } })
+    $deployedDependencyArchives = @(if ($Workload -ceq 'Web') { $deployedDependencies | Where-Object { Test-AzureDemoDependencyArchivePath $_.Path } })
     $expectedPlatformMetadata = @(if ($Workload -ceq 'Web') { $expected | Where-Object { Test-AzureDemoPlatformMetadataPath $_.Path } })
     $deployedPlatformMetadata = @(if ($Workload -ceq 'Web') { $deployed | Where-Object { Test-AzureDemoPlatformMetadataPath $_.Path } })
 
@@ -482,6 +492,12 @@ function Compare-AzureDemoDeployedZip {
         if ($deployedByPath.ContainsKey('.next/BUILD_ID')) { $deployedBuildId = Get-AzureDemoZipTextEntry -ZipPath $DeployedZipPath -EntryPath '.next/BUILD_ID' }
         if ([string]::IsNullOrWhiteSpace($expectedBuildId) -or $expectedBuildId -cne $deployedBuildId) { $requiredFailures.Add('build-id-mismatch') }
         if ($expectedDependencies.Count -gt 0 -and $deployedDependencies.Count -eq 0) { $requiredFailures.Add('dependency-payload-missing') }
+        foreach ($emptyArchive in @($expectedDependencyArchives | Where-Object { [long] $_.Length -le 0 })) {
+            $requiredFailures.Add("expected-empty-dependency-archive:$($emptyArchive.Path)")
+        }
+        foreach ($emptyArchive in @($deployedDependencyArchives | Where-Object { [long] $_.Length -le 0 })) {
+            $requiredFailures.Add("deployed-empty-dependency-archive:$($emptyArchive.Path)")
+        }
     }
 
     $webFileEvidence = $null
@@ -567,6 +583,20 @@ function Compare-AzureDemoDeployedZip {
                 expectedFingerprint = if ($expectedDependencies.Count) { Get-AzureDemoInventoryFingerprint -Entries $expectedDependencies } else { $null }
                 deployedFingerprint = if ($deployedDependencies.Count) { Get-AzureDemoInventoryFingerprint -Entries $deployedDependencies } else { $null }
                 deployedPaths = @($deployedDependencies | ForEach-Object Path)
+                payloadValidation = [ordered]@{
+                    mode = 'non-empty-dependency-archives'
+                    emptyExpectedArchives = @($expectedDependencyArchives | Where-Object { [long] $_.Length -le 0 } | ForEach-Object Path)
+                    emptyDeployedArchives = @($deployedDependencyArchives | Where-Object { [long] $_.Length -le 0 } | ForEach-Object Path)
+                }
+                archiveIntegrityValidation = [ordered]@{
+                    performed = $false
+                    status = if ($deployedDependencyArchives.Count -gt 0) { 'not-performed' } else { 'not-applicable' }
+                    recognizedArchivePaths = @($deployedDependencyArchives | ForEach-Object Path)
+                    limitation = if ($deployedDependencyArchives.Count -gt 0) {
+                        'Exact root path, non-empty length and SHA-256 inventory recognition do not validate dependency archive format/frame integrity, unpacked dependency bytes, successful platform extraction or live runtime health.'
+                    }
+                    else { $null }
+                }
             }
         }
         else { [ordered]@{ mode = 'none'; exactDependencyBytesCompared = $true } }
