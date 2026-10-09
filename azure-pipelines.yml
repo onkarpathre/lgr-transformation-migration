@@ -85,29 +85,47 @@ stages:
       inputs: { versionSpec: 24.x }
     - pwsh: |
         dotnet --info
+        if ($LASTEXITCODE) { throw '.NET runtime inspection failed.' }
         node --version
+        if ($LASTEXITCODE) { throw 'Node runtime inspection failed.' }
         npm --version
+        if ($LASTEXITCODE) { throw 'npm runtime inspection failed.' }
         dotnet restore LgrTransformationMigration.sln --locked-mode
+        if ($LASTEXITCODE) { throw 'Locked .NET restore failed.' }
         dotnet format LgrTransformationMigration.sln --verify-no-changes --no-restore --include src/api/Program.cs src/api/Infrastructure/IdentityAuthorization.cs src/api/Infrastructure/AzureDemoInfrastructure.cs src/api/Infrastructure/HealthAndSecurity.cs src/api/Infrastructure/MigrationDbContextFactory.cs src/api/Services/Discovery/DiscoveryImportOptions.cs src/api/Services/Discovery/ImportFileStorage.cs tests/api.unit/AzureDemoConfigurationTests.cs tests/api.unit/AzureDemoDeploymentBoundaryTests.cs tests/api.unit/MigrationDbContextFactoryTests.cs tools/AzureDemo.DataTool/Program.cs
+        if ($LASTEXITCODE) { throw '.NET formatting verification failed.' }
         dotnet build LgrTransformationMigration.sln --configuration Release --no-restore
+        if ($LASTEXITCODE) { throw '.NET Release build failed.' }
         dotnet test LgrTransformationMigration.sln --configuration Release --no-build --logger "trx;LogFilePrefix=azure-demo"
+        if ($LASTEXITCODE) { throw '.NET tests failed.' }
       displayName: Locked restore, format, build and .NET tests
     - pwsh: |
         dotnet tool restore
+        if ($LASTEXITCODE) { throw '.NET tool restore failed.' }
         ./scripts/build/Test-EfMigrationDbContextCreation.ps1 -Configuration Release -NoBuild
       displayName: Create EF migration context without local configuration on Linux
     - pwsh: |
         dotnet list LgrTransformationMigration.sln package --vulnerable --include-transitive
+        if ($LASTEXITCODE) { throw 'Connected NuGet vulnerability query failed.' }
         dotnet list LgrTransformationMigration.sln package --deprecated --include-transitive
+        if ($LASTEXITCODE) { throw 'Connected NuGet deprecation query failed.' }
       displayName: Connected NuGet vulnerability and deprecation gates
     - pwsh: |
         npm ci --ignore-scripts
+        if ($LASTEXITCODE) { throw 'npm locked restore failed.' }
         npm audit --audit-level=moderate
+        if ($LASTEXITCODE) { throw 'npm vulnerability audit failed.' }
         npm run test:auth-config
+        if ($LASTEXITCODE) { throw 'AzureDemo authentication configuration tests failed.' }
         npm run lint
+        if ($LASTEXITCODE) { throw 'Frontend lint failed.' }
         npm run test:component -- --reporter=junit --outputFile=../../TestResults/vitest-junit.xml
+        if ($LASTEXITCODE) { throw 'Frontend component tests failed.' }
         npm run build:azure-demo
-        $tree = npm ls --all --json | ConvertFrom-Json
+        if ($LASTEXITCODE) { throw 'AzureDemo production build failed.' }
+        $treeJson = @(npm ls --all --json)
+        if ($LASTEXITCODE) { throw 'Frontend dependency tree inspection failed.' }
+        $tree = ($treeJson -join "`n") | ConvertFrom-Json
         $tree | ConvertTo-Json -Depth 100 | Set-Content ../../TestResults/npm-dependency-tree.json
       workingDirectory: src/web
       displayName: Connected npm audit, lint, tests and production build
@@ -119,11 +137,12 @@ stages:
         NEXT_PUBLIC_DEMO_LABEL: Restricted synthetic non-production management demo
     - pwsh: |
         node -e "const l=require('./src/web/package-lock.json'); const e={vitest:'4.1.11','@vitest/mocker':'4.1.11','brace-expansion-1':'1.1.21','brace-expansion-5':'5.0.12'}; const a={vitest:l.packages['node_modules/vitest'].version,'@vitest/mocker':l.packages['node_modules/@vitest/mocker'].version,'brace-expansion-1':l.packages['node_modules/brace-expansion'].version,'brace-expansion-5':l.packages['node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion'].version}; for(const [k,v] of Object.entries(e)) if(a[k]!==v) throw new Error(k+' is '+a[k]+' not '+v);"
+        if ($LASTEXITCODE) { throw 'Approved frontend remediation-version validation failed.' }
       displayName: Enforce approved frontend remediation versions
     - pwsh: ./scripts/build/Test-AzureDemoSourceBoundaries.ps1
       displayName: Secret, LocalTest, header and prohibited-capability boundaries
-    - pwsh: ./scripts/build/Test-AzureDemoAuthenticationConfiguration.ps1
-      displayName: Azure demo authentication build-guard regression
+    - pwsh: ./scripts/build/Test-AzureDemoAuthenticationConfigurationCaller.ps1
+      displayName: Azure demo authentication build-guard and generated-caller regression
     - pwsh: ./scripts/build/Test-AzureDemoSmokeTargetResolution.ps1
       displayName: Azure demo smoke exact-target regression
     - pwsh: ./scripts/build/Test-AzureDemoPipelineSmokeTargetCommands.ps1
@@ -178,11 +197,13 @@ stages:
     - pwsh: |
         ./scripts/build/Test-AzureDemoParameterEnvironment.ps1
         az bicep version
+        if ($LASTEXITCODE) { throw 'Azure CLI Bicep runtime inspection failed.' }
         Get-ChildItem infra/bicep -Recurse -Include *.bicep,*.bicepparam | ForEach-Object {
           az bicep format --file $_.FullName
           if ($LASTEXITCODE) { throw "Bicep formatting failed for $($_.FullName)." }
         }
         $changed = git status --short -- infra/bicep
+        if ($LASTEXITCODE) { throw 'Could not inspect Bicep formatting changes.' }
         if ($changed) { throw "Bicep formatting differs:`n$changed" }
         az bicep build --file infra/bicep/main.bicep --outfile $(Build.ArtifactStagingDirectory)/main.json
         if ($LASTEXITCODE) { throw 'Bicep build failed.' }
@@ -335,6 +356,7 @@ stages:
                   Remove-Item -LiteralPath $runtimeErrorPath -Force -ErrorAction SilentlyContinue
                 }
                 az deployment group what-if --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --template-file infra/bicep/main.bicep --parameters infra/bicep/parameters/azure-demo.bicepparam --no-pretty-print > $(Pipeline.Workspace)/bicep-what-if.json
+                if ($LASTEXITCODE) { throw 'Bicep what-if failed.' }
             env:
               AZDEMO_OWNER: $(AZDEMO_OWNER)
               AZDEMO_COST_CENTRE: $(AZDEMO_COST_CENTRE)
@@ -403,7 +425,9 @@ stages:
                 if ($LASTEXITCODE) { throw 'Bicep deployment failed.' }
                 $deploymentId = "/subscriptions/$(AZDEMO_SUBSCRIPTION_ID)/resourceGroups/$(AZDEMO_RESOURCE_GROUP_NAME)/providers/Microsoft.Resources/deployments/$deploymentName"
                 Write-Host "##vso[task.setvariable variable=AZDEMO_INFRASTRUCTURE_DEPLOYMENT_ID]$deploymentId"
-                $outputs = az deployment group show --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name $deploymentName --query properties.outputs -o json | ConvertFrom-Json
+                $outputRows = @(az deployment group show --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name $deploymentName --query properties.outputs -o json --only-show-errors)
+                if ($LASTEXITCODE) { throw 'Could not read the applied Bicep deployment outputs.' }
+                $outputs = ([string]::Join([Environment]::NewLine, [string[]] $outputRows)) | ConvertFrom-Json
                 if ($outputs.webAppName.value -ne '$(AZDEMO_WEB_APP_NAME)' -or $outputs.apiAppName.value -ne '$(AZDEMO_API_APP_NAME)' -or $outputs.sqlServerName.value -ne '$(AZDEMO_SQL_SERVER_NAME)' -or $outputs.sqlDatabaseName.value -ne '$(AZDEMO_SQL_DATABASE_NAME)') { throw 'Bicep outputs did not match the exact approved MTP resource targets.' }
                 Write-Host "##vso[task.setvariable variable=webAppName]$($outputs.webAppName.value)"
                 Write-Host "##vso[task.setvariable variable=apiAppName]$($outputs.apiAppName.value)"
@@ -558,7 +582,7 @@ stages:
               scriptType: pscore
               scriptLocation: inlineScript
               inlineScript: |
-                $evidenceDirectory = '$(Pipeline.Workspace)/staging-deployment-evidence'
+                $evidenceDirectory = '$(Pipeline.Workspace)/staging-deployment-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)'
                 New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
                 Write-Host '##vso[task.setvariable variable=AZDEMO_STAGING_DEPLOYMENT_ATTEMPTED]true'
                 $common = @{
@@ -572,8 +596,8 @@ stages:
                 ./scripts/deployment/Invoke-AzureDemoCleanWebSlotDeployment.ps1 @common -AppName '$(AZDEMO_WEB_APP_NAME)' -EvidencePath (Join-Path $evidenceDirectory 'web-clean-deployment.json')
                 ./scripts/deployment/Invoke-AzureDemoSlotContentVerification.ps1 @common -Workload Web -AppName '$(AZDEMO_WEB_APP_NAME)' -EvidencePath (Join-Path $evidenceDirectory 'web-content-verification.json')
                 ./scripts/deployment/Invoke-AzureDemoSlotContentVerification.ps1 @common -Workload Api -AppName '$(AZDEMO_API_APP_NAME)' -EvidencePath (Join-Path $evidenceDirectory 'api-content-verification.json')
-          - publish: $(Pipeline.Workspace)/staging-deployment-evidence
-            artifact: staging-deployment-evidence
+          - publish: $(Pipeline.Workspace)/staging-deployment-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)
+            artifact: staging-deployment-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)
             condition: and(always(), eq(variables['AZDEMO_STAGING_DEPLOYMENT_ATTEMPTED'], 'true'))
           - task: AzureCLI@2
             displayName: Resolve and validate exact staging smoke targets
@@ -616,22 +640,22 @@ stages:
                 Write-Host "##vso[task.setvariable variable=AZDEMO_WEB_STAGING_HOST]$($targets.WebStagingHost)"
                 Write-Host "##vso[task.setvariable variable=AZDEMO_API_STAGING_HOST]$($targets.ApiStagingHost)"
           - pwsh: |
-              $evidenceDirectory = '$(Pipeline.Workspace)/staging-readiness-evidence-$(Build.BuildId)-$(System.JobAttempt)'
+              $evidenceDirectory = '$(Pipeline.Workspace)/staging-readiness-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)'
               New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
               Write-Host '##vso[task.setvariable variable=AZDEMO_STAGING_READINESS_ATTEMPTED]true'
               ./scripts/smoke/Invoke-AzureDemoPostDeploymentReadiness.ps1 -ApiReadyUri 'https://$(AZDEMO_API_STAGING_HOST)/health/ready' -WebReadyUri 'https://$(AZDEMO_WEB_STAGING_HOST)/health' -VerifiedApiHost '$(AZDEMO_API_STAGING_HOST)' -VerifiedWebHost '$(AZDEMO_WEB_STAGING_HOST)' -TargetSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -TargetResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -TargetApiAppName '$(AZDEMO_API_APP_NAME)' -TargetWebAppName '$(AZDEMO_WEB_APP_NAME)' -TargetSlotName staging -EvidencePath (Join-Path $evidenceDirectory 'staging-readiness-gate.json')
             displayName: Require stable exact-target staging readiness
-          - publish: $(Pipeline.Workspace)/staging-readiness-evidence-$(Build.BuildId)-$(System.JobAttempt)
-            artifact: staging-readiness-evidence
+          - publish: $(Pipeline.Workspace)/staging-readiness-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)
+            artifact: staging-readiness-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)
             condition: and(always(), eq(variables['AZDEMO_STAGING_READINESS_ATTEMPTED'], 'true'))
           - pwsh: |
-              $evidenceDirectory = '$(Pipeline.Workspace)/smoke-evidence'
+              $evidenceDirectory = '$(Pipeline.Workspace)/staging-smoke-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)'
               New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
               Write-Host '##vso[task.setvariable variable=AZDEMO_STAGING_SMOKE_ATTEMPTED]true'
               ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory $evidenceDirectory -WebBaseUri 'https://$(AZDEMO_WEB_STAGING_HOST)' -VerifiedWebHost '$(AZDEMO_WEB_STAGING_HOST)' -VerifiedApiHost '$(AZDEMO_API_STAGING_HOST)' -TargetSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -TargetResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -TargetWebAppName '$(AZDEMO_WEB_APP_NAME)' -TargetApiAppName '$(AZDEMO_API_APP_NAME)' -TargetSlotName staging -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -InfrastructureDeploymentId '$(AZDEMO_INFRASTRUCTURE_DEPLOYMENT_ID)' -PipelineDefinition '$(Build.DefinitionName)' -PipelineRunId '$(Build.BuildId)' -Execute
             displayName: Run staging smoke checks
-          - publish: $(Pipeline.Workspace)/smoke-evidence
-            artifact: staging-smoke-evidence
+          - publish: $(Pipeline.Workspace)/staging-smoke-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)
+            artifact: staging-smoke-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)
             condition: and(always(), eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true'))
           - pwsh: |
               $evidenceDirectory = Join-Path '$(Agent.TempDirectory)' 'azdemo-sql-bootstrap-evidence'
@@ -726,13 +750,13 @@ stages:
                 az webapp deployment slot swap --resource-group '$(AZDEMO_RESOURCE_GROUP_NAME)' --name '$(AZDEMO_WEB_APP_NAME)' --slot staging --target-slot production
                 if ($LASTEXITCODE) { throw 'Restricted demo web slot swap failed.' }
           - pwsh: |
-              $evidenceDirectory = '$(Pipeline.Workspace)/post-swap-smoke-evidence'
+              $evidenceDirectory = '$(Pipeline.Workspace)/post-swap-smoke-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)'
               New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
               Write-Host '##vso[task.setvariable variable=AZDEMO_PRODUCTION_SMOKE_ATTEMPTED]true'
               ./scripts/smoke/Invoke-AzureDemoSmokeTests.ps1 -EvidenceDirectory $evidenceDirectory -WebBaseUri 'https://$(AZDEMO_WEB_PRODUCTION_HOST)' -VerifiedWebHost '$(AZDEMO_WEB_PRODUCTION_HOST)' -VerifiedApiHost '$(AZDEMO_API_PRODUCTION_HOST)' -TargetSubscriptionId '$(AZDEMO_SUBSCRIPTION_ID)' -TargetResourceGroupName '$(AZDEMO_RESOURCE_GROUP_NAME)' -TargetWebAppName '$(AZDEMO_WEB_APP_NAME)' -TargetApiAppName '$(AZDEMO_API_APP_NAME)' -TargetSlotName production -ExpectedCommit '$(Build.SourceVersion)' -ArtifactManifest '$(Pipeline.Workspace)/azure-demo-immutable/deployment-artifact-manifest.json' -InfrastructureDeploymentId '/subscriptions/$(AZDEMO_SUBSCRIPTION_ID)/resourceGroups/$(AZDEMO_RESOURCE_GROUP_NAME)/providers/Microsoft.Resources/deployments/mtp-azure-demo-$(Build.BuildId)' -PipelineDefinition '$(Build.DefinitionName)' -PipelineRunId '$(Build.BuildId)' -Execute
             displayName: Run production smoke checks after swap
-          - publish: $(Pipeline.Workspace)/post-swap-smoke-evidence
-            artifact: post-swap-smoke-evidence
+          - publish: $(Pipeline.Workspace)/post-swap-smoke-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)
+            artifact: post-swap-smoke-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)
             condition: and(always(), eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true'))
 
 - stage: Rollback

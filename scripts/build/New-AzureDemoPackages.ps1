@@ -27,10 +27,18 @@ if ($authValidationExitCode) {
 }
 $authValidationOutput | Write-Output
 
-$nodeMajor = [int]((node --version).TrimStart('v').Split('.')[0])
+$nodeVersion = [string] (& node --version)
+if ($LASTEXITCODE) { throw 'Node.js version inspection failed.' }
+$nodeMajor = [int]($nodeVersion.TrimStart('v').Split('.')[0])
 if ($nodeMajor -ne 24) { throw 'Azure demo web packaging requires Node.js 24.' }
-$sdkMajor = [int]((dotnet --version).Split('.')[0])
+$dotnetSdkVersion = [string] (& dotnet --version)
+if ($LASTEXITCODE) { throw '.NET SDK version inspection failed.' }
+$sdkMajor = [int]($dotnetSdkVersion.Split('.')[0])
 if ($sdkMajor -ne 10) { throw 'Azure demo API packaging requires .NET SDK 10.' }
+$sourceCommit = [string] (& git -C $repo rev-parse HEAD)
+if ($LASTEXITCODE -or $sourceCommit -notmatch '^[0-9a-f]{40}$') {
+    throw 'Application packaging could not establish the exact source commit.'
+}
 
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 $stage = Join-Path $output 'stage'
@@ -74,7 +82,7 @@ try {
     Push-Location 'src/web'
     try {
         $env:NODE_ENV = 'production'
-        & $npmCommand run build
+        & $npmCommand run build:azure-demo
         if ($LASTEXITCODE) { throw 'Next.js production build failed.' }
         $webStage = Join-Path $stage 'web'
         Copy-Item -LiteralPath '.next/standalone' -Destination $webStage -Recurse
@@ -143,10 +151,10 @@ try {
 
     $manifest = [ordered]@{
         schemaVersion = '1'
-        sourceCommit = (git rev-parse HEAD).Trim()
+        sourceCommit = $sourceCommit
         createdAtUtc = $applicationPackageTimestamp.ToString('O')
-        nodeVersion = (node --version).Trim()
-        dotnetSdkVersion = (dotnet --version).Trim()
+        nodeVersion = $nodeVersion.Trim()
+        dotnetSdkVersion = $dotnetSdkVersion.Trim()
         artifacts = @(
             [ordered]@{ name = 'api.zip'; sha256 = (Get-FileHash $apiZip -Algorithm SHA256).Hash.ToLowerInvariant() }
             [ordered]@{ name = 'web.zip'; sha256 = (Get-FileHash $webZip -Algorithm SHA256).Hash.ToLowerInvariant() }

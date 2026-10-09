@@ -8,7 +8,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "prebuild:azure-demo": "node scripts/prepare-azure-demo-build.mjs",
     "build:azure-demo": "node scripts/validate-azure-demo-auth-config.mjs && next build",
+    "postbuild:azure-demo": "node scripts/verify-azure-demo-auth-build-output.mjs",
     "start": "node server.js",
     "lint": "eslint .",
     "test:component": "vitest run",

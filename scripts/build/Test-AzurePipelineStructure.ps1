@@ -25,7 +25,9 @@ $postDeploymentReadinessScript = Get-Content -LiteralPath (Join-Path $repo 'scri
 $postDeploymentReadinessEntryScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\smoke\Invoke-AzureDemoPostDeploymentReadiness.ps1') -Raw
 $applicationPackageScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\New-AzureDemoPackages.ps1') -Raw
 $authenticationConfigurationRegressionScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Test-AzureDemoAuthenticationConfiguration.ps1') -Raw
+$authenticationConfigurationCallerRegressionScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Test-AzureDemoAuthenticationConfigurationCaller.ps1') -Raw
 $authenticationConfigurationValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'src\web\scripts\validate-azure-demo-auth-config.mjs') -Raw
+$authenticationBuildOutputValidatorScript = Get-Content -LiteralPath (Join-Path $repo 'src\web\scripts\verify-azure-demo-auth-build-output.mjs') -Raw
 $webPackage = Get-Content -LiteralPath (Join-Path $repo 'src\web\package.json') -Raw | ConvertFrom-Json
 $webDeploymentRegressionChainScript = Get-Content -LiteralPath (Join-Path $repo 'scripts\build\Invoke-AzureDemoWebDeploymentRegressionChain.ps1') -Raw
 $appServiceBicep = Get-Content -LiteralPath (Join-Path $repo 'infra\bicep\modules\appservice.bicep') -Raw
@@ -34,6 +36,7 @@ $retiredMigrationServiceConnection = 'sc-mtp-azure-demo-migration-dev'
 
 if ($text.Contains("`t")) { throw 'Azure Pipelines YAML contains tab indentation.' }
 if ($lines | Where-Object { $_ -match '\s+$' }) { throw 'Azure Pipelines YAML contains trailing whitespace.' }
+if ($text.Contains('ignoreLASTEXITCODE')) { throw 'Azure Pipelines must preserve native process failures.' }
 
 $requiredParameterVariables = @(
     'AZDEMO_OWNER',
@@ -122,7 +125,7 @@ $requiredFragments = @(
     'Test-AzureDemoSmokeOrchestration.ps1',
     'Test-AzureDemoSmokeEvidence.ps1',
     'Test-AzureDemoAppliedApiHostConfiguration.ps1',
-    'Test-AzureDemoAuthenticationConfiguration.ps1',
+    'Test-AzureDemoAuthenticationConfigurationCaller.ps1',
     'Invoke-AzureDemoWebDeploymentRegressionChain.ps1',
     'Assert-AzureDemoRollbackTarget.ps1',
     'Assert-AzureDemoMigrationTarget.ps1',
@@ -452,6 +455,21 @@ function Get-YamlStepBlock([string[]] $PipelineLines, [string] $CommandPattern) 
     return ($PipelineLines[$stepStart..($stepEnd - 1)] -join "`n")
 }
 
+function Assert-ImmediateNativeExitCheck(
+    [string] $Step,
+    [string] $Command,
+    [string] $ExitCheck,
+    [string] $Description) {
+    $stepLines = @($Step.Replace("`r`n", "`n").Split("`n") | ForEach-Object { $_.Trim() })
+    $indexes = @(for ($index = 0; $index -lt $stepLines.Count; $index++) {
+            if ($stepLines[$index] -ceq $Command) { $index }
+        })
+    if ($indexes.Count -ne 1 -or $indexes[0] + 1 -ge $stepLines.Count -or
+        $stepLines[$indexes[0] + 1] -cne $ExitCheck) {
+        throw "$Description must capture and reject its native exit code immediately."
+    }
+}
+
 function Get-YamlJobBlocks([string[]] $PipelineLines) {
     $jobStarts = @(for ($index = 0; $index -lt $PipelineLines.Count; $index++) {
             if ($PipelineLines[$index] -match '^  - (?:job|deployment):\s+([A-Za-z][A-Za-z0-9_]*)\s*$') {
@@ -687,13 +705,88 @@ if (-not $deployParameter.Success -or -not $rollbackParameter.Success) {
     throw 'Azure deployment and rollback parameters must both default to false.'
 }
 
+$dotnetValidationStep = Get-YamlStepBlock $lines 'dotnet restore LgrTransformationMigration\.sln --locked-mode'
+foreach ($nativeContract in @(
+        @('dotnet --info', "if (`$LASTEXITCODE) { throw '.NET runtime inspection failed.' }", '.NET runtime inspection'),
+        @('node --version', "if (`$LASTEXITCODE) { throw 'Node runtime inspection failed.' }", 'Node runtime inspection'),
+        @('npm --version', "if (`$LASTEXITCODE) { throw 'npm runtime inspection failed.' }", 'npm runtime inspection'),
+        @('dotnet restore LgrTransformationMigration.sln --locked-mode', "if (`$LASTEXITCODE) { throw 'Locked .NET restore failed.' }", 'Locked .NET restore'),
+        @('dotnet format LgrTransformationMigration.sln --verify-no-changes --no-restore --include src/api/Program.cs src/api/Infrastructure/IdentityAuthorization.cs src/api/Infrastructure/AzureDemoInfrastructure.cs src/api/Infrastructure/HealthAndSecurity.cs src/api/Infrastructure/MigrationDbContextFactory.cs src/api/Services/Discovery/DiscoveryImportOptions.cs src/api/Services/Discovery/ImportFileStorage.cs tests/api.unit/AzureDemoConfigurationTests.cs tests/api.unit/AzureDemoDeploymentBoundaryTests.cs tests/api.unit/MigrationDbContextFactoryTests.cs tools/AzureDemo.DataTool/Program.cs', "if (`$LASTEXITCODE) { throw '.NET formatting verification failed.' }", '.NET formatting'),
+        @('dotnet build LgrTransformationMigration.sln --configuration Release --no-restore', "if (`$LASTEXITCODE) { throw '.NET Release build failed.' }", '.NET Release build'),
+        @('dotnet test LgrTransformationMigration.sln --configuration Release --no-build --logger "trx;LogFilePrefix=azure-demo"', "if (`$LASTEXITCODE) { throw '.NET tests failed.' }", '.NET tests'))) {
+    Assert-ImmediateNativeExitCheck -Step $dotnetValidationStep -Command $nativeContract[0] `
+        -ExitCheck $nativeContract[1] -Description $nativeContract[2]
+}
+
+$toolRestoreStep = Get-YamlStepBlock $lines 'dotnet tool restore'
+Assert-ImmediateNativeExitCheck -Step $toolRestoreStep -Command 'dotnet tool restore' `
+    -ExitCheck "if (`$LASTEXITCODE) { throw '.NET tool restore failed.' }" -Description '.NET tool restore'
+
+$nugetValidationStep = Get-YamlStepBlock $lines 'dotnet list LgrTransformationMigration\.sln package --vulnerable'
+Assert-ImmediateNativeExitCheck -Step $nugetValidationStep `
+    -Command 'dotnet list LgrTransformationMigration.sln package --vulnerable --include-transitive' `
+    -ExitCheck "if (`$LASTEXITCODE) { throw 'Connected NuGet vulnerability query failed.' }" `
+    -Description 'Connected NuGet vulnerability query'
+Assert-ImmediateNativeExitCheck -Step $nugetValidationStep `
+    -Command 'dotnet list LgrTransformationMigration.sln package --deprecated --include-transitive' `
+    -ExitCheck "if (`$LASTEXITCODE) { throw 'Connected NuGet deprecation query failed.' }" `
+    -Description 'Connected NuGet deprecation query'
+
+$frontendNativeValidationStep = Get-YamlStepBlock $lines 'npm ci --ignore-scripts'
+foreach ($nativeContract in @(
+        @('npm ci --ignore-scripts', "if (`$LASTEXITCODE) { throw 'npm locked restore failed.' }", 'npm locked restore'),
+        @('npm audit --audit-level=moderate', "if (`$LASTEXITCODE) { throw 'npm vulnerability audit failed.' }", 'npm vulnerability audit'),
+        @('npm run test:auth-config', "if (`$LASTEXITCODE) { throw 'AzureDemo authentication configuration tests failed.' }", 'authentication configuration tests'),
+        @('npm run lint', "if (`$LASTEXITCODE) { throw 'Frontend lint failed.' }", 'frontend lint'),
+        @('npm run test:component -- --reporter=junit --outputFile=../../TestResults/vitest-junit.xml', "if (`$LASTEXITCODE) { throw 'Frontend component tests failed.' }", 'frontend component tests'),
+        @('npm run build:azure-demo', "if (`$LASTEXITCODE) { throw 'AzureDemo production build failed.' }", 'AzureDemo production build'),
+        @('$treeJson = @(npm ls --all --json)', "if (`$LASTEXITCODE) { throw 'Frontend dependency tree inspection failed.' }", 'frontend dependency tree inspection'))) {
+    Assert-ImmediateNativeExitCheck -Step $frontendNativeValidationStep -Command $nativeContract[0] `
+        -ExitCheck $nativeContract[1] -Description $nativeContract[2]
+}
+
+$remediationVersionStep = Get-YamlStepBlock $lines 'node -e "const l=require'
+$remediationCommand = @($remediationVersionStep.Replace("`r`n", "`n").Split("`n") |
+        ForEach-Object { $_.Trim() } | Where-Object { $_.StartsWith('node -e "const l=require', [StringComparison]::Ordinal) })
+if ($remediationCommand.Count -ne 1) { throw 'The frontend remediation-version command could not be isolated.' }
+Assert-ImmediateNativeExitCheck -Step $remediationVersionStep -Command $remediationCommand[0] `
+    -ExitCheck "if (`$LASTEXITCODE) { throw 'Approved frontend remediation-version validation failed.' }" `
+    -Description 'Frontend remediation-version validation'
+
+$bicepValidationStep = Get-YamlStepBlock $lines 'az bicep version'
+Assert-ImmediateNativeExitCheck -Step $bicepValidationStep -Command 'az bicep version' `
+    -ExitCheck "if (`$LASTEXITCODE) { throw 'Azure CLI Bicep runtime inspection failed.' }" `
+    -Description 'Azure CLI Bicep runtime inspection'
+Assert-ImmediateNativeExitCheck -Step $bicepValidationStep -Command '$changed = git status --short -- infra/bicep' `
+    -ExitCheck "if (`$LASTEXITCODE) { throw 'Could not inspect Bicep formatting changes.' }" `
+    -Description 'Bicep Git change inspection'
+
+$whatIfStep = Get-YamlStepBlock $lines 'az deployment group what-if'
+$whatIfCommand = @($whatIfStep.Replace("`r`n", "`n").Split("`n") |
+        ForEach-Object { $_.Trim() } | Where-Object { $_.StartsWith('az deployment group what-if ', [StringComparison]::Ordinal) })
+if ($whatIfCommand.Count -ne 1) { throw 'The Bicep what-if command could not be isolated.' }
+Assert-ImmediateNativeExitCheck -Step $whatIfStep -Command $whatIfCommand[0] `
+    -ExitCheck "if (`$LASTEXITCODE) { throw 'Bicep what-if failed.' }" -Description 'Bicep what-if'
+
+$deploymentOutputStep = Get-YamlStepBlock $lines '\$outputRows = @\(az deployment group show'
+$deploymentOutputCommand = @($deploymentOutputStep.Replace("`r`n", "`n").Split("`n") |
+        ForEach-Object { $_.Trim() } | Where-Object { $_.StartsWith('$outputRows = @(az deployment group show ', [StringComparison]::Ordinal) })
+if ($deploymentOutputCommand.Count -ne 1) { throw 'The applied Bicep output query could not be isolated.' }
+Assert-ImmediateNativeExitCheck -Step $deploymentOutputStep -Command $deploymentOutputCommand[0] `
+    -ExitCheck "if (`$LASTEXITCODE) { throw 'Could not read the applied Bicep deployment outputs.' }" `
+    -Description 'Applied Bicep output query'
+
 $expectedAzureDemoBuildCommand = 'node scripts/validate-azure-demo-auth-config.mjs && next build'
 if ([string] $webPackage.scripts.'build:azure-demo' -cne $expectedAzureDemoBuildCommand) {
     throw 'The AzureDemo frontend build must validate authentication in the same environment immediately before next build.'
 }
+if ([string] $webPackage.scripts.'prebuild:azure-demo' -cne 'node scripts/prepare-azure-demo-build.mjs' -or
+    [string] $webPackage.scripts.'postbuild:azure-demo' -cne 'node scripts/verify-azure-demo-auth-build-output.mjs') {
+    throw 'The AzureDemo frontend build must remove prior output and verify exact public authentication values in the newly compiled client output.'
+}
 $frontendBuildStep = Get-YamlStepBlock $lines 'npm run build:azure-demo'
 $packageBuildStep = Get-YamlStepBlock $lines 'New-AzureDemoPackages\.ps1 -OutputDirectory'
-$authenticationRegressionStep = Get-YamlStepBlock $lines 'Test-AzureDemoAuthenticationConfiguration\.ps1'
+$authenticationRegressionStep = Get-YamlStepBlock $lines 'Test-AzureDemoAuthenticationConfigurationCaller\.ps1'
 $requiredAuthenticationEnvironment = @(
     'NEXT_PUBLIC_ENTRA_TENANT_ID: $(AZDEMO_ENTRA_TENANT_ID)',
     'NEXT_PUBLIC_ENTRA_CLIENT_ID: $(AZDEMO_SPA_CLIENT_ID)',
@@ -716,9 +809,9 @@ if (-not $frontendBuildStep.Contains('workingDirectory: src/web') -or
 if (-not $packageBuildStep.Contains("New-AzureDemoPackages.ps1 -OutputDirectory '`$(Build.SourcesDirectory)/artifacts/azure-demo-ci/packages/application' -SkipTests")) {
     throw 'The package task no longer uses the guarded application package entry point.'
 }
-if (-not $validateStage.Contains('Test-AzureDemoAuthenticationConfiguration.ps1') -or
+if (-not $validateStage.Contains('Test-AzureDemoAuthenticationConfigurationCaller.ps1') -or
     $authenticationRegressionStep.Contains('continueOnError:')) {
-    throw 'The actual package-entry authentication regression must run fail closed in Linux validation.'
+    throw 'The actual package-entry authentication regression must run through the generated-caller contract and fail closed in Linux validation.'
 }
 foreach ($validatorFragment in @(
         'NEXT_PUBLIC_ENTRA_TENANT_ID',
@@ -740,10 +833,29 @@ foreach ($regressionFragment in @(
         throw "The package-entry authentication regression is missing its process-boundary contract: $regressionFragment"
     }
 }
+foreach ($callerFragment in @(
+        'if ((Test-Path -LiteralPath variable:\LASTEXITCODE)) { exit `$LASTEXITCODE }',
+        "Name = 'assertion'",
+        "Name = 'cleanup'",
+        "Name = 'unexpected-child'",
+        'if ($result.ExitCode -eq 0)')) {
+    if (-not $authenticationConfigurationCallerRegressionScript.Contains($callerFragment)) {
+        throw "The authentication generated-caller regression is missing its success/failure contract: $callerFragment"
+    }
+}
+foreach ($outputFragment in @(
+        'NEXT_PUBLIC_ENTRA_TENANT_ID',
+        'NEXT_PUBLIC_ENTRA_CLIENT_ID',
+        'NEXT_PUBLIC_API_SCOPE',
+        'clientOutput.some(content => content.includes(environment[setting]))')) {
+    if (-not $authenticationBuildOutputValidatorScript.Contains($outputFragment)) {
+        throw "The compiled authentication-output validator is missing its exact-value contract: $outputFragment"
+    }
+}
 $packageGuardIndex = $applicationPackageScript.IndexOf('& node $authValidator', [StringComparison]::Ordinal)
 $packageOutputIndex = $applicationPackageScript.IndexOf('New-Item -ItemType Directory -Path $output -Force', [StringComparison]::Ordinal)
 $packageApiCompilationIndex = $applicationPackageScript.IndexOf('dotnet publish src/api/LgrTransformationMigration.Api.csproj', [StringComparison]::Ordinal)
-$packageWebCompilationIndex = $applicationPackageScript.IndexOf('& $npmCommand run build', [StringComparison]::Ordinal)
+$packageWebCompilationIndex = $applicationPackageScript.IndexOf('& $npmCommand run build:azure-demo', [StringComparison]::Ordinal)
 if ($packageGuardIndex -lt 0 -or $packageOutputIndex -le $packageGuardIndex -or
     $packageApiCompilationIndex -le $packageOutputIndex -or $packageWebCompilationIndex -le $packageApiCompilationIndex) {
     throw 'Application packaging must validate authentication before output creation, API compilation, and its existing web build.'
@@ -1250,8 +1362,21 @@ foreach ($fragment in @(
         "-PipelineRunId '`$(Build.BuildId)'",
         "condition: and(always(), eq(variables['AZDEMO_STAGING_SMOKE_ATTEMPTED'], 'true'))",
         "condition: and(always(), eq(variables['AZDEMO_STAGING_READINESS_ATTEMPTED'], 'true'))",
-        "condition: and(always(), eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true'))")) {
+        "condition: and(always(), eq(variables['AZDEMO_PRODUCTION_SMOKE_ATTEMPTED'], 'true'))",
+        'artifact: staging-deployment-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)',
+        'artifact: staging-readiness-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)',
+        'artifact: staging-smoke-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)',
+        'artifact: post-swap-smoke-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)')) {
     if (-not $text.Contains($fragment)) { throw "Smoke execution or safe failure-evidence publication is missing: $fragment" }
+}
+foreach ($fixedEvidenceArtifact in @(
+        'artifact: staging-deployment-evidence',
+        'artifact: staging-readiness-evidence',
+        'artifact: staging-smoke-evidence',
+        'artifact: post-swap-smoke-evidence')) {
+    if ($text -match ('(?m)^\s+' + [regex]::Escape($fixedEvidenceArtifact) + '\s*$')) {
+        throw "Protected failure evidence uses a retry-unsafe fixed artifact name: $fixedEvidenceArtifact"
+    }
 }
 if ([regex]::Matches($text, '(?m)^\s+New-Item -ItemType Directory -Path \$evidenceDirectory -Force \| Out-Null\s*$').Count -lt 2 -or
     [regex]::Matches($text, '(?m)^\s+\./scripts/smoke/Invoke-AzureDemoSmokeTests\.ps1 -EvidenceDirectory \$evidenceDirectory ').Count -ne 2) {
@@ -1277,8 +1402,8 @@ if ($stagingApiDeploymentIndex -lt 0 -or $stagingWebDeploymentIndex -le $staging
 if ([regex]::Matches($migrateAndDeploy, 'Invoke-AzureDemoPostDeploymentReadiness\.ps1').Count -ne 1 -or
     -not $migrateAndDeploy.Contains("-ApiReadyUri 'https://`$(AZDEMO_API_STAGING_HOST)/health/ready'") -or
     -not $migrateAndDeploy.Contains("-WebReadyUri 'https://`$(AZDEMO_WEB_STAGING_HOST)/health'") -or
-    -not $migrateAndDeploy.Contains('staging-readiness-evidence-$(Build.BuildId)-$(System.JobAttempt)') -or
-    -not $migrateAndDeploy.Contains('artifact: staging-readiness-evidence')) {
+    -not $migrateAndDeploy.Contains('staging-readiness-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)') -or
+    -not $migrateAndDeploy.Contains('artifact: staging-readiness-evidence-$(Build.BuildId)-s$(System.StageAttempt)-j$(System.JobAttempt)')) {
     throw 'The bounded readiness caller must use and retain the exact Azure-resolved API and web staging targets once.'
 }
 foreach ($fragment in @(

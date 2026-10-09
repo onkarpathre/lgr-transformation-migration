@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -8,6 +8,7 @@ import {
   AzureDemoAuthConfigurationError,
   validateAzureDemoAuthConfig
 } from "./validate-azure-demo-auth-config.mjs";
+import { verifyAzureDemoAuthBuildOutput } from "./verify-azure-demo-auth-build-output.mjs";
 
 const valid = Object.freeze({
   NEXT_PUBLIC_ENTRA_TENANT_ID: "d68cff79-a08e-4a81-b724-e3fdea2af74d",
@@ -75,6 +76,8 @@ test("rejects wrong API identity, suffix, multiple scopes, query, fragment, and 
   const invalidScopes = [
     ["api://3ed6407f-15dd-498b-89df-b5a6ee927e69/lgr.access", /does not match/],
     ["api://a09f84de-7f30-4c53-86db-13b249597837/user.read", /exactly one delegated scope/],
+    ["api://a09f84de-7f30-4c53-86db-13b249597837/.default", /exactly one delegated scope/],
+    ["https://graph.microsoft.com/User.Read", /exactly one delegated scope/],
     ["api://a09f84de-7f30-4c53-86db-13b249597837/lgr.access api://a09f84de-7f30-4c53-86db-13b249597837/other", /exactly one delegated scope/],
     ["api://a09f84de-7f30-4c53-86db-13b249597837/lgr.access?x=1", /exactly one delegated scope/],
     ["api://a09f84de-7f30-4c53-86db-13b249597837/lgr.access#fragment", /exactly one delegated scope/],
@@ -122,51 +125,102 @@ test("CLI failures are nonzero, useful, and do not disclose rejected values", ()
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(rejectedValue));
 });
 
-test("AzureDemo npm build entry rejects invalid configuration before next and propagates downstream failure", () => {
-  const packageJson = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
-  assert.equal(
-    packageJson.scripts["build:azure-demo"],
-    "node scripts/validate-azure-demo-auth-config.mjs && next build"
-  );
-
-  const temporaryDirectory = mkdtempSync(join(tmpdir(), "azdemo-auth-build-"));
-  const marker = join(temporaryDirectory, "next-reached.txt");
-  const nextShim = join(temporaryDirectory, process.platform === "win32" ? "next.cmd" : "next");
-  const bundledNpmCli = resolve(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js");
-  const npmCli = process.env.npm_execpath || (existsSync(bundledNpmCli) ? bundledNpmCli : undefined);
-  const shim = process.platform === "win32"
-    ? "@echo off\r\n>\"%AUTH_BUILD_MARKER%\" echo reached\r\nexit /b 29\r\n"
-    : "#!/bin/sh\nprintf reached > \"$AUTH_BUILD_MARKER\"\nexit 29\n";
-  writeFileSync(nextShim, shim, "utf8");
-  if (process.platform !== "win32") chmodSync(nextShim, 0o755);
-
+test("fresh Next.js client output must contain every exact validated public authentication value", () => {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "azdemo-auth-output-"));
   try {
-    const common = {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        ...valid,
-        AUTH_BUILD_MARKER: marker,
-        PATH: `${temporaryDirectory}${delimiter}${process.env.PATH ?? ""}`
-      }
-    };
-    const npmArguments = ["run", "build:azure-demo", "--silent"];
-    const invokeNpm = options => npmCli
-      ? spawnSync(process.execPath, [npmCli, ...npmArguments], options)
-      : spawnSync("npm", npmArguments, options);
-    const invalid = invokeNpm({
-      ...common,
-      env: { ...common.env, NEXT_PUBLIC_API_SCOPE: "$(AZDEMO_API_SCOPE)" }
-    });
-    assert.notEqual(invalid.status, 0);
-    assert.equal(existsSync(marker), false);
-    assert.match(`${invalid.stdout}\n${invalid.stderr}`, /NEXT_PUBLIC_API_SCOPE.*unresolved Azure Pipelines macro/s);
+    const staticDirectory = join(temporaryDirectory, "static", "chunks");
+    mkdirSync(staticDirectory, { recursive: true });
+    writeFileSync(
+      join(staticDirectory, "app.js"),
+      Object.values(valid).join("\n"),
+      "utf8"
+    );
+    assert.equal(verifyAzureDemoAuthBuildOutput(temporaryDirectory, valid), true);
 
-    const downstreamFailure = invokeNpm(common);
-    assert.equal(existsSync(marker), true);
-    assert.equal(downstreamFailure.status, 29);
+    writeFileSync(
+      join(staticDirectory, "app.js"),
+      `${valid.NEXT_PUBLIC_ENTRA_TENANT_ID}\n${valid.NEXT_PUBLIC_API_SCOPE}`,
+      "utf8"
+    );
+    assert.throws(
+      () => verifyAzureDemoAuthBuildOutput(temporaryDirectory, valid),
+      error => {
+        assert.match(error.message, /NEXT_PUBLIC_ENTRA_CLIENT_ID/);
+        assert.doesNotMatch(error.message, new RegExp(valid.NEXT_PUBLIC_ENTRA_CLIENT_ID));
+        return true;
+      }
+    );
   } finally {
     rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 });
+
+for (const installedNext of [false, true]) {
+  test(`AzureDemo npm build entry rejects invalid configuration and propagates failure with ${installedNext ? "project-installed" : "PATH-resolved"} Next`, () => {
+    const packageJson = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
+    assert.equal(
+      packageJson.scripts["build:azure-demo"],
+      "node scripts/validate-azure-demo-auth-config.mjs && next build"
+    );
+
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "azdemo-auth-build-"));
+    try {
+      const projectDirectory = join(temporaryDirectory, "project");
+      const scriptsDirectory = join(projectDirectory, "scripts");
+      const executableDirectory = installedNext
+        ? join(projectDirectory, "node_modules", ".bin")
+        : join(temporaryDirectory, "path-shims");
+      mkdirSync(scriptsDirectory, { recursive: true });
+      mkdirSync(executableDirectory, { recursive: true });
+      copyFileSync(resolve("scripts/prepare-azure-demo-build.mjs"), join(scriptsDirectory, "prepare-azure-demo-build.mjs"));
+      copyFileSync(validatorPath, join(scriptsDirectory, "validate-azure-demo-auth-config.mjs"));
+      copyFileSync(resolve("scripts/verify-azure-demo-auth-build-output.mjs"), join(scriptsDirectory, "verify-azure-demo-auth-build-output.mjs"));
+      writeFileSync(join(projectDirectory, "package.json"), JSON.stringify({
+        name: "azure-demo-auth-build-fixture",
+        private: true,
+        scripts: {
+          "prebuild:azure-demo": packageJson.scripts["prebuild:azure-demo"],
+          "build:azure-demo": packageJson.scripts["build:azure-demo"],
+          "postbuild:azure-demo": packageJson.scripts["postbuild:azure-demo"]
+        }
+      }), "utf8");
+      const marker = join(temporaryDirectory, "next-reached.txt");
+      const nextShim = join(executableDirectory, process.platform === "win32" ? "next.cmd" : "next");
+      const bundledNpmCli = resolve(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js");
+      const npmCli = process.env.npm_execpath || (existsSync(bundledNpmCli) ? bundledNpmCli : undefined);
+      const shim = process.platform === "win32"
+        ? "@echo off\r\n>\"%AUTH_BUILD_MARKER%\" echo reached\r\nexit /b 29\r\n"
+        : "#!/bin/sh\nprintf reached > \"$AUTH_BUILD_MARKER\"\nexit 29\n";
+      writeFileSync(nextShim, shim, "utf8");
+      if (process.platform !== "win32") chmodSync(nextShim, 0o755);
+
+      const common = {
+        cwd: projectDirectory,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          ...valid,
+          AUTH_BUILD_MARKER: marker,
+          PATH: `${executableDirectory}${delimiter}${process.env.PATH ?? ""}`
+        }
+      };
+      const npmArguments = ["run", "build:azure-demo", "--silent"];
+      const invokeNpm = options => npmCli
+        ? spawnSync(process.execPath, [npmCli, ...npmArguments], options)
+        : spawnSync("npm", npmArguments, options);
+      const invalid = invokeNpm({
+        ...common,
+        env: { ...common.env, NEXT_PUBLIC_API_SCOPE: "$(AZDEMO_API_SCOPE)" }
+      });
+      assert.notEqual(invalid.status, 0);
+      assert.equal(existsSync(marker), false);
+      assert.match(`${invalid.stdout}\n${invalid.stderr}`, /NEXT_PUBLIC_API_SCOPE.*unresolved Azure Pipelines macro/s);
+
+      const downstreamFailure = invokeNpm(common);
+      assert.equal(existsSync(marker), true);
+      assert.equal(downstreamFailure.status, 29);
+    } finally {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+}

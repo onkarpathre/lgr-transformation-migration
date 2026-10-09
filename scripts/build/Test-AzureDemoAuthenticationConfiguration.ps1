@@ -12,7 +12,7 @@ $validatorInvocation = '& node $authValidator'
 $validatorIndex = $packageScript.IndexOf($validatorInvocation, [StringComparison]::Ordinal)
 $outputCreationIndex = $packageScript.IndexOf('New-Item -ItemType Directory -Path $output -Force', [StringComparison]::Ordinal)
 $apiCompilationIndex = $packageScript.IndexOf('dotnet publish src/api/LgrTransformationMigration.Api.csproj', [StringComparison]::Ordinal)
-$webCompilationIndex = $packageScript.IndexOf('& $npmCommand run build', [StringComparison]::Ordinal)
+$webCompilationIndex = $packageScript.IndexOf('& $npmCommand run build:azure-demo', [StringComparison]::Ordinal)
 
 if (-not (Test-Path -LiteralPath $validatorPath -PathType Leaf)) {
     throw 'The reusable AzureDemo authentication configuration validator is missing.'
@@ -218,3 +218,6 @@ finally {
 }
 
 Write-Output 'AzureDemo authentication configuration package-entry regression passed.'
+# Both negative fixtures deliberately leave a nonzero native exit code behind.
+# All assertions and cleanup have completed; report the regression's own result.
+exit 0
